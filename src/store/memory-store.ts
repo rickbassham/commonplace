@@ -239,19 +239,8 @@ export class MemoryStore {
       // dangling pass; this matches the contract test "onDangling callback
       // is invoked for mention-derived dangling edges during rebuild".
       const mentions: { from: string; to: string }[] = [];
-      if (mentionsExtractionEnabled()) {
-        for (const entry of next) {
-          for (const target of extractMentions(entry.body)) {
-            // A mention to oneself is silently dropped: `addMentionsEdge`
-            // throws on self-edges, but the tokenizer can produce
-            // `from === to` for a body containing `[[<own-name>]]`. The
-            // graph contract treats self-edges as a programming error;
-            // the tokenizer's contract is to be a permissive regex. We
-            // bridge the two here.
-            if (target === entry.name) continue;
-            mentions.push({ from: entry.name, to: target });
-          }
-        }
+      for (const entry of next) {
+        mentions.push(...this.#mentionsFor(entry));
       }
       this.#graph.rebuild(next, mentions);
     }
@@ -328,17 +317,44 @@ export class MemoryStore {
     if (this.#graph !== undefined) {
       this.#graph.add(entry);
       // DAR-927: extract `[[name]]` mentions and add one mentions edge
-      // per unique target. Gated by `COMMONPLACE_EXTRACT_MENTIONS`. The
-      // tokenizer can match the memory's own name (e.g. a body that
-      // mentions itself); we drop those silently since
-      // `addMentionsEdge` rejects self-edges by contract.
-      if (mentionsExtractionEnabled()) {
-        for (const target of extractMentions(entry.body)) {
-          if (target === entry.name) continue;
-          this.#graph.addMentionsEdge({ from: entry.name, to: target });
-        }
+      // per unique target. The helper handles env-var gating and the
+      // self-edge bridge -- see {@link #mentionsFor}.
+      for (const edge of this.#mentionsFor(entry)) {
+        this.#graph.addMentionsEdge(edge);
       }
     }
+  }
+
+  /**
+   * Extract `[[name]]` body mentions for a single entry as graph edges.
+   *
+   * Returns one `{ from, to }` per unique mention target in the entry's
+   * body, with two filters applied:
+   *
+   *   - Env-var gating: when `COMMONPLACE_EXTRACT_MENTIONS=false`, returns
+   *     an empty array. Read on every call so tests can flip the variable
+   *     at runtime.
+   *   - Self-edge bridge: `MemoryGraph.addMentionsEdge` throws on
+   *     self-edges by contract, but the tokenizer is a permissive regex
+   *     and can produce `from === to` for a body containing
+   *     `[[<own-name>]]`. This helper drops those silently so neither
+   *     `scan()` (which forwards through `rebuild`) nor `save()` (which
+   *     calls `addMentionsEdge` directly) needs to repeat the check.
+   *
+   * Centralising the extraction shape here -- rather than duplicating it
+   * across `scan()` and `save()` -- keeps the env-var gate and the
+   * self-edge bridge in one place. If the bridge rule ever changes
+   * (e.g. include self-mentions, or use a different graph API), there is
+   * exactly one site to update.
+   */
+  #mentionsFor(entry: { name: string; body: string }): { from: string; to: string }[] {
+    if (!mentionsExtractionEnabled()) return [];
+    const out: { from: string; to: string }[] = [];
+    for (const target of extractMentions(entry.body)) {
+      if (target === entry.name) continue;
+      out.push({ from: entry.name, to: target });
+    }
+    return out;
   }
 
   /**

@@ -81,12 +81,12 @@ const MENTION_CANDIDATE = /(?<!\[)\[\[([^[\]\s]+)\]\](?!\])/g;
 export const extractMentions = (body: string): string[] => {
   const seen = new Set<string>();
   const out: string[] = [];
-  // `MENTION_CANDIDATE` is shared and global; reset its lastIndex
-  // defensively before iterating so multiple back-to-back calls can't
-  // cross-contaminate.
-  MENTION_CANDIDATE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = MENTION_CANDIDATE.exec(body)) !== null) {
+  // Iterate via `matchAll` rather than `regex.exec()` in a loop. `matchAll`
+  // builds its own iterator state, so the module-level `MENTION_CANDIDATE`
+  // regex's `lastIndex` is never read or mutated -- removing the
+  // global-flag stateful-regex footgun for any future caller who copies
+  // this iteration shape.
+  for (const m of body.matchAll(MENTION_CANDIDATE)) {
     const inner = m[1];
     // `inner` is guaranteed non-undefined because the capture group is
     // always populated when the regex matches; the defensive guard keeps
