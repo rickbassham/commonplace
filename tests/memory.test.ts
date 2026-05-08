@@ -89,6 +89,15 @@ describe('ac-1: readMemory', () => {
     const badQuoting = '---\nname: "unterminated\ntype: user\ndescription: y\n---\nbody\n';
     const p3 = writeFile('d3.md', badQuoting);
     expect(() => readMemory(p3)).toThrow();
+
+    // Bad indentation: a nested mapping whose keys do not start at the same
+    // column (the `yaml` parser rejects with "All mapping items must start
+    // at the same column"). This exercises the indentation branch named in
+    // the test title.
+    const badIndent =
+      '---\nname: x\ndescription: y\ntype: user\nouter:\n  inner1: 1\n inner2: 2\n---\nbody\n';
+    const p4 = writeFile('d4.md', badIndent);
+    expect(() => readMemory(p4)).toThrow();
   });
 
   it('readMemory throws when a required field (name, description, or type) is missing from frontmatter', () => {
@@ -98,6 +107,19 @@ describe('ac-1: readMemory', () => {
     expect(() => readMemory(writeFile('e1.md', noName))).toThrow();
     expect(() => readMemory(writeFile('e2.md', noDesc))).toThrow();
     expect(() => readMemory(writeFile('e3.md', noType))).toThrow();
+  });
+
+  it('readMemory throws when a required field is present but of the wrong primitive type (name/description must be strings; type must be a string in the allowed set)', () => {
+    // name is a number after YAML parse.
+    const numName = '---\nname: 42\ndescription: y\ntype: user\n---\nbody\n';
+    // description is a sequence/array.
+    const seqDesc = '---\nname: x\ndescription:\n  - 1\n  - 2\n  - 3\ntype: user\n---\nbody\n';
+    // type is a number (not even a string, so isMemoryType rejects via the
+    // typeof guard before the .includes check).
+    const numType = '---\nname: x\ndescription: y\ntype: 7\n---\nbody\n';
+    expect(() => readMemory(writeFile('w1.md', numName))).toThrow();
+    expect(() => readMemory(writeFile('w2.md', seqDesc))).toThrow();
+    expect(() => readMemory(writeFile('w3.md', numType))).toThrow();
   });
 });
 
