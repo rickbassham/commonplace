@@ -12,7 +12,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -156,6 +164,33 @@ describe('ac-1: class shape', () => {
     writeMemoryFile(tmp, makeMemory('beta'));
     const store = new MemoryStore({ dir: tmp, embedder });
     expect(store.all()).toEqual([]);
+  });
+
+  it('all() return type is ReadonlyArray<MemoryEntry> -- mutating methods are not on the type (regression: PR #6 f-2)', async () => {
+    const embedder = makeStubEmbedder();
+    writeMemoryFile(tmp, makeMemory('alpha'));
+    const store = new MemoryStore({ dir: tmp, embedder });
+    await store.scan();
+
+    const entries = store.all();
+    // ReadonlyArray<T> exposes iteration / read accessors but not push/splice/sort.
+    // These properties must be `undefined` on the type-narrowed result; the
+    // runtime array still has them, but the public surface promised by all()
+    // doesn't. Use `in` so the test exercises the type, not the runtime.
+    type AllReturn = ReturnType<MemoryStore['all']>;
+    type HasPush = 'push' extends keyof AllReturn ? true : false;
+    type HasSplice = 'splice' extends keyof AllReturn ? true : false;
+    type HasSort = 'sort' extends keyof AllReturn ? true : false;
+    const hasPush: HasPush = false;
+    const hasSplice: HasSplice = false;
+    const hasSort: HasSort = false;
+    expect(hasPush).toBe(false);
+    expect(hasSplice).toBe(false);
+    expect(hasSort).toBe(false);
+    // And the runtime contract still works: read access, length, iteration.
+    expect(entries.length).toBe(1);
+    expect(entries[0]?.name).toBe('alpha');
+    expect([...entries].map((e) => e.name)).toEqual(['alpha']);
   });
 });
 
@@ -308,6 +343,21 @@ describe('ac-3: stale sidecar detection', () => {
     // Sidecar should now be valid: starts with CMEM magic.
     const fixed = readFileSync(join(tmp, 'alpha.embedding'));
     expect(fixed.subarray(0, 4).toString('ascii')).toBe('CMEM');
+  });
+
+  it('scan() propagates real readFileSync I/O errors instead of treating them as corrupt sidecars (regression: PR #6 f-1)', async () => {
+    const embedder = makeStubEmbedder();
+    const m = makeMemory('alpha');
+    writeMemoryFile(tmp, m);
+    // Create a *directory* at the sidecar path. existsSync() returns true,
+    // but readFileSync() will throw EISDIR -- a real I/O error, not a decode
+    // failure. The narrowed catch must let this propagate; otherwise the
+    // store would silently re-embed and overwrite, masking the operator
+    // problem (e.g. someone mis-managed the directory layout).
+    mkdirSync(join(tmp, 'alpha.embedding'));
+
+    const store = new MemoryStore({ dir: tmp, embedder });
+    await expect(store.scan()).rejects.toThrow(/EISDIR|illegal operation on a directory/i);
   });
 
   it('scan() returns reembedded equal to the number of stale-or-missing sidecars and loaded equal to the total .md count after the run', async () => {

@@ -145,8 +145,14 @@ export class MemoryStore {
       let vector: Float32Array | null = null;
 
       if (existsSync(sidecarPath)) {
+        // Read the sidecar bytes OUTSIDE the try/catch so that real I/O errors
+        // (EACCES, EIO, EMFILE, ENOMEM, ...) propagate to the caller rather
+        // than being silently treated as "corrupt -- re-embed". Only the
+        // decode step's intentional throw-on-bad-bytes is swallowed below;
+        // that's the documented contract for sidecar corruption (DAR-916 ac-3).
+        const bytes = readFileSync(sidecarPath);
         try {
-          const decoded = decodeSidecar(readFileSync(sidecarPath));
+          const decoded = decodeSidecar(bytes);
           if (
             decoded.modelId === this.#embedder.modelId &&
             decoded.dim === this.#embedder.dim &&
@@ -155,7 +161,7 @@ export class MemoryStore {
             vector = decoded.vector;
           }
         } catch {
-          // Corrupt sidecar -- fall through to re-embed.
+          // Corrupt sidecar bytes -- fall through to re-embed.
           vector = null;
         }
       }
@@ -199,6 +205,19 @@ export class MemoryStore {
    * On success: writes `<name>.md`, embeds the body, writes
    * `<name>.embedding`, and appends one {@link MemoryEntry} to the in-memory
    * array.
+   *
+   * # Partial-state on embed failure
+   *
+   * `save()` writes the `.md` file BEFORE awaiting `embedder.embed()`. If
+   * `embed()` rejects (e.g. model load failure, OOM in the inference
+   * pipeline), the `.md` is left on disk with no matching sidecar and no
+   * entry in the in-memory array. This is by design: the contract delegates
+   * atomic write-temp+rename and crash-safety to DAR-923. Recovery is
+   * self-healing on the next {@link scan} (the orphan `.md` is treated as a
+   * missing-sidecar case and re-embedded), or manual: a subsequent `save()`
+   * with the same name will reject with the "memory file already exists"
+   * message until the operator either calls `scan()` + `delete(name)` or
+   * removes the orphan `.md` directly.
    */
   public async save(memory: Memory): Promise<void> {
     const { name } = memory;
@@ -272,11 +291,21 @@ export class MemoryStore {
   }
 
   /**
-   * Return the current in-memory entry array. Returns the live internal
-   * array reference for now -- callers should treat it as read-only. Future
-   * consumers (DAR-917 search, DAR-926 graph) may copy as needed.
+   * Return the current in-memory entry array.
+   *
+   * The return type is `ReadonlyArray<MemoryEntry>` so the compiler catches
+   * accidental mutation attempts (push/splice/sort) on what is the store's
+   * authoritative state. Future consumers that need to sort/filter (DAR-917
+   * search, DAR-926 graph) should make a shallow copy with `.slice()` or
+   * `[...store.all()]` before mutating.
+   *
+   * Note: this returns a live reference to the internal array (typed as
+   * read-only); the entries themselves are the same object identities the
+   * store holds. If a caller defeats the type system with a cast, they can
+   * still corrupt the store's invariants -- the readonly type is the
+   * compile-time guard rail, not a runtime fence.
    */
-  public all(): MemoryEntry[] {
+  public all(): ReadonlyArray<MemoryEntry> {
     return this.#entries;
   }
 }
