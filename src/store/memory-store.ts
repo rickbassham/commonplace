@@ -41,6 +41,7 @@ import { join } from 'node:path';
 
 import { contentSha, readMemory, writeMemory, type Memory, type Relation } from './memory.js';
 import { MemoryGraph } from './graph.js';
+import { extractMentions, mentionsExtractionEnabled } from './mentions.js';
 import { decodeSidecar, encodeSidecar } from './sidecar.js';
 
 /**
@@ -232,7 +233,27 @@ export class MemoryStore {
 
     this.#entries = next;
     if (this.#graph !== undefined) {
-      this.#graph.rebuild(next);
+      // Extract `[[name]]` mentions from each body when extraction is
+      // enabled (DAR-927). The list is passed alongside the entries to
+      // `rebuild` so authored and mention-derived edges share a single
+      // dangling pass; this matches the contract test "onDangling callback
+      // is invoked for mention-derived dangling edges during rebuild".
+      const mentions: { from: string; to: string }[] = [];
+      if (mentionsExtractionEnabled()) {
+        for (const entry of next) {
+          for (const target of extractMentions(entry.body)) {
+            // A mention to oneself is silently dropped: `addMentionsEdge`
+            // throws on self-edges, but the tokenizer can produce
+            // `from === to` for a body containing `[[<own-name>]]`. The
+            // graph contract treats self-edges as a programming error;
+            // the tokenizer's contract is to be a permissive regex. We
+            // bridge the two here.
+            if (target === entry.name) continue;
+            mentions.push({ from: entry.name, to: target });
+          }
+        }
+      }
+      this.#graph.rebuild(next, mentions);
     }
     return { loaded: next.length, reembedded };
   }
@@ -306,6 +327,17 @@ export class MemoryStore {
     this.#entries.push(entry);
     if (this.#graph !== undefined) {
       this.#graph.add(entry);
+      // DAR-927: extract `[[name]]` mentions and add one mentions edge
+      // per unique target. Gated by `COMMONPLACE_EXTRACT_MENTIONS`. The
+      // tokenizer can match the memory's own name (e.g. a body that
+      // mentions itself); we drop those silently since
+      // `addMentionsEdge` rejects self-edges by contract.
+      if (mentionsExtractionEnabled()) {
+        for (const target of extractMentions(entry.body)) {
+          if (target === entry.name) continue;
+          this.#graph.addMentionsEdge({ from: entry.name, to: target });
+        }
+      }
     }
   }
 
