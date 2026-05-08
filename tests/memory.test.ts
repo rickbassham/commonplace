@@ -261,7 +261,7 @@ world
     expect(contentSha(a)).toBe(contentSha(b));
   });
 
-  it('contentSha is unchanged when unknown/extra frontmatter fields are present (forward-compat: simulated `relations`, `supersedes`, and arbitrary unknown keys)', () => {
+  it('contentSha is unchanged when unknown/extra frontmatter fields are present (forward-compat: graph fields `relations`, `supersedes`, and arbitrary unknown keys)', () => {
     const baseline = `---
 name: fc
 description: fc desc
@@ -274,8 +274,8 @@ name: fc
 description: fc desc
 type: project
 relations:
-  - target: other
-    kind: refines
+  - to: other_one
+    type: related-to
 supersedes:
   - old_one
 arbitrary_unknown: 42
