@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.embedding
+.DS_Store
