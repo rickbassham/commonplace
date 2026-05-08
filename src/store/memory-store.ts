@@ -7,15 +7,18 @@
  *   - binary sidecar encode/decode (DAR-910, `./sidecar.ts`)
  *   - the embedder                 (DAR-912, `../embedder/`)
  *
- * into a single class with four methods:
+ * into a single class with five methods:
  *
- *   - `scan()`        glob `<dir>/*.md`, reuse valid sidecars, lazy-re-embed
- *                     on staleness, populate the in-memory entry array.
- *   - `save(memory)`  refuse-on-duplicate, write `.md`, embed body, write
- *                     `.embedding`, append to in-memory array.
- *   - `delete(name)`  rm both files, splice from the array. Throws if name is
- *                     not present.
- *   - `all()`         the in-memory entry array.
+ *   - `scan()`              glob `<dir>/*.md`, reuse valid sidecars,
+ *                           lazy-re-embed on staleness, populate the
+ *                           in-memory entry array.
+ *   - `save(memory)`        refuse-on-duplicate, write `.md`, embed body,
+ *                           write `.embedding`, append to in-memory array.
+ *   - `delete(name)`        rm both files, splice from the array. Throws if
+ *                           name is not present.
+ *   - `all()`               the in-memory entry array.
+ *   - `search(query, opts)` brute-force top-k cosine search over the
+ *                           in-memory entry array (DAR-917).
  *
  * # Scope
  *
@@ -24,7 +27,6 @@
  *
  *   - atomic write-temp+rename, fsync, advisory locks, mtime-based external
  *     rescan -- DAR-923 (multi-process safety).
- *   - top-k cosine search ranking -- DAR-917.
  *   - graph adjacency / dangling-edge detection -- DAR-926.
  *   - MCP tool wiring -- DAR-919, DAR-928.
  *   - layered user+project memory / scope auto-detection -- DAR-924.
@@ -91,6 +93,32 @@ export interface ScanResult {
   loaded: number;
   /** Number of `.md` files for which a sidecar was (re)written this scan. */
   reembedded: number;
+}
+
+/** Options for {@link MemoryStore.search}. All fields are optional. */
+export interface SearchOptions {
+  /**
+   * Maximum number of results to return after filtering. Defaults to 5.
+   * Filters (`type`, `threshold`) are applied BEFORE this slice, so `limit`
+   * counts only post-filter matches.
+   */
+  limit?: number;
+  /** Restrict results to entries with this {@link Memory.type}. */
+  type?: Memory['type'];
+  /**
+   * Minimum cosine score (dot product, since vectors are L2-normalised at
+   * write time) for an entry to appear in results. Entries scoring strictly
+   * less than `threshold` are dropped.
+   */
+  threshold?: number;
+}
+
+/** A single hit returned by {@link MemoryStore.search}. */
+export interface SearchHit {
+  /** The matching entry. Same object identity as the entry from {@link MemoryStore.all}. */
+  memory: MemoryEntry;
+  /** Cosine score (dot product on L2-normalised vectors). */
+  score: number;
 }
 
 /**
@@ -308,7 +336,77 @@ export class MemoryStore {
   public all(): ReadonlyArray<MemoryEntry> {
     return this.#entries;
   }
+
+  /**
+   * Brute-force top-k cosine search over the in-memory entry array
+   * (DAR-917).
+   *
+   * Pipeline:
+   *
+   *   1. If the in-memory entry array is empty, return `[]` immediately
+   *      without invoking the embedder. This preserves the fast-path for a
+   *      cold store and lets the MCP layer check "do we have any memories
+   *      at all?" cheaply.
+   *   2. Embed the query string exactly once via the configured Embedder.
+   *      The query string is passed through verbatim -- no trimming, no
+   *      lowercasing.
+   *   3. Score every entry in {@link all} as the dot product of the query
+   *      vector with `entry.vector`. Because entries' vectors are
+   *      L2-normalised at write time (DAR-916), this dot product equals
+   *      cosine similarity in `[-1, 1]`.
+   *   4. Apply optional filters (`type`, `threshold`) BEFORE the limit slice,
+   *      so `limit` counts only post-filter matches.
+   *   5. Sort the surviving hits in descending score order and slice to
+   *      `limit` (default 5).
+   *
+   * Notes:
+   *
+   *   - Only the query is embedded at search time. Candidate vectors come
+   *     from the in-memory entries that {@link scan} or {@link save}
+   *     populated.
+   *   - The `memory` field on each {@link SearchHit} is the same object
+   *     identity as the entry in `all()`. Callers must treat hits as
+   *     read-only for the same reason `all()` returns a `ReadonlyArray`.
+   *   - Tie-breaking on equal scores is unspecified; the sort is descending
+   *     on score and stability across same-score ties is implementation-
+   *     defined (per the approved contract envelope).
+   *   - Input sanitisation of `opts.limit` (negatives, NaN, non-integers) is
+   *     out of scope for the store layer; the implementation behaves per
+   *     `Array.prototype.slice` semantics. The MCP tool layer (DAR-920) is
+   *     responsible for caller-side validation.
+   */
+  public async search(query: string, opts: SearchOptions = {}): Promise<SearchHit[]> {
+    if (this.#entries.length === 0) return [];
+
+    const queryVec = await this.#embedder.embed(query);
+    const limit = opts.limit ?? 5;
+
+    const hits: SearchHit[] = [];
+    for (const entry of this.#entries) {
+      if (opts.type !== undefined && entry.type !== opts.type) continue;
+      const score = dotProduct(queryVec, entry.vector);
+      if (opts.threshold !== undefined && score < opts.threshold) continue;
+      hits.push({ memory: entry, score });
+    }
+
+    hits.sort((a, b) => b.score - a.score);
+    return hits.slice(0, limit);
+  }
 }
+
+/**
+ * Inner-product of two equal-length Float32Arrays. When both inputs are
+ * L2-normalised this equals cosine similarity. Length mismatch is treated as
+ * a programming error and surfaces via the index access pattern -- in
+ * practice the embedder configured on the store and the entries' vectors
+ * always agree on `dim` (DAR-916 sidecar reuse rules enforce this).
+ */
+const dotProduct = (a: Float32Array, b: Float32Array): number => {
+  const n = Math.min(a.length, b.length);
+  let s = 0;
+  for (let i = 0; i < n; i++) s += a[i]! * b[i]!;
+  return s;
+};
 
 /**
  * List `*.md` filenames (single-level, no subdirectories, no recursion) in
