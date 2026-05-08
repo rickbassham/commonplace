@@ -165,9 +165,11 @@ describe('ac-3: O(1) lookups', () => {
     const tSmall = timeManyLookups(() => small.outbound('node_5'));
     const tLarge = timeManyLookups(() => large.outbound('node_5000'));
     // Coarse sanity: large should not be more than ~50x slower than small.
-    // Allows for noise on shared CI; the structural assertion is the
+    // Use an absolute 200ms ceiling as the floor so we don't multiply
+    // sub-millisecond noise (or a zero-rounded `tSmall`) into a flaky
+    // bound on shared CI; the structural assertion above is the
     // load-bearing one.
-    expect(tLarge).toBeLessThan(Math.max(tSmall * 50, 200));
+    expect(tLarge).toBeLessThan(timingCeiling(tSmall));
   });
 
   it('inbound(name) returns in constant time independent of corpus size, verified the same way as outbound: precomputed map keyed by to-name plus 10 vs 10000 entry timing comparison', () => {
@@ -181,7 +183,7 @@ describe('ac-3: O(1) lookups', () => {
 
     const tSmall = timeManyLookups(() => small.inbound('node_5'));
     const tLarge = timeManyLookups(() => large.inbound('node_5000'));
-    expect(tLarge).toBeLessThan(Math.max(tSmall * 50, 200));
+    expect(tLarge).toBeLessThan(timingCeiling(tSmall));
   });
 
   it('outbound(name) and inbound(name) both return [] for an unknown name without throwing', () => {
@@ -574,6 +576,17 @@ const timeManyLookups = (fn: () => unknown, iterations = 1000): number => {
   const start = performance.now();
   for (let i = 0; i < iterations; i++) fn();
   return performance.now() - start;
+};
+
+/**
+ * Compute a flake-resistant upper bound for the 10-vs-10000 O(1) timing
+ * assertion. We use a 200ms absolute ceiling combined with `tSmall * 50`,
+ * but anchored on `Math.max(tSmall, 1)` so a sub-millisecond `tSmall` that
+ * rounds toward zero on a noisy CI host doesn't collapse the bound.
+ */
+const timingCeiling = (tSmall: number): number => {
+  const safeSmall = Math.max(tSmall, 1);
+  return Math.max(safeSmall * 50, 200);
 };
 
 // Re-export DanglingEdge so the test compiles without an unused-import warning

@@ -199,18 +199,14 @@ export class MemoryGraph {
     }
 
     // Drop edges authored TO `name`. For each, remove the matching entry
-    // from the outbound[edge.from] bucket.
+    // from the outbound[edge.from] bucket. We don't need to maintain
+    // `#supersededBy` per-edge here because the unconditional
+    // `#supersededBy.delete(name)` below clears every entry keyed on `name`
+    // in one shot (all supersedes-inbound edges share that key).
     const inb = this.#inbound.get(name);
     if (inb !== undefined) {
       for (const edge of inb) {
         removeEdgeFromMap(this.#outbound, edge.from, edge);
-        if (edge.type === 'supersedes') {
-          const supers = this.#supersededBy.get(name);
-          if (supers !== undefined) {
-            supers.delete(edge.from);
-            if (supers.size === 0) this.#supersededBy.delete(name);
-          }
-        }
       }
       this.#inbound.delete(name);
     }
