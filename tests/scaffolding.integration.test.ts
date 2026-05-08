@@ -15,7 +15,7 @@
  * declared in the implementation envelope's `untested[]` with reasons.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,15 +31,20 @@ const runMake = (args: string[], timeoutMs = 120_000): SpawnSyncReturns<string> 
   });
 
 describe('ac-8: build pipeline', () => {
-  it('make build produces dist/index.js', () => {
+  // Build once for the whole describe block; both `it`s assert against the
+  // resulting `dist/index.js` rather than re-invoking `make build`.
+  beforeAll(() => {
     const res = runMake(['build']);
-    expect(res.status, res.stderr || res.stdout).toBe(0);
-    expect(existsSync(join(repoRoot, 'dist/index.js'))).toBe(true);
+    if (res.status !== 0) {
+      throw new Error(`make build failed: ${res.stderr || res.stdout}`);
+    }
   }, 180_000);
 
+  it('make build produces dist/index.js', () => {
+    expect(existsSync(join(repoRoot, 'dist/index.js'))).toBe(true);
+  });
+
   it('running `node dist/index.js` after build prints exactly `commonplace` on stdout', () => {
-    const built = runMake(['build']);
-    expect(built.status, built.stderr || built.stdout).toBe(0);
     const res = spawnSync('node', ['dist/index.js'], {
       cwd: repoRoot,
       encoding: 'utf8',
@@ -47,7 +52,7 @@ describe('ac-8: build pipeline', () => {
     });
     expect(res.status).toBe(0);
     expect(res.stdout.trim()).toBe('commonplace');
-  }, 180_000);
+  }, 60_000);
 });
 
 describe('ac-10: required Make targets exit 0', () => {

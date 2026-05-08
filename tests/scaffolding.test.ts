@@ -19,12 +19,43 @@ const read = (rel: string) => readFileSync(join(repoRoot, rel), 'utf8');
 const exists = (rel: string) => existsSync(join(repoRoot, rel));
 const isDir = (rel: string) => exists(rel) && statSync(join(repoRoot, rel)).isDirectory();
 
-const pkg = JSON.parse(read('package.json')) as {
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
-  engines?: Record<string, string>;
-  packageManager?: string;
-  scripts?: Record<string, string>;
+/**
+ * Type guard: true when `v` is a plain object (not null, not an array).
+ * Narrows to `Record<string, unknown>` so callers can read keys without
+ * type assertions.
+ */
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Parse JSON and assert the result is a plain object. The runtime guard does
+ * the narrowing -- no `as` needed.
+ */
+const parseJsonObject = (s: string): Record<string, unknown> => {
+  const v: unknown = JSON.parse(s);
+  if (!isObject(v)) {
+    throw new Error(`expected JSON object, got ${v === null ? 'null' : typeof v}`);
+  }
+  return v;
+};
+
+const asStringRecord = (v: unknown): Record<string, string> | undefined => {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val !== 'string') return undefined;
+    out[k] = val;
+  }
+  return out;
+};
+
+const pkgRaw = parseJsonObject(read('package.json'));
+const pkg = {
+  dependencies: asStringRecord(pkgRaw.dependencies),
+  devDependencies: asStringRecord(pkgRaw.devDependencies),
+  engines: asStringRecord(pkgRaw.engines),
+  packageManager: typeof pkgRaw.packageManager === 'string' ? pkgRaw.packageManager : undefined,
+  scripts: asStringRecord(pkgRaw.scripts),
 };
 
 describe('ac-1: runtime deps', () => {
@@ -101,18 +132,19 @@ describe('ac-5: package.json scripts and Makefile delegation', () => {
 
 describe('ac-6: tsconfig.json', () => {
   // tsconfig may contain comments, but we keep it valid JSON in this repo.
-  const ts = JSON.parse(read('tsconfig.json')) as {
-    compilerOptions?: Record<string, unknown>;
-  };
+  const tsRaw = parseJsonObject(read('tsconfig.json'));
+  const compilerOptions: Record<string, unknown> = isObject(tsRaw.compilerOptions)
+    ? tsRaw.compilerOptions
+    : {};
   it('tsconfig.json sets compilerOptions.strict to true', () => {
-    expect(ts.compilerOptions?.strict).toBe(true);
+    expect(compilerOptions.strict).toBe(true);
   });
   it('tsconfig.json emits ESM (module set to an ESM-compatible value such as NodeNext/ES2022)', () => {
-    const mod = String(ts.compilerOptions?.module ?? '').toLowerCase();
+    const mod = String(compilerOptions.module ?? '').toLowerCase();
     expect(['nodenext', 'node16', 'es2022', 'esnext', 'es2020', 'es2015', 'es6']).toContain(mod);
   });
   it('tsconfig.json sets compilerOptions.target to ES2022', () => {
-    expect(String(ts.compilerOptions?.target ?? '').toLowerCase()).toBe('es2022');
+    expect(String(compilerOptions.target ?? '').toLowerCase()).toBe('es2022');
   });
 });
 
@@ -230,7 +262,7 @@ describe('ac-16: Prettier config', () => {
     expect(exists('.prettierrc')).toBe(true);
     expect(exists('.prettierignore')).toBe(true);
     // .prettierrc may be JSON, JSON5 or YAML. We use JSON in this repo.
-    const parsed = JSON.parse(read('.prettierrc')) as Record<string, unknown>;
+    const parsed = parseJsonObject(read('.prettierrc'));
     expect(typeof parsed).toBe('object');
   });
   it('.prettierignore lists generated artifacts (at minimum dist/ and node_modules/)', () => {
