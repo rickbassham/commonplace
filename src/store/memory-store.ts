@@ -27,7 +27,6 @@
  *
  *   - atomic write-temp+rename, fsync, advisory locks, mtime-based external
  *     rescan -- DAR-923 (multi-process safety).
- *   - graph adjacency / dangling-edge detection -- DAR-926.
  *   - MCP tool wiring -- DAR-919, DAR-928.
  *   - layered user+project memory / scope auto-detection -- DAR-924.
  *   - migration CLI -- DAR-918.
@@ -41,6 +40,7 @@ import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from
 import { join } from 'node:path';
 
 import { contentSha, readMemory, writeMemory, type Memory, type Relation } from './memory.js';
+import { MemoryGraph } from './graph.js';
 import { decodeSidecar, encodeSidecar } from './sidecar.js';
 
 /**
@@ -85,6 +85,14 @@ export interface MemoryStoreOptions {
   dir: string;
   /** Embedder instance whose `modelId` and `dim` define sidecar freshness. */
   embedder: Embedder;
+  /**
+   * Optional in-memory graph index (DAR-926). When supplied, the store
+   * keeps it synchronised with disk: `scan()` calls `graph.rebuild(entries)`,
+   * `save()` calls `graph.add(entry)`, and `delete()` calls `graph.remove(name)`.
+   * When omitted, the store does not maintain a graph -- callers that don't
+   * need adjacency lookups pay no cost.
+   */
+  graph?: MemoryGraph;
 }
 
 /** Result of a {@link MemoryStore.scan} run. */
@@ -131,12 +139,14 @@ export interface SearchHit {
 export class MemoryStore {
   readonly #dir: string;
   readonly #embedder: Embedder;
+  readonly #graph: MemoryGraph | undefined;
   /** The authoritative in-memory entry array. */
   #entries: MemoryEntry[] = [];
 
   public constructor(opts: MemoryStoreOptions) {
     this.#dir = opts.dir;
     this.#embedder = opts.embedder;
+    this.#graph = opts.graph;
   }
 
   /**
@@ -221,6 +231,9 @@ export class MemoryStore {
     }
 
     this.#entries = next;
+    if (this.#graph !== undefined) {
+      this.#graph.rebuild(next);
+    }
     return { loaded: next.length, reembedded };
   }
 
@@ -278,7 +291,7 @@ export class MemoryStore {
     });
     writeFileSync(sidecarPath, buf);
 
-    this.#entries.push({
+    const entry: MemoryEntry = {
       name: memory.name,
       description: memory.description,
       type: memory.type,
@@ -289,7 +302,11 @@ export class MemoryStore {
       contentSha: sha,
       modelId: this.#embedder.modelId,
       dim: this.#embedder.dim,
-    });
+    };
+    this.#entries.push(entry);
+    if (this.#graph !== undefined) {
+      this.#graph.add(entry);
+    }
   }
 
   /**
@@ -316,6 +333,9 @@ export class MemoryStore {
     if (existsSync(mdPath)) unlinkSync(mdPath);
     if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
     this.#entries.splice(idx, 1);
+    if (this.#graph !== undefined) {
+      this.#graph.remove(name);
+    }
   }
 
   /**
