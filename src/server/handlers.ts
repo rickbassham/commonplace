@@ -319,13 +319,10 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       searchOpts.threshold = threshold;
     }
 
-    // Capture totalScanned BEFORE search() so a value that races with a
-    // concurrent writer reflects what the store had at call time. search()
-    // may rescan internally (DAR-923 mtime watch); we want the count the
-    // caller would observe via list(), not a stale pre-rescan figure -- so
-    // we read after the search returns. The rescan is internal-only; on
-    // empty corpora, the embedder fast-path means store.all() already
-    // reflects the latest scan by the time we read.
+    // Reading store.all() after store.search() returns intentionally
+    // captures any rescan store.search performed internally (DAR-923 mtime
+    // watch), so totalScanned reflects the post-rescan view the caller
+    // would observe via list().
     const hits = await store.search(query, searchOpts);
     const totalScanned = store.all().length;
 
