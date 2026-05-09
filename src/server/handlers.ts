@@ -22,7 +22,7 @@
 
 import { join } from 'node:path';
 
-import { MEMORY_TYPES, NAME_PATTERN, type Memory, type MemoryType } from '../store/memory.js';
+import { MEMORY_TYPES, validateName, type Memory, type MemoryType } from '../store/memory.js';
 import type { MemoryStore } from '../store/memory-store.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
@@ -95,23 +95,19 @@ const requireString = (args: Record<string, unknown>, field: string, toolName: s
 };
 
 /**
- * Validate a memory `name` argument: must be a string, must not contain a
- * path separator, must match `^[a-z0-9_]+$`. Errors mention path separators
- * explicitly when the failure is a path separator, and reference the allowed
- * pattern otherwise -- both for parity with `validateName` in
- * `src/store/memory.ts` and to satisfy contract tests.
+ * Validate a memory `name` argument by delegating to `validateName` from
+ * `src/store/memory.ts`. Centralising the format/separator/pattern checks
+ * keeps the handler layer in lockstep with the store: if `NAME_PATTERN`
+ * changes (or the empty-string message is tightened), the handler picks
+ * that up automatically.
+ *
+ * The `requireString` helper still owns the "missing required field"
+ * message because it has tool-specific phrasing the store-level helper
+ * doesn't carry; everything from there onward (non-empty, no path
+ * separator, pattern) is validateName's responsibility.
  */
 const validateMemoryName = (name: string, toolName: string): void => {
-  if (name.includes('/') || name.includes('\\')) {
-    throw new Error(
-      `${toolName}: field \`name\` must not contain a path separator ('/' or '\\\\'); got ${JSON.stringify(name)}`,
-    );
-  }
-  if (!NAME_PATTERN.test(name)) {
-    throw new Error(
-      `${toolName}: field \`name\` must match ^[a-z0-9_]+$ (lowercase letters, digits, underscore); got ${JSON.stringify(name)}`,
-    );
-  }
+  validateName(name, `${toolName}: field \`name\``);
 };
 
 /**
@@ -203,10 +199,9 @@ export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => 
   return async (rawArgs: ToolArguments): Promise<MemoryDeleteResult> => {
     const args = requireArgsObject(rawArgs, 'memory_delete');
     const name = requireString(args, 'name', 'memory_delete');
-    // Note: we deliberately do NOT validate the `name` against the
-    // ^[a-z0-9_]+$ pattern here. Delete must accept any name the user
-    // passes so they can reach an entry whose name slipped past validation
-    // by a different code path; the store still rejects unknown names.
+    // Delete dispatches the raw name; `store.delete` rejects unknown names
+    // with a message containing the offending name (DAR-916), which is
+    // what the ac-2 missing-name test asserts against.
     await store.delete(name);
     return { deleted: name };
   };
