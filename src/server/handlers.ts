@@ -27,6 +27,7 @@ import {
   type MemoryType,
   type Relation,
 } from '../store/memory.js';
+import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchOptions } from '../store/memory-store.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
@@ -73,6 +74,15 @@ const buildSupersededMap = (entries: ReadonlyArray<MemoryEntry>): Map<string, st
   const out = new Map<string, string>();
   for (const entry of entries) {
     for (const target of entry.supersedes) {
+      // Multi-superseder edge case: when two memories both list the same
+      // target in their `supersedes:` we keep the FIRST entry encountered.
+      // "First" means first in `entries` iteration order, which mirrors
+      // `store.all()` -- this reflects file-system/scan order and is NOT
+      // contractually stable across rescans. The AC does not specify a
+      // deterministic tie-breaker; if a stable value becomes important
+      // (e.g. when DAR-930+ exposes graph traversal), pick a tie-break
+      // here (lexicographically smallest superseder name would be the
+      // simplest) rather than relying on iteration order.
       if (!out.has(target)) {
         out.set(target, entry.name);
       }
@@ -506,14 +516,6 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     return { matches, query, totalScanned };
   };
 };
-
-/**
- * Default `limit` applied to `memory_search` matches when the caller omits
- * one. Mirrors the store-level default (DAR-917). Centralised here because
- * the handler now performs its own post-filter slice (DAR-929) instead of
- * relying on the store's default.
- */
-const DEFAULT_SEARCH_LIMIT = 5;
 
 /**
  * Count how many entries in `entries` are superseded according to the map.
