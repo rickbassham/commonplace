@@ -361,6 +361,57 @@ describe('ac-12: matrix on Node 20 and 22', () => {
   });
 });
 
+describe('drift-prevention: .nvmrc Node version is exercised by the CI matrix', () => {
+  // Companion to ac-3 / ac-12. The CI matrix is the source of truth for
+  // which Node majors CI exercises; `.nvmrc` is the local-dev pin. If a
+  // dev bumps `.nvmrc` to a major that the matrix does not cover, CI
+  // would silently drift away from the local-dev environment.
+  // This test asserts the `.nvmrc` major is one of the matrix legs so
+  // local dev and at least one CI leg always agree.
+  it("`.nvmrc`'s Node major appears as a matrix leg in ci.yml (no drift between local-dev pin and CI matrix)", () => {
+    const nvmrcPath = '.nvmrc';
+    expect(exists(nvmrcPath), '.nvmrc must exist as the local-dev Node pin').toBe(true);
+    // .nvmrc is plain text: a single version line (e.g. `20`, `20.10.0`,
+    // `lts/iron`). Extract the leading numeric major if present; non-numeric
+    // entries (`lts/*`) skip the assertion since the matrix uses majors.
+    const nvmrcRaw = read(nvmrcPath).trim();
+    const majorMatch = /^v?(\d+)/.exec(nvmrcRaw);
+    const nvmrcMajor = majorMatch?.[1];
+    if (!nvmrcMajor) {
+      // Non-numeric .nvmrc (e.g. `lts/iron`) -- can't compare against a
+      // numeric matrix. Skip rather than fail; the drift check only
+      // applies when both sides use numeric majors.
+      return;
+    }
+
+    const ci = loadCi();
+    const jobs = ci.jobs;
+    expect(isObject(jobs)).toBe(true);
+    if (!isObject(jobs)) return;
+
+    const matrixMajors: string[] = [];
+    for (const job of Object.values(jobs)) {
+      if (!isObject(job)) continue;
+      const strategy = job.strategy;
+      if (!isObject(strategy)) continue;
+      const matrix = strategy.matrix;
+      if (!isObject(matrix)) continue;
+      for (const v of Object.values(matrix)) {
+        if (!Array.isArray(v)) continue;
+        for (const entry of v) {
+          const m = /^v?(\d+)/.exec(String(entry));
+          if (m?.[1]) matrixMajors.push(m[1]);
+        }
+      }
+    }
+
+    expect(
+      matrixMajors,
+      `expected .nvmrc Node major (${nvmrcMajor}) to appear in the CI matrix; matrix majors found: [${matrixMajors.join(', ')}]`,
+    ).toContain(nvmrcMajor);
+  });
+});
+
 describe('ac-13: setup-branch-protection.sh exists, executable, valid', () => {
   it('`scripts/setup-branch-protection.sh` exists, is executable, and uses `gh api` to call the branch-protection endpoint for `main`', () => {
     expect(exists(protectionScriptPath)).toBe(true);
