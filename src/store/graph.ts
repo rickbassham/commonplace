@@ -132,8 +132,18 @@ export class MemoryGraph {
    * Discard all existing state and rebuild the adjacency from `memories`.
    * Invokes the configured `onDangling` callback once per edge whose `to`
    * does not resolve to a loaded memory.
+   *
+   * Optional `mentions` lets the caller supply pre-extracted mention edges
+   * (DAR-927) that get folded into the graph BEFORE the dangling pass, so a
+   * single `onDangling` invocation reports both authored and
+   * mention-derived dangling edges. Each entry is `{ from, to }` with
+   * `from` referring to a loaded memory and `to` an extracted target name
+   * (which may or may not resolve to a loaded memory).
    */
-  public rebuild(memories: ReadonlyArray<GraphMemory>): void {
+  public rebuild(
+    memories: ReadonlyArray<GraphMemory>,
+    mentions: ReadonlyArray<{ from: string; to: string }> = [],
+  ): void {
     this.#outbound.clear();
     this.#inbound.clear();
     this.#names.clear();
@@ -145,6 +155,9 @@ export class MemoryGraph {
     }
     for (const m of memories) {
       this.#insertEdges(m);
+    }
+    for (const mention of mentions) {
+      this.addMentionsEdge(mention);
     }
     for (const edge of this.detectDangling()) {
       this.#onDangling(edge);
