@@ -167,12 +167,21 @@ export interface ScanResult {
   reembedded: number;
 }
 
+/**
+ * Default value applied to {@link SearchOptions.limit} when the caller omits
+ * one (DAR-917). Exported so consumers that perform their own post-filter
+ * slicing (e.g. the `memory_search` MCP handler in DAR-929) can reference the
+ * same constant rather than re-declaring `5` and silently drifting if the
+ * default ever changes.
+ */
+export const DEFAULT_SEARCH_LIMIT = 5;
+
 /** Options for {@link MemoryStore.search}. All fields are optional. */
 export interface SearchOptions {
   /**
-   * Maximum number of results to return after filtering. Defaults to 5.
-   * Filters (`type`, `threshold`) are applied BEFORE this slice, so `limit`
-   * counts only post-filter matches.
+   * Maximum number of results to return after filtering. Defaults to
+   * {@link DEFAULT_SEARCH_LIMIT}. Filters (`type`, `threshold`) are applied
+   * BEFORE this slice, so `limit` counts only post-filter matches.
    */
   limit?: number;
   /** Restrict results to entries with this {@link Memory.type}. */
@@ -640,7 +649,7 @@ export class MemoryStore {
     if (this.#entries.length === 0) return [];
 
     const queryVec = await this.#embedder.embed(query);
-    const limit = opts.limit ?? 5;
+    const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
 
     const hits: SearchHit[] = [];
     for (const entry of this.#entries) {

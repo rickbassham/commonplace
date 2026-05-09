@@ -134,6 +134,8 @@ describe('ac-2: memory_search handler dispatches to store.search', () => {
     // Round-trip JSON.
     const round = JSON.parse(JSON.stringify(out));
     expect(round).toEqual(out);
+    // The top-level envelope is fixed at three keys; inner match shape is
+    // additive (DAR-929 adds `relations` and the optional `supersededBy`).
     expect(new Set(Object.keys(out))).toEqual(new Set(['matches', 'query', 'totalScanned']));
   });
 
@@ -186,8 +188,10 @@ describe('ac-3: match shape and full-body return', () => {
     expect(m.description).toBe('description for alpha');
     expect(m.body).toBe('BODY-ALPHA');
     expect(typeof m.score).toBe('number');
+    // DAR-929 added `relations` (always present) and an optional
+    // `supersededBy` to the match shape. The five DAR-920 fields remain.
     expect(new Set(Object.keys(m))).toEqual(
-      new Set(['name', 'type', 'description', 'body', 'score']),
+      new Set(['name', 'type', 'description', 'body', 'score', 'relations']),
     );
   });
 
