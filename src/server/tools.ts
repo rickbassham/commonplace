@@ -20,6 +20,14 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
+import { MEMORY_TYPES } from '../store/memory.js';
+import type { MemoryStore } from '../store/memory-store.js';
+import {
+  createMemoryDeleteHandler,
+  createMemoryListHandler,
+  createMemorySaveHandler,
+} from './handlers.js';
+
 /** The exact tool names this server exposes, in registration order. */
 export const TOOL_NAMES = ['memory_search', 'memory_save', 'memory_list', 'memory_delete'] as const;
 
@@ -71,16 +79,42 @@ const notImplemented: ToolHandler = async () => {
 };
 
 /**
- * Default handler map: every tool wired to {@link notImplemented}. Sibling
- * issues replace specific entries in this map (or pass a fully populated
- * map to {@link createServer}) without changing the registration surface.
+ * Options for {@link createDefaultHandlers}.
  */
-export function createDefaultHandlers(): ToolHandlerMap {
+export interface CreateDefaultHandlersOptions {
+  /**
+   * MemoryStore instance to wire the DAR-919 CRUD handlers (memory_save,
+   * memory_list, memory_delete) against. When omitted, all four tools fall
+   * back to the not-implemented stub -- matches the bare scaffold from
+   * DAR-909 so callers that construct a server before the store layer is
+   * available (e.g. early-boot smoke tests) keep working.
+   */
+  store?: MemoryStore;
+}
+
+/**
+ * Default handler map. When a `store` is supplied, the three CRUD tools
+ * (memory_save, memory_list, memory_delete) are wired to the real handlers
+ * from {@link ./handlers}; memory_search remains a not-implemented stub
+ * (sibling DAR-920 owns it). When `store` is omitted, every tool falls back
+ * to the stub -- preserving the DAR-909 baseline for callers that haven't
+ * wired a store yet.
+ */
+export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}): ToolHandlerMap {
+  const { store } = options;
+  if (store === undefined) {
+    return {
+      memory_search: notImplemented,
+      memory_save: notImplemented,
+      memory_list: notImplemented,
+      memory_delete: notImplemented,
+    };
+  }
   return {
     memory_search: notImplemented,
-    memory_save: notImplemented,
-    memory_list: notImplemented,
-    memory_delete: notImplemented,
+    memory_save: createMemorySaveHandler({ store }),
+    memory_list: createMemoryListHandler({ store }),
+    memory_delete: createMemoryDeleteHandler({ store }),
   };
 }
 
@@ -109,43 +143,51 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_save: {
     description:
-      'Save a memory as a markdown file with YAML frontmatter and a derived embedding sidecar.',
+      'Save a memory as a markdown file with YAML frontmatter and a derived embedding sidecar. Refuses to overwrite an existing entry; the contract is delete + save.',
     inputSchema: {
       type: 'object',
       properties: {
-        title: { type: 'string', description: 'Human-readable title for the memory.' },
-        body: { type: 'string', description: 'Markdown body content.' },
-        tags: {
-          type: 'array',
-          description: 'Optional list of tags.',
-          items: { type: 'string' },
+        name: {
+          type: 'string',
+          description:
+            'Memory name. Must match ^[a-z0-9_]+$ and contain no path separators. Becomes the filename stem.',
         },
+        type: {
+          type: 'string',
+          enum: [...MEMORY_TYPES],
+          description: 'One of user | feedback | project | reference.',
+        },
+        description: {
+          type: 'string',
+          description: 'Short human description carried in frontmatter.',
+        },
+        body: { type: 'string', description: 'Markdown body content.' },
       },
-      required: ['title', 'body'],
+      required: ['name', 'type', 'description', 'body'],
     },
   },
   memory_list: {
-    description: 'List saved memories, optionally filtered by tag.',
+    description:
+      'List saved memories. Returns frontmatter-only entries (name, type, description) -- no body.',
     inputSchema: {
       type: 'object',
       properties: {
-        tag: { type: 'string', description: 'Optional tag to filter by.' },
-        limit: {
-          type: 'integer',
-          description: 'Maximum number of memories to return.',
-          minimum: 1,
+        type: {
+          type: 'string',
+          enum: [...MEMORY_TYPES],
+          description: 'Optional filter restricting results to memories of this type.',
         },
       },
     },
   },
   memory_delete: {
-    description: 'Delete a saved memory by id (the markdown filename without extension).',
+    description: 'Delete a saved memory by name. Throws when the name is not present.',
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Memory id (filename stem) to delete.' },
+        name: { type: 'string', description: 'Memory name (filename stem) to delete.' },
       },
-      required: ['id'],
+      required: ['name'],
     },
   },
 };
