@@ -1,11 +1,17 @@
 /**
- * DAR-928 ac-5 unit-level assertion: the bin entry constructs a
+ * DAR-928 ac-5 unit-level assertion: the boot module constructs a
  * `MemoryGraph`, passes it to `MemoryStore({ dir, embedder, graph })`, and
- * passes it to `createDefaultHandlers({ store, graph })`.
+ * passes it to `createDefaultHandlers({ ..., graph })`.
  *
  * We assert structurally on the source text. The end-to-end behavioural
  * proof that the graph is actually wired (i.e. populated by save/scan and
  * available to link/unlink) lives in `server-bin-link.integration.test.ts`.
+ *
+ * Note: as of DAR-924 the wiring lives in `src/bin/boot.ts` rather than
+ * `src/bin/commonplace-mcp.ts` (the bin reduces to a thin shell that
+ * delegates to `bootServer`). The contract is unchanged -- a graph is
+ * constructed and threaded through MemoryStore + createDefaultHandlers --
+ * just relocated.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -13,20 +19,22 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const repoRoot = join(__dirname, '..');
-const binSource = readFileSync(join(repoRoot, 'src/bin/commonplace-mcp.ts'), 'utf8');
+const bootSource = readFileSync(join(repoRoot, 'src/bin/boot.ts'), 'utf8');
 
-describe('DAR-928 ac-5: bin instantiates MemoryGraph and wires it everywhere', () => {
-  it('src/bin/commonplace-mcp.ts constructs a MemoryGraph instance and passes it to new MemoryStore({dir, embedder, graph}) and to createDefaultHandlers({store, graph})', () => {
+describe('DAR-928 ac-5: boot module instantiates MemoryGraph and wires it everywhere', () => {
+  it('src/bin/boot.ts constructs a MemoryGraph instance and passes it to new MemoryStore({dir, embedder, graph}) and to createDefaultHandlers({..., graph})', () => {
     // Imports MemoryGraph.
-    expect(binSource).toMatch(/import\s+\{[^}]*MemoryGraph[^}]*\}\s+from\s+['"]\.\.\/store\/graph/);
+    expect(bootSource).toMatch(
+      /import\s+\{[^}]*MemoryGraph[^}]*\}\s+from\s+['"]\.\.\/store\/graph/,
+    );
 
-    // Constructs a graph instance.
-    expect(binSource).toMatch(/new\s+MemoryGraph\b/);
+    // Constructs at least one graph instance.
+    expect(bootSource).toMatch(/new\s+MemoryGraph\b/);
 
     // Passes graph to MemoryStore.
-    expect(binSource).toMatch(/new\s+MemoryStore\s*\(\s*\{[^}]*\bgraph\b[^}]*\}/s);
+    expect(bootSource).toMatch(/new\s+MemoryStore\s*\(\s*\{[^}]*\bgraph\b[^}]*\}/s);
 
     // Passes graph to createDefaultHandlers.
-    expect(binSource).toMatch(/createDefaultHandlers\s*\(\s*\{[^}]*\bgraph\b[^}]*\}/s);
+    expect(bootSource).toMatch(/createDefaultHandlers\s*\(\s*\{[^}]*\bgraph\b[^}]*\}/s);
   });
 });

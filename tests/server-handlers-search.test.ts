@@ -189,9 +189,10 @@ describe('ac-3: match shape and full-body return', () => {
     expect(m.body).toBe('BODY-ALPHA');
     expect(typeof m.score).toBe('number');
     // DAR-929 added `relations` (always present) and an optional
-    // `supersededBy` to the match shape. The five DAR-920 fields remain.
+    // `supersededBy` to the match shape; DAR-924 added the always-present
+    // `scope` tag identifying which store produced the match.
     expect(new Set(Object.keys(m))).toEqual(
-      new Set(['name', 'type', 'description', 'body', 'score', 'relations']),
+      new Set(['name', 'type', 'description', 'body', 'score', 'relations', 'scope']),
     );
   });
 
@@ -223,9 +224,15 @@ describe('ac-3: match shape and full-body return', () => {
     const handler = createMemorySearchHandler({ store });
     const out = await handler({ query: 'q' });
     if (!isRecord(out)) throw new Error('not record');
-    const matches = out.matches as Array<{ score: number }>;
-    expect(matches[0]?.score).toBe(0.123);
-    expect(matches[1]?.score).toBe(0.988);
+    const matches = out.matches as Array<{ score: number; name: string }>;
+    // DAR-924: the dual-store handler merges hits across stores and re-sorts
+    // descending by score so the merged top-k is ordered correctly. Asserts
+    // are by name (rather than position) so the test is robust to ordering
+    // changes that don't affect the rounding contract under test.
+    const a = matches.find((m) => m.name === 'a');
+    const b = matches.find((m) => m.name === 'b');
+    expect(a?.score).toBe(0.123);
+    expect(b?.score).toBe(0.988);
   });
 });
 

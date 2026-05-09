@@ -24,6 +24,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import * as lockfile from 'proper-lockfile';
@@ -294,12 +295,7 @@ export class MemoryStore {
       // Dir was removed between the write and this stat. Nothing to
       // baseline against -- the next scan will start from scratch.
       // Other errors (EACCES, EIO, ...) propagate.
-      if (
-        err !== null &&
-        typeof err === 'object' &&
-        'code' in err &&
-        err.code === 'ENOENT'
-      ) {
+      if (err !== null && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
         return;
       }
       throw err;
@@ -445,6 +441,13 @@ export class MemoryStore {
 
     const mdPath = join(this.#dir, `${name}.md`);
     const sidecarPath = join(this.#dir, `${name}.embedding`);
+
+    // DAR-924 ac-3: lazily create the memory directory recursively on first
+    // save. mkdir -p is idempotent so existing dirs are a no-op; this lets
+    // the project store auto-create on the first `memory_save({ scope:
+    // 'project' })` against a fresh project root without requiring the bin
+    // to pre-create the dir.
+    await mkdir(this.#dir, { recursive: true });
 
     // DAR-923 ac-3: hold a per-name advisory lock for the entire write
     // (md + embedding). This serialises racing writers on the same name

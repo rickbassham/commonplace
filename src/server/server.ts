@@ -79,6 +79,24 @@ export function createServer(options: CreateServerOptions = {}): Server {
     return { tools: listToolsPayload.tools };
   });
 
+  installCallToolHandler(server, handlers);
+
+  return server;
+}
+
+/**
+ * Install (or re-install) the CallTool request handler on a connected
+ * server with the given handler map. The MCP SDK's `setRequestHandler`
+ * replaces any prior handler for the same method, so this is also the
+ * mechanism by which {@link bootServer} swaps in the dual-store handler
+ * map after the post-connect `roots/list` round-trip completes (DAR-924).
+ *
+ * Exposed separately from {@link createServer} so the boot sequence can
+ * rebuild the handler map once the project store is known without
+ * recreating the server (which would mean re-doing the protocol
+ * handshake).
+ */
+export function installCallToolHandler(server: Server, handlers: ToolHandlerMap): void {
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
     try {
       const value = await callTool(
@@ -105,8 +123,6 @@ export function createServer(options: CreateServerOptions = {}): Server {
       };
     }
   });
-
-  return server;
 }
 
 /** Stringify a handler return value for the CallToolResult text payload. */
