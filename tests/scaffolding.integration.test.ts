@@ -44,14 +44,15 @@ describe('ac-8: build pipeline', () => {
     expect(existsSync(join(repoRoot, 'dist/index.js'))).toBe(true);
   });
 
-  it('running `node dist/index.js` after build prints exactly `commonplace` on stdout', () => {
+  it('running `node dist/index.js` after build prints a usage message and exits non-zero (DAR-918 repurposed the bin into the `commonplace` CLI dispatcher; bare invocation now requires a subcommand)', () => {
     const res = spawnSync('node', ['dist/index.js'], {
       cwd: repoRoot,
       encoding: 'utf8',
       timeout: 30_000,
     });
-    expect(res.status).toBe(0);
-    expect(res.stdout.trim()).toBe('commonplace');
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('commonplace');
+    expect(res.stderr).toContain('migrate');
   }, 60_000);
 });
 

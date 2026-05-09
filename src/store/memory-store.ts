@@ -171,8 +171,68 @@ export interface MemoryStoreOptions {
 export interface ScanResult {
   /** Number of memory entries now loaded into the in-memory array. */
   loaded: number;
-  /** Number of `.md` files for which a sidecar was (re)written this scan. */
+  /**
+   * Number of `.md` files for which a sidecar was (re)written this scan.
+   * This is the union of {@link embedded} (no prior sidecar) and
+   * {@link staleReembedded} (prior sidecar present but stale or corrupt).
+   * Kept as a single combined count for backward compatibility with the
+   * DAR-916 contract; callers that need the breakdown should use the
+   * disjoint fields below.
+   */
   reembedded: number;
+  /**
+   * DAR-918: number of `.md` files whose sidecar was MISSING (or could not
+   * be read at all) and was created during this scan. Disjoint from
+   * {@link staleReembedded}; their sum equals {@link reembedded}.
+   */
+  embedded: number;
+  /**
+   * DAR-918: number of `.md` files whose `.embedding` existed but was stale
+   * (contentSha / modelId / dim mismatch) or corrupt and was rewritten
+   * during this scan. Disjoint from {@link embedded}; their sum equals
+   * {@link reembedded}.
+   */
+  staleReembedded: number;
+  /**
+   * DAR-918: number of `.embedding` files removed because no matching
+   * `<name>.md` existed in the directory (orphan cleanup). When
+   * {@link ScanOptions.dryRun} is true, this is the count of files that
+   * WOULD have been removed -- the orphans are left on disk.
+   */
+  orphaned: number;
+  /**
+   * DAR-918: number of `.md` files whose existing sidecar was already valid
+   * (matching modelId, dim, contentSha) and was reused without touching the
+   * embedder or disk. Disjoint from {@link embedded} and
+   * {@link staleReembedded}; their sum equals the count of `.md` files
+   * processed by this scan. Surfaced directly so callers like the migrate
+   * CLI can report "unchanged" without subtracting from {@link loaded},
+   * which has different semantics across live and dry-run modes (in dry-run,
+   * `loaded` counts only the entries actually placed in the in-memory array
+   * -- i.e. only the fresh ones -- so subtraction would produce zero or
+   * negative numbers).
+   */
+  fresh: number;
+}
+
+/** Options for {@link MemoryStore.scan} (DAR-918). */
+export interface ScanOptions {
+  /**
+   * When `true`, scan() reports what it WOULD do without writing any
+   * sidecars or removing any orphan `.embedding` files. The in-memory entry
+   * array is still populated for entries whose existing sidecars are fresh,
+   * but entries whose sidecars are missing/stale/corrupt are NOT embedded
+   * (so the embedder is not invoked for them) and NOT placed into the
+   * in-memory array -- their bodies are not loaded into a vector. The
+   * returned summary still reports `embedded`, `staleReembedded`,
+   * `reembedded`, and `orphaned` counts as if the work had been done, so
+   * the migrate CLI can produce a faithful summary.
+   *
+   * Defaults to `false` -- the production code paths (bin/boot.ts) always
+   * pass false implicitly. Only the migrate CLI's `--dry-run` mode passes
+   * true.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -320,11 +380,40 @@ export class MemoryStore {
    * Each call rebuilds the in-memory entry array from scratch, so calling
    * scan() repeatedly is safe -- entries that disappeared from disk drop
    * out, and re-added entries reappear.
+   *
+   * # Orphan cleanup (DAR-918)
+   *
+   * After the per-`.md` pass, scan() walks the directory once more and
+   * removes any `.embedding` file whose matching `<name>.md` is missing.
+   * Orphan sidecars are unreachable from the index (the in-memory array
+   * keys off `.md` filenames), so leaving them on disk would silently
+   * accumulate dead weight. The orphan count is reported in the
+   * {@link ScanResult.orphaned} field. In dry-run mode (see
+   * {@link ScanOptions.dryRun}) the count is reported without unlinking.
+   *
+   * # Dry-run (DAR-918)
+   *
+   * Pass `{ dryRun: true }` to make scan() compute the same per-file
+   * action breakdown (`embedded`, `staleReembedded`, `orphaned`) without
+   * invoking the embedder, writing sidecars, or removing orphan files.
+   * The in-memory entry array is populated only for entries whose existing
+   * sidecar was reusable; missing/stale/corrupt entries are skipped (no
+   * vector available without an embed call). Callers that need a fully
+   * populated index after a dry-run should issue a real scan() afterwards.
    */
-  public async scan(): Promise<ScanResult> {
+  public async scan(opts: ScanOptions = {}): Promise<ScanResult> {
+    const dryRun = opts.dryRun === true;
     const mdFiles = listMarkdownFiles(this.#dir);
     const next: MemoryEntry[] = [];
-    let reembedded = 0;
+    // Names of every .md present this scan -- used below to decide which
+    // .embedding files (if any) are orphaned (no matching .md).
+    const liveNames = new Set<string>();
+    for (const filename of mdFiles) {
+      liveNames.add(filename.replace(/\.md$/, ''));
+    }
+    let embedded = 0;
+    let staleReembedded = 0;
+    let fresh = 0;
 
     for (const filename of mdFiles) {
       const mdPath = join(this.#dir, filename);
@@ -334,8 +423,12 @@ export class MemoryStore {
       const sha = contentSha(memory);
 
       let vector: Float32Array | null = null;
+      // Track whether a sidecar was already on disk before this iteration,
+      // so we can distinguish missing (-> embedded) from stale (->
+      // staleReembedded) when a re-embed is required.
+      const sidecarPresent = existsSync(sidecarPath);
 
-      if (existsSync(sidecarPath)) {
+      if (sidecarPresent) {
         // Read the sidecar bytes OUTSIDE the try/catch so that real I/O errors
         // (EACCES, EIO, EMFILE, ENOMEM, ...) propagate to the caller rather
         // than being silently treated as "corrupt -- re-embed". Only the
@@ -358,6 +451,20 @@ export class MemoryStore {
       }
 
       if (vector === null) {
+        // Missing/stale/corrupt sidecar. In a normal scan we embed and
+        // rewrite; in dry-run we count what WOULD have happened and skip
+        // both the embed call and the disk write. The entry is also
+        // omitted from the in-memory array in dry-run because we have no
+        // vector to put in it -- callers that care about the index after
+        // a dry-run should issue a real scan() afterwards.
+        if (sidecarPresent) {
+          staleReembedded += 1;
+        } else {
+          embedded += 1;
+        }
+        if (dryRun) {
+          continue;
+        }
         vector = await this.#embedder.embed(memory.body);
         const buf = encodeSidecar({
           modelId: this.#embedder.modelId,
@@ -369,7 +476,13 @@ export class MemoryStore {
         // helper so a concurrent reader either sees the prior sidecar or
         // the new one, never a partial file. Same-fs guard + fsync apply.
         await atomicWrite(sidecarPath, buf);
-        reembedded += 1;
+      } else {
+        // Sidecar on disk decoded cleanly with matching modelId/dim/
+        // contentSha -- the cached vector is reused, no embed call, no
+        // disk write. Counted as `fresh` so the migrate CLI can report
+        // "unchanged" directly without subtracting from `loaded`, whose
+        // value differs across live and dry-run modes.
+        fresh += 1;
       }
 
       next.push({
@@ -384,6 +497,25 @@ export class MemoryStore {
         modelId: this.#embedder.modelId,
         dim: this.#embedder.dim,
       });
+    }
+
+    // DAR-918: orphan cleanup. An `.embedding` file with no matching
+    // `<name>.md` is unreachable -- nothing in the index can ever resolve
+    // to it -- so the migrate CLI removes it on a real scan. In dry-run we
+    // count without removing.
+    let orphaned = 0;
+    if (existsSync(this.#dir)) {
+      const dirEntries = readdirSync(this.#dir, { withFileTypes: true });
+      for (const ent of dirEntries) {
+        if (!ent.isFile()) continue;
+        if (!ent.name.endsWith('.embedding')) continue;
+        const name = ent.name.replace(/\.embedding$/, '');
+        if (liveNames.has(name)) continue;
+        orphaned += 1;
+        if (!dryRun) {
+          unlinkSync(join(this.#dir, ent.name));
+        }
+      }
     }
 
     this.#entries = next;
@@ -405,7 +537,14 @@ export class MemoryStore {
     // the baseline as 0 -- the first save() will advance the mtime, which
     // we'll observe on the following search() / list().
     this.#lastScanMtimeMs = existsSync(this.#dir) ? statSync(this.#dir).mtimeMs : 0;
-    return { loaded: next.length, reembedded };
+    return {
+      loaded: next.length,
+      reembedded: embedded + staleReembedded,
+      embedded,
+      staleReembedded,
+      orphaned,
+      fresh,
+    };
   }
 
   /**
