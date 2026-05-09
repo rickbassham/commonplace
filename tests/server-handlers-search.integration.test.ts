@@ -139,12 +139,19 @@ const callJSON = async (
 // --------------------------------------------------------------------------
 
 describe('ac-1: createServer wires real DAR-920 memory_search handler', () => {
-  it('ListTools over the in-memory MCP transport still returns exactly four tool names (memory_search, memory_save, memory_list, memory_delete) with non-empty descriptions and an object inputSchema after DAR-920 wiring', async () => {
+  it('ListTools over the in-memory MCP transport still returns the six expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink) with non-empty descriptions and an object inputSchema after DAR-920 wiring', async () => {
     const h = await setupHarness();
     try {
       const result = await h.client.listTools();
       const names = result.tools.map((t) => t.name).sort();
-      expect(names).toEqual(['memory_delete', 'memory_list', 'memory_save', 'memory_search']);
+      expect(names).toEqual([
+        'memory_delete',
+        'memory_link',
+        'memory_list',
+        'memory_save',
+        'memory_search',
+        'memory_unlink',
+      ]);
       for (const tool of result.tools) {
         expect(tool.description?.length ?? 0).toBeGreaterThan(0);
         expect(tool.inputSchema.type).toBe('object');

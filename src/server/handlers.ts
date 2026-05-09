@@ -22,13 +22,16 @@ import { join } from 'node:path';
 
 import {
   MEMORY_TYPES,
+  RELATION_TYPES,
   validateName,
   type Memory,
   type MemoryType,
   type Relation,
+  type RelationType,
 } from '../store/memory.js';
 import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchOptions } from '../store/memory-store.js';
+import type { MemoryGraph } from '../store/graph.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /** Construction options shared by all three handler factories. */
@@ -551,5 +554,145 @@ export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => 
     // what the ac-2 missing-name test asserts against.
     await store.delete(name);
     return { deleted: name };
+  };
+};
+
+/**
+ * Construction options for the DAR-928 link/unlink handler factories. The
+ * `graph` field is optional: when present the store will dispatch
+ * incremental graph updates through it; when absent the handler still
+ * works (the store mutates only its in-memory entries and on-disk
+ * frontmatter).
+ *
+ * In production `graph` MUST be the same instance that was passed to
+ * `MemoryStore({ dir, embedder, graph })`; otherwise a save/delete on the
+ * store would update one graph and a link/unlink on the handler would
+ * update a different one. See `src/bin/commonplace-mcp.ts` for the
+ * canonical wiring.
+ */
+export interface LinkHandlerOptions extends HandlerOptions {
+  /** Optional in-memory graph (DAR-926) used for incremental updates. */
+  graph?: MemoryGraph;
+}
+
+/** Return shape for {@link createMemoryLinkHandler}. */
+export interface MemoryLinkResult {
+  from: string;
+  to: string;
+  type: RelationType | 'supersedes';
+  relations: Relation[];
+  supersedes: string[];
+}
+
+/** Return shape for {@link createMemoryUnlinkHandler}. */
+export interface MemoryUnlinkResult {
+  from: string;
+  to: string;
+  type?: RelationType | 'supersedes';
+  relations: Relation[];
+  supersedes: string[];
+  /** Present only when the requested edge did not exist (no-op case). */
+  note?: string;
+}
+
+/**
+ * Validate the `type` argument shared by `memory_link` and `memory_unlink`.
+ * Accepts the four authored {@link RELATION_TYPES} values plus the special
+ * `'supersedes'` literal. Returns `undefined` when the argument is omitted
+ * (caller decides the per-tool default).
+ */
+const isLinkType = (v: unknown): v is RelationType | 'supersedes' =>
+  typeof v === 'string' &&
+  ((RELATION_TYPES as readonly string[]).includes(v) || v === 'supersedes');
+
+const validateLinkType = (
+  raw: unknown,
+  toolName: string,
+): RelationType | 'supersedes' | undefined => {
+  if (raw === undefined) return undefined;
+  if (!isLinkType(raw)) {
+    throw new Error(
+      `${toolName}: field \`type\` must be one of ${[...RELATION_TYPES, 'supersedes'].join(
+        ', ',
+      )}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
+ * Construct the `memory_link` handler bound to a specific store (and
+ * optional graph). Validates the `{ from, to, type? }` argument shape,
+ * defaults `type` to `'related-to'`, and dispatches to
+ * {@link MemoryStore.linkEdge}, which:
+ *
+ *   - rejects self-edges, missing targets, and duplicate `(to, type)`
+ *     edges before any disk write
+ *   - rewrites the source `.md` through the DAR-923 atomic helper
+ *   - updates the in-memory entry and the optional graph incrementally
+ *     (no scan, no rebuild)
+ *
+ * `'supersedes'` routes to the `supersedes[]` field rather than
+ * `relations[]`, matching the documented tool behaviour.
+ */
+export const createMemoryLinkHandler = (opts: LinkHandlerOptions): ToolHandler => {
+  const { store } = opts;
+  // `opts.graph` is documented as advisory: the store's own graph (set at
+  // construction time) is the one that gets updated. Accepting `graph`
+  // here keeps the factory signature consistent with
+  // `createDefaultHandlers({ store, graph })` -- the bin passes both so
+  // the handler-side wiring stays explicit even though the actual
+  // incremental update goes through the store. See `LinkHandlerOptions`.
+  return async (rawArgs: ToolArguments): Promise<MemoryLinkResult> => {
+    const args = requireArgsObject(rawArgs, 'memory_link');
+    const from = requireString(args, 'from', 'memory_link');
+    validateMemoryName(from, 'memory_link');
+    const to = requireString(args, 'to', 'memory_link');
+    validateMemoryName(to, 'memory_link');
+    const type = validateLinkType(args.type, 'memory_link') ?? 'related-to';
+
+    const result = await store.linkEdge({ from, to, type });
+    return {
+      from,
+      to,
+      type,
+      relations: result.relations,
+      supersedes: result.supersedes,
+    };
+  };
+};
+
+/**
+ * Construct the `memory_unlink` handler. Mirrors
+ * {@link createMemoryLinkHandler}: validates `{ from, to, type? }`, then
+ * dispatches to {@link MemoryStore.unlinkEdge}.
+ *
+ * When `type` is omitted, the store removes every edge from -> to
+ * regardless of type. When the requested edge is not present, the store
+ * returns a `note` describing the no-op and we propagate it on the
+ * response so the MCP client can surface "nothing to unlink" without
+ * having to interpret an error.
+ */
+export const createMemoryUnlinkHandler = (opts: LinkHandlerOptions): ToolHandler => {
+  const { store } = opts;
+  // See `createMemoryLinkHandler` -- `opts.graph` is advisory.
+  return async (rawArgs: ToolArguments): Promise<MemoryUnlinkResult> => {
+    const args = requireArgsObject(rawArgs, 'memory_unlink');
+    const from = requireString(args, 'from', 'memory_unlink');
+    validateMemoryName(from, 'memory_unlink');
+    const to = requireString(args, 'to', 'memory_unlink');
+    validateMemoryName(to, 'memory_unlink');
+    const type = validateLinkType(args.type, 'memory_unlink');
+
+    const result = await store.unlinkEdge({ from, to, type });
+    const out: MemoryUnlinkResult = {
+      from,
+      to,
+      relations: result.relations,
+      supersedes: result.supersedes,
+    };
+    if (type !== undefined) out.type = type;
+    if (result.note !== undefined) out.note = result.note;
+    return out;
   };
 };
