@@ -56,9 +56,10 @@ The project store is selected by the first matching step in this list:
   The error message names the offending model id.
 - `COMMONPLACE_DEFAULT_LIMIT` -- default top-k for `memory_search` when
   the caller omits `limit`. Default: `5`. Must be a positive integer
-  when set; invalid values (non-integer, negative, NaN, fractional)
-  cause the bin to exit at boot with a stderr message naming the
-  offending value rather than silently coercing.
+  when set; any value that is not a positive integer (non-numeric text,
+  zero, negative, fractional, `NaN`, `Infinity`) causes the bin to exit
+  at boot with a stderr message naming the offending value rather than
+  silently coercing.
 
 ## Memory format
 

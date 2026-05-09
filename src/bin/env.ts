@@ -86,10 +86,12 @@ export function resolveDefaultLimit(env: NodeJS.ProcessEnv): number {
   if (typeof raw !== 'string' || raw.length === 0) {
     return DEFAULT_LIMIT;
   }
-  // `Number()` returns NaN for non-numeric strings; we then fall through to
-  // the integer / sign checks for a single error path.
+  // `Number()` returns NaN for non-numeric strings; `Number.isInteger`
+  // rejects NaN and +/-Infinity along with fractional values, so a single
+  // integer + sign check covers all the invalid-input shapes we want to
+  // surface (non-numeric text, NaN, Infinity, fractional, zero, negative).
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+  if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${ENV_DEFAULT_LIMIT} must be a positive integer; got ${JSON.stringify(raw)}`);
   }
   return parsed;
