@@ -1,29 +1,27 @@
 /**
- * DAR-919 MCP CRUD handlers: `memory_save`, `memory_list`, `memory_delete`.
+ * MCP tool handlers for the four memory tools.
  *
- * These are thin handlers over {@link MemoryStore} (DAR-916). Each handler
- * validates its arguments at entry, dispatches to the corresponding store
- * method, and returns a JSON-serialisable shape that the MCP server's
- * CallToolRequest dispatcher (in `./server.ts`) wraps in a single text
- * content block.
+ * - DAR-919 wired the CRUD handlers (`memory_save`, `memory_list`,
+ *   `memory_delete`).
+ * - DAR-920 wires the search handler (`memory_search`).
+ *
+ * Each handler validates its arguments at entry, dispatches to the
+ * corresponding {@link MemoryStore} method, and returns a JSON-serialisable
+ * shape that the MCP server's CallToolRequest dispatcher (in `./server.ts`)
+ * wraps in a single text content block.
  *
  * Validation is deliberately manual rather than via a schema library --
  * the contract envelope leaves the choice to the implementer, manual
  * validation has zero new dependencies, and the rejection messages are
  * tailored to name the offending field. Error messages from the store
- * layer (DAR-916 / DAR-923) are passed through unchanged so they keep
- * mentioning the offending name.
- *
- * Scope (DAR-919): the three CRUD handlers above. `memory_search` is
- * still owned by sibling DAR-920 and remains wired to the not-implemented
- * stub from `./tools.ts`. Argument shapes match the inputSchema entries
- * tightened in the same module.
+ * layer (DAR-916 / DAR-917 / DAR-923) are passed through unchanged so they
+ * keep mentioning the offending name.
  */
 
 import { join } from 'node:path';
 
 import { MEMORY_TYPES, validateName, type Memory, type MemoryType } from '../store/memory.js';
-import type { MemoryStore } from '../store/memory-store.js';
+import type { MemoryStore, SearchOptions } from '../store/memory-store.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /** Construction options shared by all three handler factories. */
@@ -54,6 +52,35 @@ export interface MemoryListResult {
 /** Return shape for {@link createMemoryDeleteHandler}. */
 export interface MemoryDeleteResult {
   deleted: string;
+}
+
+/** A single match in the {@link MemorySearchResult} envelope. */
+export interface MemorySearchMatch {
+  name: string;
+  type: MemoryType;
+  description: string;
+  /**
+   * Full memory body verbatim. Per DAR-920 ac-3 we never truncate, summarise,
+   * or otherwise transform the body -- the caller gets exactly what was
+   * persisted, so a follow-up read is unnecessary.
+   */
+  body: string;
+  /** Cosine similarity from {@link MemoryStore.search}, rounded to 3 decimals. */
+  score: number;
+}
+
+/** Return shape for {@link createMemorySearchHandler}. */
+export interface MemorySearchResult {
+  matches: MemorySearchMatch[];
+  /** Echoes the input query verbatim (no trimming, no lowercasing). */
+  query: string;
+  /**
+   * Number of entries the store considered for this call -- equal to
+   * `store.all().length` at call time, regardless of how many were filtered
+   * out by `type` / `threshold` / `limit`. Lets callers reason about whether
+   * an empty result reflects a tight filter or an empty corpus.
+   */
+  totalScanned: number;
 }
 
 /**
@@ -184,6 +211,130 @@ export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
         description: e.description,
       })),
     };
+  };
+};
+
+/**
+ * Validate a `limit` argument. Per DAR-917 the search store layer delegates
+ * limit sanitisation to the MCP layer; we accept positive integers, reject
+ * everything else (NaN, negatives, non-integers, non-numbers) with a message
+ * naming the field. `undefined` is allowed -- the handler picks
+ * {@link DEFAULT_SEARCH_LIMIT}.
+ */
+const validateLimit = (raw: unknown, toolName: string): number | undefined => {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    throw new Error(
+      `${toolName}: field \`limit\` must be a positive integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  if (!Number.isInteger(raw) || raw <= 0) {
+    throw new Error(
+      `${toolName}: field \`limit\` must be a positive integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
+ * Validate a `threshold` argument. Optional; when present must be a finite
+ * number (no further bound -- the store's cosine range is `[-1, 1]` but we
+ * don't enforce that here, the store does).
+ */
+const validateThreshold = (raw: unknown, toolName: string): number | undefined => {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    throw new Error(
+      `${toolName}: field \`threshold\` must be a finite number; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
+ * Round a cosine similarity score to 3 decimal places per the documented
+ * response shape. We multiply, round, divide rather than using `toFixed` so
+ * the return value stays a `number` (toFixed returns a string and the test
+ * matrix asserts JSON-numeric scores).
+ *
+ * Note: floating-point representation of 0.001 is not exact, so the rounded
+ * value is the closest IEEE-754 double to the mathematical 3-decimal value.
+ * Callers that need to display the score with exactly three digits should
+ * format on display, not depend on the byte representation here.
+ */
+const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
+
+/**
+ * Construct the `memory_search` handler bound to a specific store. Validates
+ * the `{ query, limit?, type?, threshold? }` argument shape, dispatches to
+ * `store.search()`, and serialises the {@link SearchHit}s into the
+ * documented `{ matches, query, totalScanned }` envelope.
+ *
+ * Why this shape:
+ *
+ *   - `matches[].body` is the full memory body verbatim per ac-3, so the
+ *     caller does not need a follow-up `memory_list` + read to act on a
+ *     hit.
+ *   - `score` is rounded to 3 decimals (ac-3) -- enough resolution to rank
+ *     ties but compact enough for in-context display.
+ *   - `query` echoes the input verbatim (ac-6) so the caller can pair the
+ *     response with the original prompt without round-tripping their own
+ *     state.
+ *   - `totalScanned` reflects the entries the store actually considered
+ *     (ac-6) -- distinct from `matches.length`, which can be lower because
+ *     of `type` / `threshold` / `limit`.
+ *
+ * Limit sanitisation is the MCP tool layer's responsibility per DAR-917; we
+ * reject NaN / negative / non-integer `limit` values rather than coercing.
+ *
+ * Out of scope (per the DAR-920 contract envelope): graph `relations` on
+ * matches and default-exclude superseded (DAR-929), one-hop expansion
+ * (DAR-930), connectedness boost (DAR-931), env-var resolution for
+ * `COMMONPLACE_DEFAULT_LIMIT` (DAR-913), reranking, and snippet generation.
+ */
+export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
+  const { store } = opts;
+  return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
+    const args = requireArgsObject(rawArgs, 'memory_search');
+    const query = requireString(args, 'query', 'memory_search');
+
+    // Build SearchOptions with only the fields the caller actually
+    // supplied. Per DAR-920's contract test "omits unset SearchOptions
+    // fields when the corresponding tool argument is absent", we must not
+    // inject defaults at this layer -- the store's internal default of 5
+    // (DAR-917) takes effect when `limit` is omitted. Once DAR-913 lands
+    // env-var resolution for `COMMONPLACE_DEFAULT_LIMIT`, that resolver
+    // will own the override; re-reading the env var here would duplicate
+    // its scope.
+    const searchOpts: SearchOptions = {};
+    const limit = validateLimit(args.limit, 'memory_search');
+    if (limit !== undefined) {
+      searchOpts.limit = limit;
+    }
+    if (args.type !== undefined) {
+      searchOpts.type = validateMemoryType(args.type, 'memory_search');
+    }
+    const threshold = validateThreshold(args.threshold, 'memory_search');
+    if (threshold !== undefined) {
+      searchOpts.threshold = threshold;
+    }
+
+    // Reading store.all() after store.search() returns intentionally
+    // captures any rescan store.search performed internally (DAR-923 mtime
+    // watch), so totalScanned reflects the post-rescan view the caller
+    // would observe via list().
+    const hits = await store.search(query, searchOpts);
+    const totalScanned = store.all().length;
+
+    const matches: MemorySearchMatch[] = hits.map((hit) => ({
+      name: hit.memory.name,
+      type: hit.memory.type,
+      description: hit.memory.description,
+      body: hit.memory.body,
+      score: roundScore(hit.score),
+    }));
+
+    return { matches, query, totalScanned };
   };
 };
 

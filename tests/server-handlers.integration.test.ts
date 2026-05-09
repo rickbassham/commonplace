@@ -138,12 +138,17 @@ describe('ac-1: createServer wires real DAR-919 handlers', () => {
     }
   });
 
-  it("memory_search remains wired to the not-implemented stub (sibling DAR-920 owns it); calling memory_search through the transport still yields an error containing 'not implemented'", async () => {
+  it('memory_search is wired to the real DAR-920 handler when a store is supplied; calling it through the transport returns a non-error CallToolResult whose payload has the documented `{ matches, query, totalScanned }` envelope', async () => {
     const h = await setupHarness();
     try {
       const result = await callJSON(h.client, 'memory_search', { query: 'x' });
-      expect(result.isError).toBe(true);
-      expect(result.text).toContain('not implemented');
+      expect(result.isError).toBe(false);
+      expect(result.text).not.toContain('not implemented');
+      const parsed: unknown = JSON.parse(result.text);
+      if (!isRecord(parsed)) throw new Error('parsed not object');
+      expect(Array.isArray(parsed.matches)).toBe(true);
+      expect(parsed.query).toBe('x');
+      expect(typeof parsed.totalScanned).toBe('number');
     } finally {
       await h.close();
     }

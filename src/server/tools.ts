@@ -26,6 +26,7 @@ import {
   createMemoryDeleteHandler,
   createMemoryListHandler,
   createMemorySaveHandler,
+  createMemorySearchHandler,
 } from './handlers.js';
 
 /** The exact tool names this server exposes, in registration order. */
@@ -93,12 +94,11 @@ export interface CreateDefaultHandlersOptions {
 }
 
 /**
- * Default handler map. When a `store` is supplied, the three CRUD tools
- * (memory_save, memory_list, memory_delete) are wired to the real handlers
- * from {@link ./handlers}; memory_search remains a not-implemented stub
- * (sibling DAR-920 owns it). When `store` is omitted, every tool falls back
- * to the stub -- preserving the DAR-909 baseline for callers that haven't
- * wired a store yet.
+ * Default handler map. When a `store` is supplied, all four tools are wired
+ * to the real handlers from {@link ./handlers} (memory_search via DAR-920,
+ * the three CRUD tools via DAR-919). When `store` is omitted, every tool
+ * falls back to the not-implemented stub -- preserving the DAR-909 baseline
+ * for callers that haven't wired a store yet (e.g. early-boot smoke tests).
  */
 export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}): ToolHandlerMap {
   const { store } = options;
@@ -111,7 +111,7 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     };
   }
   return {
-    memory_search: notImplemented,
+    memory_search: createMemorySearchHandler({ store }),
     memory_save: createMemorySaveHandler({ store }),
     memory_list: createMemoryListHandler({ store }),
     memory_delete: createMemoryDeleteHandler({ store }),
@@ -127,15 +127,25 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
 const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['inputSchema'] }> = {
   memory_search: {
     description:
-      'Semantic search over saved memories. Returns the top-k matches by cosine similarity against the embedding index.',
+      'Semantic search over saved memories. Returns the top-k matches by cosine similarity against the embedding index, with full memory bodies inline so the caller does not need a follow-up read.',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Natural-language search query.' },
         limit: {
           type: 'integer',
-          description: 'Maximum number of results to return.',
+          description: 'Maximum number of results to return. Defaults to 5.',
           minimum: 1,
+        },
+        type: {
+          type: 'string',
+          enum: [...MEMORY_TYPES],
+          description: 'Optional filter restricting results to memories of this type.',
+        },
+        threshold: {
+          type: 'number',
+          description:
+            'Optional minimum cosine similarity for an entry to appear in results. Cosine range is [-1, 1].',
         },
       },
       required: ['query'],

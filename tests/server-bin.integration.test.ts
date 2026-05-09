@@ -168,13 +168,20 @@ describe('DAR-919 bin integration: spawned bin with real Embedder + MemoryStore'
     expect(finalListed.memories).toEqual([]);
   }, 120_000);
 
-  it('memory_search returns not-implemented (DAR-920 owns the implementation)', async () => {
+  it('memory_search is wired to the real DAR-920 handler in the spawned bin: a query against an empty memory dir returns a non-error CallToolResult whose payload is `{ matches: [], query: <input>, totalScanned: 0 }`', async () => {
     const result = await client.callTool({
       name: 'memory_search',
       arguments: { query: 'anything' },
     });
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeFalsy();
     const text = firstTextContent(result.content);
-    expect(text).toMatch(/not implemented/i);
+    expect(text).not.toMatch(/not implemented/i);
+    const parsed: unknown = JSON.parse(text);
+    if (!isObject(parsed)) {
+      throw new Error(`memory_search payload is not an object: ${text}`);
+    }
+    expect(parsed.matches).toEqual([]);
+    expect(parsed.query).toBe('anything');
+    expect(parsed.totalScanned).toBe(0);
   });
 });
