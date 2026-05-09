@@ -30,14 +30,87 @@ import {
   type RelationType,
 } from '../store/memory.js';
 import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
-import type { MemoryEntry, MemoryStore, SearchOptions } from '../store/memory-store.js';
+import type { MemoryEntry, MemoryStore, SearchHit, SearchOptions } from '../store/memory-store.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
-/** Construction options shared by all handler factories. */
+/**
+ * The two store scopes the server can address (DAR-924).
+ *
+ * - `'user'` -- the user-level store (always loaded). Personal rules,
+ *   preferences, hard feedback. Located under `COMMONPLACE_USER_DIR` (or
+ *   `~/.commonplace/memory`).
+ * - `'project'` -- the project-level store (loaded only when a project root
+ *   is detected via env / roots / cwd). Located under
+ *   `COMMONPLACE_PROJECT_DIR` or `<project-root>/.commonplace/memory`.
+ */
+export type Scope = 'user' | 'project';
+
+/** The two scope literals as a constant array, useful for enum schemas. */
+export const SCOPES: readonly Scope[] = ['user', 'project'] as const;
+
+/**
+ * Construction options shared by all handler factories. Two shapes are
+ * accepted:
+ *
+ *   - `{ store }` -- legacy single-store form (DAR-919). Treated as
+ *     user-only mode: `store` becomes the user store and no project store
+ *     is wired. Existing callers (and tests) that pass this shape continue
+ *     to work; saves with `scope: 'project'` will be rejected.
+ *
+ *   - `{ userStore, projectStore? }` -- DAR-924 dual-store form. The user
+ *     store is required; the project store is omitted in user-only mode.
+ *
+ * Mixing both fields (e.g. `{ store, userStore }`) is not supported -- the
+ * `userStore` field wins so the new shape can be adopted incrementally.
+ */
 export interface HandlerOptions {
-  /** The MemoryStore instance the handler will dispatch to. */
-  store: MemoryStore;
+  /**
+   * Legacy single-store option. Treated as the user store when supplied
+   * without a `userStore` field.
+   *
+   * @deprecated Prefer `userStore` (and optional `projectStore`).
+   */
+  store?: MemoryStore;
+  /** The user-level memory store. Always required when `store` is unset. */
+  userStore?: MemoryStore;
+  /** The project-level memory store, when one was detected. */
+  projectStore?: MemoryStore;
 }
+
+/**
+ * Resolve {@link HandlerOptions} into the canonical
+ * `{ userStore, projectStore? }` pair the handler bodies expect. Throws
+ * when neither `store` nor `userStore` was supplied -- handlers cannot run
+ * without at least the user store.
+ */
+const resolveStores = (
+  opts: HandlerOptions,
+  toolName: string,
+): { userStore: MemoryStore; projectStore: MemoryStore | undefined } => {
+  const userStore = opts.userStore ?? opts.store;
+  if (userStore === undefined) {
+    throw new Error(`${toolName}: handler factory requires a userStore (or legacy 'store') option`);
+  }
+  return { userStore, projectStore: opts.projectStore };
+};
+
+/**
+ * Validate the optional `scope` argument. `undefined` is allowed and
+ * returns `undefined`; anything else must be one of the two literals in
+ * {@link SCOPES}. Errors list the allowed values.
+ */
+const isScope = (v: unknown): v is Scope =>
+  typeof v === 'string' && (SCOPES as readonly string[]).includes(v);
+
+const validateScope = (raw: unknown, toolName: string): Scope | undefined => {
+  if (raw === undefined) return undefined;
+  if (!isScope(raw)) {
+    throw new Error(
+      `${toolName}: field \`scope\` must be one of ${SCOPES.join(', ')}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
 
 /** Return shape for {@link createMemorySaveHandler}. */
 export interface MemorySaveResult {
@@ -47,6 +120,8 @@ export interface MemorySaveResult {
     description: string;
   };
   path: string;
+  /** Which store the memory was written to (DAR-924). */
+  scope: Scope;
 }
 
 /** Return shape for {@link createMemoryListHandler}. */
@@ -55,6 +130,8 @@ export interface MemoryListResult {
     name: string;
     type: MemoryType;
     description: string;
+    /** Which store this entry came from (DAR-924). */
+    scope: Scope;
   }>;
 }
 
@@ -96,6 +173,8 @@ const buildSupersededMap = (entries: ReadonlyArray<MemoryEntry>): Map<string, st
 /** Return shape for {@link createMemoryDeleteHandler}. */
 export interface MemoryDeleteResult {
   deleted: string;
+  /** Which store the memory was removed from (DAR-924). */
+  scope: Scope;
 }
 
 /** A single match in the {@link MemorySearchResult} envelope. */
@@ -124,6 +203,11 @@ export interface MemorySearchMatch {
    * surfacing them is deferred to the v0.2 `memory_graph` tool (DAR-930+).
    */
   relations: Relation[];
+  /**
+   * Which store produced this match (DAR-924). Always present so callers
+   * can disambiguate same-name entries across stores.
+   */
+  scope: Scope;
   /**
    * When `includeSuperseded: true` AND this memory is superseded by another
    * memory, the name of the superseding memory. Otherwise the field is
@@ -227,7 +311,7 @@ const validateMemoryType = (raw: unknown, toolName: string): MemoryType => {
  * into the store's internals.
  */
 export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
-  const { store } = opts;
+  const { userStore, projectStore } = resolveStores(opts, 'memory_save');
   return async (rawArgs: ToolArguments): Promise<MemorySaveResult> => {
     const args = requireArgsObject(rawArgs, 'memory_save');
     const name = requireString(args, 'name', 'memory_save');
@@ -235,16 +319,25 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
     const type = validateMemoryType(args.type, 'memory_save');
     const description = requireString(args, 'description', 'memory_save');
     const body = requireString(args, 'body', 'memory_save');
+    const scope = validateScope(args.scope, 'memory_save') ?? 'user';
 
+    if (scope === 'project' && projectStore === undefined) {
+      throw new Error(
+        `memory_save: scope='project' requires a project store, but none was detected -- the server is running in user-only mode (no COMMONPLACE_PROJECT_DIR, no roots/list root, no cwd .commonplace/memory marker)`,
+      );
+    }
+
+    const target = scope === 'project' ? projectStore! : userStore;
     const memory: Memory = { name, type, description, body };
-    await store.save(memory);
+    await target.save(memory);
 
     // Path is reconstructed here rather than returned by the store so the
     // store's on-disk layout stays an implementation detail.
-    const path = join(store.dir, `${name}.md`);
+    const path = join(target.dir, `${name}.md`);
     return {
       saved: { name, type, description },
       path,
+      scope,
     };
   };
 };
@@ -265,7 +358,7 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
  * callers can scan the corpus consistently across both tools.
  */
 export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
-  const { store } = opts;
+  const { userStore, projectStore } = resolveStores(opts, 'memory_list');
   return async (rawArgs: ToolArguments): Promise<MemoryListResult> => {
     const args = requireArgsObject(rawArgs, 'memory_list');
     let filter: MemoryType | undefined;
@@ -274,22 +367,38 @@ export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
     }
     const includeSuperseded =
       validateBoolean(args.includeSuperseded, 'includeSuperseded', 'memory_list') ?? false;
+    const scope = validateScope(args.scope, 'memory_list');
 
-    const entries = await store.list();
-    let candidates = filter === undefined ? entries : entries.filter((e) => e.type === filter);
-    if (!includeSuperseded) {
-      // Build the superseded map from the (post-rescan) entry list; only
-      // entries that appear as a target in some loaded memory's
-      // `supersedes[]` are filtered out. Building from the same array we
-      // filter avoids any race between rescan and filter.
-      const supersededMap = buildSupersededMap(entries);
-      candidates = candidates.filter((e) => !supersededMap.has(e.name));
+    // Build the per-scope candidate lists. Each store's `supersedes` filter
+    // is applied within its own corpus -- supersede is a per-store relation
+    // (a project memory does not supersede a user memory and vice versa).
+    const collected: Array<{ entry: MemoryEntry; scope: Scope }> = [];
+
+    const collectFrom = async (s: MemoryStore, sc: Scope): Promise<void> => {
+      const entries = await s.list();
+      let candidates = filter === undefined ? entries : entries.filter((e) => e.type === filter);
+      if (!includeSuperseded) {
+        const supersededMap = buildSupersededMap(entries);
+        candidates = candidates.filter((e) => !supersededMap.has(e.name));
+      }
+      for (const entry of candidates) {
+        collected.push({ entry, scope: sc });
+      }
+    };
+
+    if (scope === undefined || scope === 'user') {
+      await collectFrom(userStore, 'user');
     }
+    if ((scope === undefined || scope === 'project') && projectStore !== undefined) {
+      await collectFrom(projectStore, 'project');
+    }
+
     return {
-      memories: candidates.map((e) => ({
-        name: e.name,
-        type: e.type,
-        description: e.description,
+      memories: collected.map(({ entry, scope: sc }) => ({
+        name: entry.name,
+        type: entry.type,
+        description: entry.description,
+        scope: sc,
       })),
     };
   };
@@ -414,7 +523,7 @@ const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
  * and surfacing `mentions` edges in match.relations.
  */
 export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
-  const { store } = opts;
+  const { userStore, projectStore } = resolveStores(opts, 'memory_search');
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
     const query = requireString(args, 'query', 'memory_search');
@@ -427,77 +536,97 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // env-var resolution for `COMMONPLACE_DEFAULT_LIMIT`, that resolver
     // will own the override; re-reading the env var here would duplicate
     // its scope.
-    const searchOpts: SearchOptions = {};
     const callerLimit = validateLimit(args.limit, 'memory_search');
-    if (callerLimit !== undefined) {
-      searchOpts.limit = callerLimit;
-    }
-    if (args.type !== undefined) {
-      searchOpts.type = validateMemoryType(args.type, 'memory_search');
-    }
+    const callerType =
+      args.type !== undefined ? validateMemoryType(args.type, 'memory_search') : undefined;
     const threshold = validateThreshold(args.threshold, 'memory_search');
-    if (threshold !== undefined) {
-      searchOpts.threshold = threshold;
-    }
     const includeSuperseded =
       validateBoolean(args.includeSuperseded, 'includeSuperseded', 'memory_search') ?? false;
+    const scope = validateScope(args.scope, 'memory_search');
 
-    // DAR-929: when filtering out superseded entries the post-filter set
-    // could be smaller than the caller's `limit`. The store does not know
-    // about supersedes, so it slices to `limit` first; we enlarge the
-    // store-side limit so enough candidates survive the filter.
-    //
-    // The contract for the DAR-920 "omits unset SearchOptions fields"
-    // test must continue to hold: when the caller passes no `limit` we do
-    // NOT inject one for the include-superseded path. For the filter
-    // path, we need *something* large enough to give the supersede pass
-    // headroom, so we set a corpus-bound ceiling -- only when
-    // `includeSuperseded` is false AND the store's default would be too
-    // small to clear the filter.
-    if (!includeSuperseded) {
-      const corpusSize = store.all().length;
-      const desired = callerLimit ?? DEFAULT_SEARCH_LIMIT;
-      // Headroom = full corpus, so even if every other entry is superseded
-      // we still surface `desired` non-superseded matches (when they exist).
-      const headroom = Math.max(desired, corpusSize);
-      // Only override the store-side limit when the corpus is bigger than
-      // the headroom we'd have used naturally.
-      if (callerLimit === undefined && corpusSize > DEFAULT_SEARCH_LIMIT) {
-        searchOpts.limit = headroom;
-      } else if (callerLimit !== undefined && headroom > callerLimit) {
-        searchOpts.limit = headroom;
+    // Decide which stores to query based on the scope filter. When scope is
+    // omitted, query both (when both exist).
+    const targets: Array<{ store: MemoryStore; scope: Scope }> = [];
+    if (scope === undefined || scope === 'user') {
+      targets.push({ store: userStore, scope: 'user' });
+    }
+    if ((scope === undefined || scope === 'project') && projectStore !== undefined) {
+      targets.push({ store: projectStore, scope: 'project' });
+    }
+
+    // For each target store, build per-store SearchOptions. We DO NOT pass
+    // `limit` to the store when the caller omitted it (DAR-920 contract
+    // "omits unset SearchOptions fields"). When the caller did set a limit,
+    // we pass it to each store independently -- the merged top-k slice
+    // happens after we receive hits from both stores. We intentionally
+    // request `limit` per store so the merged set has enough headroom even
+    // if all top-`limit` hits come from one store; the merged slice then
+    // applies the caller's limit again.
+    const allHits: Array<{ hit: SearchHit; scope: Scope }> = [];
+    let totalScanned = 0;
+
+    // Per-scope superseded map cache. Built once per target store during the
+    // search loop and reused in the projection loop below for `supersededBy`
+    // lookups -- avoids rebuilding the same map per result match (f-1).
+    const supersededByScope = new Map<Scope, ReadonlyMap<string, string>>();
+
+    for (const target of targets) {
+      const searchOpts: SearchOptions = {};
+      if (callerLimit !== undefined) {
+        searchOpts.limit = callerLimit;
+      }
+      if (callerType !== undefined) {
+        searchOpts.type = callerType;
+      }
+      if (threshold !== undefined) {
+        searchOpts.threshold = threshold;
+      }
+
+      // Headroom for the supersede filter (DAR-929 carried forward): when
+      // not including superseded entries, enlarge the store-side limit so
+      // the supersede pass leaves enough candidates.
+      if (!includeSuperseded) {
+        const corpusSize = target.store.all().length;
+        const desired = callerLimit ?? DEFAULT_SEARCH_LIMIT;
+        const headroom = Math.max(desired, corpusSize);
+        if (callerLimit === undefined && corpusSize > DEFAULT_SEARCH_LIMIT) {
+          searchOpts.limit = headroom;
+        } else if (callerLimit !== undefined && headroom > callerLimit) {
+          searchOpts.limit = headroom;
+        }
+      }
+
+      const hits = await target.store.search(query, searchOpts);
+      const allEntries = target.store.all();
+      const supersededMap = buildSupersededMap(allEntries);
+      supersededByScope.set(target.scope, supersededMap);
+
+      // Per-store totalScanned contribution. Mirrors the DAR-929 semantics
+      // (post-supersede when not including superseded).
+      const storeScanned = includeSuperseded
+        ? allEntries.length
+        : allEntries.length - countSupersededInCorpus(allEntries, supersededMap);
+      totalScanned += storeScanned;
+
+      const filteredHits = includeSuperseded
+        ? hits
+        : hits.filter((hit) => !supersededMap.has(hit.memory.name));
+
+      for (const hit of filteredHits) {
+        allHits.push({ hit, scope: target.scope });
       }
     }
 
-    // Reading store.all() after store.search() returns intentionally
-    // captures any rescan store.search performed internally (DAR-923 mtime
-    // watch), so subsequent reads of `all()` reflect the post-rescan view
-    // the caller would observe via list().
-    const hits = await store.search(query, searchOpts);
-    const allEntries = store.all();
-    const supersededMap = buildSupersededMap(allEntries);
-
-    // totalScanned is the size of the corpus the store considered AFTER the
-    // supersede filter (when not including superseded). When including, we
-    // report the full corpus. This mirrors the contract test for ac-2.
-    const totalScanned = includeSuperseded
-      ? allEntries.length
-      : allEntries.length - countSupersededInCorpus(allEntries, supersededMap);
-
-    const filteredHits = includeSuperseded
-      ? hits
-      : hits.filter((hit) => !supersededMap.has(hit.memory.name));
+    // Merge: sort by descending score; ties preserve insertion order (which
+    // mirrors the per-store iteration order above -- user before project
+    // when both are queried). `Array.prototype.sort` is stable in V8 / per
+    // spec from ES2019, so this is well-defined.
+    allHits.sort((a, b) => b.hit.score - a.hit.score);
 
     const sliceLimit = callerLimit ?? DEFAULT_SEARCH_LIMIT;
-    const limited = filteredHits.slice(0, sliceLimit);
+    const limited = allHits.slice(0, sliceLimit);
 
-    const matches: MemorySearchMatch[] = limited.map((hit) => {
-      // Authored relations only: filter to the four RelationType values is
-      // implicit since `entry.relations` is `Relation[]` and `Relation.type`
-      // is constrained to the four authored types at parse time. The
-      // `mentions`/`supersedes` edge types live on the in-memory graph,
-      // not on the entry; reading from `entry.relations` therefore
-      // structurally excludes them.
+    const matches: MemorySearchMatch[] = limited.map(({ hit, scope: sc }) => {
       const projection: MemorySearchMatch = {
         name: hit.memory.name,
         type: hit.memory.type,
@@ -505,8 +634,26 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
         body: hit.memory.body,
         score: roundScore(hit.score),
         relations: hit.memory.relations.map((r) => ({ to: r.to, type: r.type })),
+        scope: sc,
       };
       if (includeSuperseded) {
+        // For supersededBy lookups we use the matching store's superseded
+        // map. The map was already built once per target store during the
+        // search loop and cached in `supersededByScope` -- consult it here
+        // (f-1) rather than rebuilding from the per-scope corpus.
+        let supersededMap = supersededByScope.get(sc);
+        if (supersededMap === undefined) {
+          // Defensive: the search loop only populates the map for targets
+          // it queried. When `includeSuperseded` is true the map isn't
+          // strictly needed for filtering -- but we still want
+          // `supersededBy` annotations on matches, so build it lazily here
+          // for any scope we somehow missed (should not happen given the
+          // current targets construction, but the lazy build keeps the
+          // invariant local).
+          const corpus = sc === 'user' ? userStore.all() : projectStore!.all();
+          supersededMap = buildSupersededMap(corpus);
+          supersededByScope.set(sc, supersededMap);
+        }
         const superseder = supersededMap.get(hit.memory.name);
         if (superseder !== undefined) {
           projection.supersededBy = superseder;
@@ -544,15 +691,60 @@ const countSupersededInCorpus = (
  * memory.
  */
 export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => {
-  const { store } = opts;
+  const { userStore, projectStore } = resolveStores(opts, 'memory_delete');
   return async (rawArgs: ToolArguments): Promise<MemoryDeleteResult> => {
     const args = requireArgsObject(rawArgs, 'memory_delete');
     const name = requireString(args, 'name', 'memory_delete');
-    // Delete dispatches the raw name; `store.delete` rejects unknown names
-    // with a message containing the offending name (DAR-916), which is
-    // what the ac-2 missing-name test asserts against.
-    await store.delete(name);
-    return { deleted: name };
+    const explicitScope = validateScope(args.scope, 'memory_delete');
+
+    // Determine which store(s) hold the name.
+    const inUser = userStore.all().some((e) => e.name === name);
+    const inProject = projectStore !== undefined && projectStore.all().some((e) => e.name === name);
+
+    let target: MemoryStore;
+    let scope: Scope;
+    if (explicitScope !== undefined) {
+      // Caller disambiguated. Honour the choice, even if the name only
+      // exists in the other scope -- the underlying store rejects the
+      // missing-name case with a message that names the offending memory.
+      if (explicitScope === 'project') {
+        if (projectStore === undefined) {
+          throw new Error(
+            `memory_delete: scope='project' requires a project store, but none was detected -- the server is running in user-only mode`,
+          );
+        }
+        target = projectStore;
+        scope = 'project';
+      } else {
+        target = userStore;
+        scope = 'user';
+      }
+    } else {
+      // No explicit scope: only unambiguous when the name lives in exactly
+      // one store. DAR-924 ac-6: "delete requires scope to disambiguate
+      // when the same name exists in both."
+      if (inUser && inProject) {
+        throw new Error(
+          `memory_delete: memory \`${name}\` exists in both 'user' and 'project' scopes; ambiguous without an explicit scope -- pass { name, scope: 'user' | 'project' } to disambiguate`,
+        );
+      }
+      if (inProject) {
+        target = projectStore!;
+        scope = 'project';
+      } else {
+        // Fall through to user store: either it lives there, or it's
+        // missing entirely (the user store will surface the missing-name
+        // error with the offending name).
+        target = userStore;
+        scope = 'user';
+      }
+    }
+
+    // `store.delete` rejects unknown names with a message containing the
+    // offending name (DAR-916), which is what the missing-name tests
+    // assert against.
+    await target.delete(name);
+    return { deleted: name, scope };
   };
 };
 
@@ -621,7 +813,7 @@ const validateLinkType = (
  * `relations[]`, matching the documented tool behaviour.
  */
 export const createMemoryLinkHandler = (opts: HandlerOptions): ToolHandler => {
-  const { store } = opts;
+  const { userStore, projectStore } = resolveStores(opts, 'memory_link');
   return async (rawArgs: ToolArguments): Promise<MemoryLinkResult> => {
     const args = requireArgsObject(rawArgs, 'memory_link');
     const from = requireString(args, 'from', 'memory_link');
@@ -629,8 +821,15 @@ export const createMemoryLinkHandler = (opts: HandlerOptions): ToolHandler => {
     const to = requireString(args, 'to', 'memory_link');
     validateMemoryName(to, 'memory_link');
     const type = validateLinkType(args.type, 'memory_link') ?? 'related-to';
+    const scope = validateScope(args.scope, 'memory_link');
 
-    const result = await store.linkEdge({ from, to, type });
+    // Edges are intra-scope: a project memory can only link to another
+    // project memory, and likewise for user. The caller can pass an
+    // explicit scope; otherwise we fall back to whichever store holds
+    // `from` (resolving ambiguity by erroring when both do).
+    const target = pickStoreForName(from, scope, userStore, projectStore, 'memory_link');
+
+    const result = await target.linkEdge({ from, to, type });
     return {
       from,
       to,
@@ -653,7 +852,7 @@ export const createMemoryLinkHandler = (opts: HandlerOptions): ToolHandler => {
  * having to interpret an error.
  */
 export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => {
-  const { store } = opts;
+  const { userStore, projectStore } = resolveStores(opts, 'memory_unlink');
   return async (rawArgs: ToolArguments): Promise<MemoryUnlinkResult> => {
     const args = requireArgsObject(rawArgs, 'memory_unlink');
     const from = requireString(args, 'from', 'memory_unlink');
@@ -661,8 +860,11 @@ export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => 
     const to = requireString(args, 'to', 'memory_unlink');
     validateMemoryName(to, 'memory_unlink');
     const type = validateLinkType(args.type, 'memory_unlink');
+    const scope = validateScope(args.scope, 'memory_unlink');
 
-    const result = await store.unlinkEdge({ from, to, type });
+    const target = pickStoreForName(from, scope, userStore, projectStore, 'memory_unlink');
+
+    const result = await target.unlinkEdge({ from, to, type });
     const out: MemoryUnlinkResult = {
       from,
       to,
@@ -673,4 +875,44 @@ export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => 
     if (result.note !== undefined) out.note = result.note;
     return out;
   };
+};
+
+/**
+ * Pick which store to dispatch a link / unlink operation against.
+ *
+ * - When `scope` is explicit, route to that store (and surface a clear
+ *   error if scope='project' but no project store is wired).
+ * - When `scope` is omitted, prefer the unique store that holds `from`. If
+ *   `from` lives in both stores, the caller must disambiguate.
+ *
+ * Existing single-store callers (DAR-928 tests) pass no scope and have no
+ * project store -- they fall through to the user store unchanged.
+ */
+const pickStoreForName = (
+  name: string,
+  explicitScope: Scope | undefined,
+  userStore: MemoryStore,
+  projectStore: MemoryStore | undefined,
+  toolName: string,
+): MemoryStore => {
+  if (explicitScope === 'project') {
+    if (projectStore === undefined) {
+      throw new Error(
+        `${toolName}: scope='project' requires a project store, but none was detected -- the server is running in user-only mode`,
+      );
+    }
+    return projectStore;
+  }
+  if (explicitScope === 'user') {
+    return userStore;
+  }
+  const inUser = userStore.all().some((e) => e.name === name);
+  const inProject = projectStore !== undefined && projectStore.all().some((e) => e.name === name);
+  if (inUser && inProject) {
+    throw new Error(
+      `${toolName}: memory \`${name}\` exists in both 'user' and 'project' scopes; ambiguous without an explicit scope -- pass scope: 'user' | 'project' to disambiguate`,
+    );
+  }
+  if (inProject) return projectStore!;
+  return userStore;
 };

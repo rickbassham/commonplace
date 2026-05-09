@@ -2,12 +2,60 @@
 
 Local-first commonplace book with embedding-backed semantic search via MCP.
 
+## Memory scopes
+
+Commonplace loads up to two memory stores side by side:
+
+- **User store** -- always loaded. Personal rules, preferences, hard
+  feedback. Located under `COMMONPLACE_USER_DIR` (defaults to
+  `~/.commonplace/memory`).
+- **Project store** -- loaded only when a project root is detected.
+  Per-project context (architecture notes, repo-specific
+  conventions). Located under `COMMONPLACE_PROJECT_DIR`, or under
+  `<project-root>/.commonplace/memory` when the root is detected via
+  MCP `roots/list` or the current working directory.
+
+Search merges hits across both stores by descending score; each match
+carries a `scope: 'user' | 'project'` tag identifying which store
+produced it. Save / list / delete / link / unlink all accept an optional
+`scope` argument, with sensible defaults documented per tool below.
+
+### Detection priority
+
+The project store is selected by the first matching step in this list:
+
+1. `COMMONPLACE_PROJECT_DIR` env var (explicit override; always wins).
+   The path need not exist yet -- the project directory is created
+   recursively on the first `memory_save({ scope: 'project' })`.
+2. MCP `roots/list` response after init -- if the connected client
+   advertises the `roots` capability and returns at least one `file://`
+   root, the first such root resolves to `<root>/.commonplace/memory`.
+   Non-`file://` roots are skipped. The bin tolerates clients that do
+   not advertise the capability and clients whose `roots/list`
+   response rejects.
+3. `process.cwd()` -- if `<cwd>/.commonplace/memory` already exists on
+   disk, that path is used as the project store.
+4. None of the above -- user-only mode. The project store is not
+   constructed; saves with `scope: 'project'` are rejected with a
+   clear error.
+
+### Environment variables
+
+- `COMMONPLACE_USER_DIR` -- user store directory.
+  Default: `~/.commonplace/memory`.
+- `COMMONPLACE_PROJECT_DIR` -- project store directory. When set, takes
+  priority over `roots/list` and cwd detection.
+- `COMMONPLACE_MEMORY_DIR` -- **deprecated** alias for
+  `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood
+  configs; setting it emits a one-line deprecation warning to stderr
+  and the value is used as the user store directory.
+
 ## Memory format
 
 A memory is a single markdown file with YAML frontmatter, written to a
-flat directory (default `~/.commonplace/memory`). The frontmatter carries
-the baseline shape (`name`, `type`, `description`) plus optional graph
-fields:
+flat directory (per-scope; see "Memory scopes" above). The frontmatter
+carries the baseline shape (`name`, `type`, `description`) plus optional
+graph fields:
 
 ```yaml
 ---
@@ -118,12 +166,33 @@ predicate.
 
 ## Tools
 
-- `memory_search` -- semantic search; returns top-k matches with full
-  bodies, scores, outgoing authored relations, and (when
-  `includeSuperseded: true`) `supersededBy`.
-- `memory_save` -- persist a memory and its embedding sidecar.
-- `memory_list` -- enumerate memories without bodies.
-- `memory_delete` -- remove a memory and its sidecar.
+All four core tools accept an optional `scope: 'user' | 'project'`
+argument. Responses include the resolved scope so callers can tell user
+and project entries apart.
+
+- `memory_search` -- semantic search; merges hits across both stores by
+  descending score and slices to `limit`. Returns top-k matches with
+  full bodies, scores, outgoing authored relations, a `scope` tag per
+  match, and (when `includeSuperseded: true`) `supersededBy`. Optional
+  `scope` argument restricts the search to a single store.
+- `memory_save` -- persist a memory and its embedding sidecar. The
+  `scope` argument selects the destination store (default `user`).
+  Saving to `project` requires that a project store was detected at
+  boot; otherwise the call is rejected with an error naming the
+  missing project scope. The project store directory is created
+  recursively on the first project save (`mkdir -p`).
+- `memory_list` -- enumerate memories from both stores without bodies.
+  Each entry carries a `scope` tag. Optional `scope` argument
+  restricts the listing to a single store.
+- `memory_delete` -- remove a memory and its sidecar. When the same
+  name exists in both stores the `scope` argument is required to
+  disambiguate; otherwise it's optional and auto-resolves to whichever
+  store contains the name. Returns the resolved scope alongside
+  `deleted`.
+- `memory_link` / `memory_unlink` -- typed graph edges. Edges are
+  intra-scope (a project memory cannot link to a user memory and vice
+  versa). The `scope` argument disambiguates when the same `from`
+  name lives in both stores.
 
 ## Running
 

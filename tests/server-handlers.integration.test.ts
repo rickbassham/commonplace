@@ -261,6 +261,10 @@ describe('ac-3: list filtering and frontmatter shape', () => {
         name: 'one',
         type: 'reference',
         description: 'd',
+        // DAR-924: list entries now carry a `scope` tag so callers can tell
+        // user vs project memories apart. With only a user store wired, the
+        // tag is always 'user'.
+        scope: 'user',
       });
       expect('body' in entry).toBe(false);
     } finally {
@@ -369,7 +373,9 @@ describe('ac-4: handler responses serialise to MCP text content blocks', () => {
       const first = content[0];
       if (!isTextContent(first)) throw new Error('content[0] not text');
       const parsed: unknown = JSON.parse(first.text);
-      expect(parsed).toEqual({ deleted: 'gone' });
+      // DAR-924: delete result now carries the `scope` tag identifying the
+      // store the memory was removed from.
+      expect(parsed).toEqual({ deleted: 'gone', scope: 'user' });
     } finally {
       await h.close();
     }
