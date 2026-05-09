@@ -49,6 +49,17 @@ The project store is selected by the first matching step in this list:
   `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood
   configs; setting it emits a one-line deprecation warning to stderr
   and the value is used as the user store directory.
+- `COMMONPLACE_MODEL` -- embedding model id passed to transformers.js.
+  Default: `Xenova/bge-base-en-v1.5`. The model id is not pre-validated
+  at boot; an unknown id surfaces an error from the embedder on the
+  first `memory_search` (or any other call that needs an embedding).
+  The error message names the offending model id.
+- `COMMONPLACE_DEFAULT_LIMIT` -- default top-k for `memory_search` when
+  the caller omits `limit`. Default: `5`. Must be a positive integer
+  when set; any value that is not a positive integer (non-numeric text,
+  zero, negative, fractional, `NaN`, `Infinity`) causes the bin to exit
+  at boot with a stderr message naming the offending value rather than
+  silently coercing.
 
 ## Memory format
 

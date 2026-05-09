@@ -133,6 +133,14 @@ export interface CreateDefaultHandlersOptions {
    * ac-5. It is otherwise unused.
    */
   graph?: MemoryGraph;
+  /**
+   * Optional default top-k for `memory_search` when the caller omits
+   * `limit`. Resolved by the bin from `COMMONPLACE_DEFAULT_LIMIT`
+   * (DAR-913); when omitted, the search handler falls back to
+   * {@link import('../store/memory-store.js').DEFAULT_SEARCH_LIMIT}
+   * (`5`).
+   */
+  defaultLimit?: number;
 }
 
 /**
@@ -159,8 +167,13 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     };
   }
   const handlerOpts = { userStore, projectStore };
+  // The search handler is the only consumer of `defaultLimit` today; the
+  // CRUD/link handlers ignore it (they take their own validated args).
+  // Threading the option through here rather than via a separate factory
+  // call keeps the wiring single-shot.
+  const searchOpts = { ...handlerOpts, defaultLimit: options.defaultLimit };
   return {
-    memory_search: createMemorySearchHandler(handlerOpts),
+    memory_search: createMemorySearchHandler(searchOpts),
     memory_save: createMemorySaveHandler(handlerOpts),
     memory_list: createMemoryListHandler(handlerOpts),
     memory_delete: createMemoryDeleteHandler(handlerOpts),

@@ -75,6 +75,13 @@ export interface HandlerOptions {
   userStore?: MemoryStore;
   /** The project-level memory store, when one was detected. */
   projectStore?: MemoryStore;
+  /**
+   * Default top-k applied by `memory_search` when the caller omits
+   * `limit`. Resolved by the bin from `COMMONPLACE_DEFAULT_LIMIT`
+   * (DAR-913). When omitted, the search handler falls back to
+   * {@link DEFAULT_SEARCH_LIMIT}. Other handlers ignore this option.
+   */
+  defaultLimit?: number;
 }
 
 /**
@@ -524,6 +531,12 @@ const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
  */
 export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
   const { userStore, projectStore } = resolveStores(opts, 'memory_search');
+  // Resolve the default top-k once at handler-construction time. When the
+  // bin supplies one (resolved from `COMMONPLACE_DEFAULT_LIMIT` per
+  // DAR-913), it wins; otherwise we fall back to the store-layer default
+  // so this handler still works in test setups that wire the factory
+  // directly without an env-var pass.
+  const fallbackLimit = opts.defaultLimit ?? DEFAULT_SEARCH_LIMIT;
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
     const query = requireString(args, 'query', 'memory_search');
@@ -587,9 +600,9 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       // the supersede pass leaves enough candidates.
       if (!includeSuperseded) {
         const corpusSize = target.store.all().length;
-        const desired = callerLimit ?? DEFAULT_SEARCH_LIMIT;
+        const desired = callerLimit ?? fallbackLimit;
         const headroom = Math.max(desired, corpusSize);
-        if (callerLimit === undefined && corpusSize > DEFAULT_SEARCH_LIMIT) {
+        if (callerLimit === undefined && corpusSize > fallbackLimit) {
           searchOpts.limit = headroom;
         } else if (callerLimit !== undefined && headroom > callerLimit) {
           searchOpts.limit = headroom;
@@ -623,7 +636,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // spec from ES2019, so this is well-defined.
     allHits.sort((a, b) => b.hit.score - a.hit.score);
 
-    const sliceLimit = callerLimit ?? DEFAULT_SEARCH_LIMIT;
+    const sliceLimit = callerLimit ?? fallbackLimit;
     const limited = allHits.slice(0, sliceLimit);
 
     const matches: MemorySearchMatch[] = limited.map(({ hit, scope: sc }) => {

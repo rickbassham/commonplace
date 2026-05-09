@@ -19,6 +19,7 @@ import {
   type ToolDefinition,
 } from '../src/server/tools.js';
 import { createMemorySearchHandler } from '../src/server/handlers.js';
+import { DEFAULT_LIMIT, ENV_DEFAULT_LIMIT, resolveDefaultLimit } from '../src/bin/env.js';
 
 let tmp: string;
 
@@ -343,5 +344,102 @@ describe('ac-1: buildToolDefinitions surfaces real memory_search', () => {
       stubMessage = err instanceof Error ? err.message : String(err);
     }
     expect(stubMessage).not.toBe('not implemented');
+  });
+});
+
+// --------------------------------------------------------------------------
+// DAR-913 ac-2 / ac-4: COMMONPLACE_DEFAULT_LIMIT honoured by memory_search
+// --------------------------------------------------------------------------
+
+/**
+ * Populate the store with `count` distinct memories so search has room to
+ * return more than `DEFAULT_LIMIT` hits when no slice is applied.
+ */
+const populateStore = async (store: MemoryStore, count: number): Promise<void> => {
+  for (let i = 0; i < count; i++) {
+    await store.save({
+      name: `entry_${i}`,
+      type: 'reference',
+      description: `entry ${i}`,
+      body: `body ${i}`,
+    });
+  }
+};
+
+describe('DAR-913 ac-2: memory_search honours COMMONPLACE_DEFAULT_LIMIT when caller omits limit', () => {
+  it('memory_search uses COMMONPLACE_DEFAULT_LIMIT when the caller omits limit', async () => {
+    const store = makeStore();
+    await store.scan();
+    await populateStore(store, 7);
+    const defaultLimit = resolveDefaultLimit({ [ENV_DEFAULT_LIMIT]: '3' });
+    const handler = createMemorySearchHandler({ store, defaultLimit });
+    const out = await handler({ query: 'q' });
+    if (!isRecord(out)) throw new Error('not record');
+    const matches = out.matches as unknown[];
+    expect(Array.isArray(matches)).toBe(true);
+    expect((matches as unknown[]).length).toBeLessThanOrEqual(3);
+    // The store has 7 entries; the env-resolved limit (3) wins over the
+    // built-in default (5). A slice longer than 3 would mean the env var
+    // was ignored.
+    expect((matches as unknown[]).length).toBe(3);
+  });
+
+  it('memory_search prefers the caller-supplied limit over COMMONPLACE_DEFAULT_LIMIT when both are set', async () => {
+    const store = makeStore();
+    await store.scan();
+    await populateStore(store, 7);
+    const defaultLimit = resolveDefaultLimit({ [ENV_DEFAULT_LIMIT]: '3' });
+    const handler = createMemorySearchHandler({ store, defaultLimit });
+    const out = await handler({ query: 'q', limit: 2 });
+    if (!isRecord(out)) throw new Error('not record');
+    const matches = out.matches as unknown[];
+    expect((matches as unknown[]).length).toBe(2);
+  });
+
+  it('memory_search falls back to the built-in default (5) when neither caller limit nor COMMONPLACE_DEFAULT_LIMIT is set', async () => {
+    const store = makeStore();
+    await store.scan();
+    await populateStore(store, 9);
+    // No defaultLimit option supplied -- the bin would resolve this from
+    // an unset env var to the built-in default; we mirror that here.
+    const handler = createMemorySearchHandler({ store });
+    const out = await handler({ query: 'q' });
+    if (!isRecord(out)) throw new Error('not record');
+    const matches = out.matches as unknown[];
+    expect((matches as unknown[]).length).toBe(DEFAULT_LIMIT);
+    expect(DEFAULT_LIMIT).toBe(5);
+  });
+
+  it('memory_search rejects a non-integer / negative / NaN COMMONPLACE_DEFAULT_LIMIT with a clear error and does not silently coerce', () => {
+    const cases = ['abc', '-1', '0', '10.5', 'NaN', 'Infinity'];
+    for (const value of cases) {
+      let msg = '';
+      try {
+        resolveDefaultLimit({ [ENV_DEFAULT_LIMIT]: value });
+      } catch (err) {
+        msg = err instanceof Error ? err.message : String(err);
+      }
+      expect(msg, `expected rejection for ${JSON.stringify(value)}`).toContain(ENV_DEFAULT_LIMIT);
+      expect(msg, `expected rejection for ${JSON.stringify(value)}`).toContain('positive integer');
+      expect(
+        msg,
+        `expected rejection to name the offending value ${JSON.stringify(value)}`,
+      ).toContain(value);
+    }
+  });
+});
+
+describe('DAR-913 ac-4: memory_search slice honours env-resolved default limit on populated stores', () => {
+  it("memory_search with env.COMMONPLACE_DEFAULT_LIMIT='3' and no caller limit returns at most 3 hits when the store has more than 3 entries", async () => {
+    const store = makeStore();
+    await store.scan();
+    await populateStore(store, 8);
+    const defaultLimit = resolveDefaultLimit({ [ENV_DEFAULT_LIMIT]: '3' });
+    const handler = createMemorySearchHandler({ store, defaultLimit });
+    const out = await handler({ query: 'q' });
+    if (!isRecord(out)) throw new Error('not record');
+    const matches = out.matches as unknown[];
+    expect((matches as unknown[]).length).toBeLessThanOrEqual(3);
+    expect((matches as unknown[]).length).toBe(3);
   });
 });

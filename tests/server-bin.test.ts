@@ -9,10 +9,17 @@
  * to stdout before the first MCP message.
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+
+import { bootServer } from '../src/bin/boot.js';
+import { DEFAULT_LIMIT, DEFAULT_MODEL_ID, ENV_MODEL } from '../src/bin/env.js';
 
 const repoRoot = join(__dirname, '..');
 
@@ -112,4 +119,193 @@ describe('ac-4 (runtime): bin entry on stdio', () => {
     expect(exitCode === 0 || exitCode === null || typeof exitCode === 'number').toBe(true);
     expect(stdoutData, `unexpected stdout: ${stdoutData}; stderr: ${stderrData}`).toBe('');
   }, 30_000);
+});
+
+// --------------------------------------------------------------------------
+// DAR-913: env-var resolution for COMMONPLACE_MODEL and COMMONPLACE_DEFAULT_LIMIT
+// --------------------------------------------------------------------------
+
+/**
+ * Spy embedder that records the modelId it was constructed with so tests
+ * can assert bootServer threaded the env-resolved id through.
+ */
+const makeSpyEmbedder = (modelId: string, dim = 4) => {
+  let count = 0;
+  return {
+    modelId,
+    dim,
+    embed: async (text: string): Promise<Float32Array> => {
+      void text;
+      count += 1;
+      const out = new Float32Array(dim);
+      out[0] = count;
+      return out;
+    },
+  };
+};
+
+/**
+ * Drive {@link bootServer} against an in-memory transport pair so the
+ * BootResult is observable without spawning a real bin or loading model
+ * weights. Returns a teardown helper alongside the boot result.
+ */
+const bootHarness = async (options: {
+  env?: NodeJS.ProcessEnv;
+  cwd: string;
+  embedder?: { modelId: string; dim: number; embed: (text: string) => Promise<Float32Array> };
+}) => {
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'dar913-boot-test', version: '0.0.0' }, { capabilities: {} });
+  const bootPromise = bootServer({
+    env: options.env ?? {},
+    cwd: options.cwd,
+    embedder: options.embedder,
+    transport: serverTransport,
+  });
+  await client.connect(clientTransport);
+  const boot = await bootPromise;
+  return {
+    boot,
+    close: async () => {
+      await client.close();
+      await boot.server.close();
+    },
+  };
+};
+
+describe('DAR-913 ac-1: bootServer reads COMMONPLACE_MODEL and constructs the Embedder with it', () => {
+  let userTmp: string;
+  beforeEach(() => {
+    userTmp = mkdtempSync(join(tmpdir(), 'dar913-boot-'));
+  });
+  afterEach(() => {
+    rmSync(userTmp, { recursive: true, force: true });
+  });
+
+  it('bootServer constructs the Embedder with the model id from env.COMMONPLACE_MODEL when set', async () => {
+    // We pass an explicit `embedder` because the unit test must not load
+    // real model weights; instead we verify the resolver via the public
+    // resolver export (resolveModelId) and assert the bin's embedder
+    // construction path uses it. The model-construction path is asserted
+    // structurally below in the source-text test.
+    //
+    // Behavioural assertion: when bootServer is given the env var, it
+    // does not throw, and the resolved model id matches the env var.
+    const { resolveModelId } = await import('../src/bin/env.js');
+    const id = resolveModelId({ [ENV_MODEL]: 'Xenova/all-MiniLM-L6-v2' });
+    expect(id).toBe('Xenova/all-MiniLM-L6-v2');
+
+    // Smoke-boot with a stub embedder so the boot wiring runs end-to-end.
+    const { close } = await bootHarness({
+      env: { [ENV_MODEL]: 'Xenova/all-MiniLM-L6-v2' },
+      cwd: userTmp,
+      embedder: makeSpyEmbedder('Xenova/all-MiniLM-L6-v2'),
+    });
+    await close();
+  });
+
+  it('bootServer falls back to the Xenova/bge-base-en-v1.5 default when env.COMMONPLACE_MODEL is unset', async () => {
+    const { resolveModelId } = await import('../src/bin/env.js');
+    const id = resolveModelId({});
+    expect(id).toBe(DEFAULT_MODEL_ID);
+    expect(DEFAULT_MODEL_ID).toBe('Xenova/bge-base-en-v1.5');
+  });
+
+  it('bootServer treats an empty COMMONPLACE_MODEL string as unset and uses the default', async () => {
+    const { resolveModelId } = await import('../src/bin/env.js');
+    const id = resolveModelId({ [ENV_MODEL]: '' });
+    expect(id).toBe(DEFAULT_MODEL_ID);
+  });
+
+  it("bootServer with env={COMMONPLACE_MODEL: 'Xenova/all-MiniLM-L6-v2'} produces an Embedder whose modelId is 'Xenova/all-MiniLM-L6-v2'", async () => {
+    // Source-text assertion: the bin/boot wiring imports the env-resolver
+    // and uses its result to construct the Embedder. Without a stub, the
+    // resolved id is the one the Embedder constructor receives.
+    const bootSource = readFileSync(join(repoRoot, 'src/bin/boot.ts'), 'utf8');
+    expect(bootSource).toMatch(/resolveModelId\s*\(/);
+    expect(bootSource).toMatch(/new\s+Embedder\s*\(\s*resolveModelId\s*\(/);
+    // Behavioural smoke: boot completes when an env-supplied model id is
+    // provided alongside a stub embedder for the same id.
+    const { boot, close } = await bootHarness({
+      env: { [ENV_MODEL]: 'Xenova/all-MiniLM-L6-v2' },
+      cwd: userTmp,
+      embedder: makeSpyEmbedder('Xenova/all-MiniLM-L6-v2'),
+    });
+    expect(boot.userStore).toBeDefined();
+    await close();
+  });
+});
+
+describe('DAR-913 ac-3: env-var documentation in README + bin top-of-file comment', () => {
+  it('README.md documents COMMONPLACE_MODEL with its default (Xenova/bge-base-en-v1.5) and effect', () => {
+    const readme = readFileSync(join(repoRoot, 'README.md'), 'utf8');
+    expect(readme).toContain('COMMONPLACE_MODEL');
+    expect(readme).toContain('Xenova/bge-base-en-v1.5');
+    // The README must explain the *effect* of the variable, not just name
+    // it. We assert the documentation block mentions "model" alongside the
+    // env var so the section is actually useful to operators.
+    const blockStart = readme.indexOf('COMMONPLACE_MODEL');
+    expect(blockStart).toBeGreaterThan(-1);
+    const block = readme.slice(blockStart, blockStart + 400);
+    expect(block.toLowerCase()).toMatch(/model/);
+    expect(block.toLowerCase()).toMatch(/embedding|transformers/);
+  });
+
+  it('README.md documents COMMONPLACE_DEFAULT_LIMIT with its default (5) and effect', () => {
+    const readme = readFileSync(join(repoRoot, 'README.md'), 'utf8');
+    expect(readme).toContain('COMMONPLACE_DEFAULT_LIMIT');
+    const blockStart = readme.indexOf('COMMONPLACE_DEFAULT_LIMIT');
+    expect(blockStart).toBeGreaterThan(-1);
+    const block = readme.slice(blockStart, blockStart + 400);
+    // "5" appears as the default; effect references memory_search / limit /
+    // top-k so the operator knows what the variable controls.
+    expect(block).toMatch(/\b5\b/);
+    expect(block.toLowerCase()).toMatch(/memory_search|limit|top-k/);
+  });
+
+  it('src/bin/commonplace-mcp.ts top-of-file comment lists COMMONPLACE_MODEL and COMMONPLACE_DEFAULT_LIMIT alongside the existing DAR-924 vars', () => {
+    const binSource = readFileSync(join(repoRoot, 'src/bin/commonplace-mcp.ts'), 'utf8');
+    // Find the first comment block (the file's top-of-file JSDoc). Bin
+    // entries start with the shebang then the module comment; we slice
+    // until the first non-comment line for the assertion.
+    const headerEnd = binSource.indexOf('\nimport ');
+    expect(headerEnd).toBeGreaterThan(-1);
+    const header = binSource.slice(0, headerEnd);
+    expect(header).toContain('COMMONPLACE_USER_DIR');
+    expect(header).toContain('COMMONPLACE_PROJECT_DIR');
+    expect(header).toContain('COMMONPLACE_MEMORY_DIR');
+    expect(header).toContain('COMMONPLACE_MODEL');
+    expect(header).toContain('COMMONPLACE_DEFAULT_LIMIT');
+  });
+});
+
+describe('DAR-913 ac-5: bootServer does NOT pre-validate COMMONPLACE_MODEL', () => {
+  let userTmp: string;
+  beforeEach(() => {
+    userTmp = mkdtempSync(join(tmpdir(), 'dar913-boot-unknown-'));
+  });
+  afterEach(() => {
+    rmSync(userTmp, { recursive: true, force: true });
+  });
+
+  it("bootServer with env.COMMONPLACE_MODEL='not/a-real-model' boots without throwing (no pre-validation)", async () => {
+    // Pass a stub embedder so the unknown id never reaches transformers.js
+    // during the boot path -- the contract is "the bin does not pre-validate".
+    // The lazy-validation behaviour (embedder surfaces the bad id on first
+    // embed call) is covered by the integration test in
+    // tests/embedder.integration.test.ts.
+    const { boot, close } = await bootHarness({
+      env: { [ENV_MODEL]: 'not/a-real-model' },
+      cwd: userTmp,
+      embedder: makeSpyEmbedder('not/a-real-model'),
+    });
+    expect(boot.userStore).toBeDefined();
+    await close();
+  });
+});
+
+describe('DAR-913 default-limit defaults', () => {
+  it('DEFAULT_LIMIT is 5 (matches DAR-917 store-layer default)', () => {
+    expect(DEFAULT_LIMIT).toBe(5);
+  });
 });
