@@ -1,48 +1,111 @@
 /**
- * In-memory vector index backed by markdown + sidecar files on disk (DAR-916).
+ * In-memory vector index backed by markdown + sidecar files on disk
+ * (DAR-916), with multi-process safety primitives layered on (DAR-923):
  *
- * `MemoryStore` combines:
+ *   - **atomic writes** -- every `.md` and `.embedding` write goes through
+ *     {@link atomicWrite} (write-temp + fsync + rename + dir-fsync) so a
+ *     concurrent reader either sees the prior file or the new file, never
+ *     a half-written one.
+ *   - **per-name advisory locks** -- {@link save} and {@link delete} each
+ *     hold a lockfile keyed on `<name>.md` for the duration of their work,
+ *     so two processes racing on the same name resolve to one winner.
+ *     Stale locks (>5s old) are reclaimed automatically.
+ *   - **mtime-based external rescan** -- {@link search} and {@link list}
+ *     stat the memory directory and rescan when its mtime advanced since
+ *     the last scan, so changes from another process show up on the next
+ *     call without explicit coordination.
  *
- *   - markdown I/O + `contentSha`  (DAR-911, `./memory.ts`)
- *   - binary sidecar encode/decode (DAR-910, `./sidecar.ts`)
- *   - the embedder                 (DAR-912, `../embedder/`)
+ * # Out of scope (per DAR-923 contract envelope)
  *
- * into a single class with five methods:
- *
- *   - `scan()`              glob `<dir>/*.md`, reuse valid sidecars,
- *                           lazy-re-embed on staleness, populate the
- *                           in-memory entry array.
- *   - `save(memory)`        refuse-on-duplicate, write `.md`, embed body,
- *                           write `.embedding`, append to in-memory array.
- *   - `delete(name)`        rm both files, splice from the array. Throws if
- *                           name is not present.
- *   - `all()`               the in-memory entry array.
- *   - `search(query, opts)` brute-force top-k cosine search over the
- *                           in-memory entry array (DAR-917).
- *
- * # Scope
- *
- * Single-process. Per the issue body and the approved contract envelope, the
- * following are explicitly out of scope for this module and owned elsewhere:
- *
- *   - atomic write-temp+rename, fsync, advisory locks, mtime-based external
- *     rescan -- DAR-923 (multi-process safety).
- *   - MCP tool wiring -- DAR-919, DAR-928.
- *   - layered user+project memory / scope auto-detection -- DAR-924.
- *   - migration CLI -- DAR-918.
- *   - recursive directory scan / nested layouts -- single-level glob only.
- *   - in-process concurrency control across overlapping save() calls.
- *
- * Plain `fs.writeFileSync` / `fs.unlinkSync` is acceptable here.
+ *   - cross-machine / network-mounted directory sync
+ *   - a shared resident daemon coordinating writers
+ *   - lockless / lock-free indexing
+ *   - recursive / nested directory layouts (single-level glob only)
  */
 
-import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { contentSha, readMemory, writeMemory, type Memory, type Relation } from './memory.js';
+import * as lockfile from 'proper-lockfile';
+
+import { atomicWrite } from './atomic-write.js';
+import { contentSha, readMemory, serializeMemory, type Memory, type Relation } from './memory.js';
 import { MemoryGraph } from './graph.js';
 import { extractMentions, mentionsExtractionEnabled } from './mentions.js';
 import { decodeSidecar, encodeSidecar } from './sidecar.js';
+
+/**
+ * Stale-lock threshold per DAR-923 ac-3: a lockfile older than this is
+ * treated as orphaned (the prior holder crashed) and reclaimed on the next
+ * acquire attempt. proper-lockfile's `stale` option is in milliseconds.
+ */
+const STALE_LOCK_MS = 5000;
+
+/**
+ * proper-lockfile retry/wait config used when acquiring a per-name lock.
+ * The values are deliberately generous so a stale-lock reclaim has time to
+ * run, but bounded so a genuinely contended save still surfaces a failure
+ * in seconds rather than minutes.
+ */
+const LOCK_RETRIES = {
+  retries: 10,
+  factor: 1.5,
+  minTimeout: 50,
+  maxTimeout: 1000,
+};
+
+/**
+ * Build the canonical lock target path for a memory `<name>`. We lock on
+ * the `.md` path because that's the user-facing artifact (and the file
+ * proper-lockfile creates a sibling `.lock` directory next to). All locks
+ * for a given name go through this helper so save / delete / external
+ * tooling agree on the path.
+ */
+const lockTargetForName = (dir: string, name: string): string => join(dir, `${name}.md`);
+
+/**
+ * Type predicate: does `err` carry a `code: string` field equal to `code`?
+ *
+ * Used to detect proper-lockfile's `ELOCKED` error code via structural
+ * narrowing (`'code' in err`) so the type checker proves the property
+ * access is safe -- no `as` cast required.
+ */
+const hasErrorCode = (err: unknown, code: string): boolean => {
+  if (typeof err !== 'object' || err === null) return false;
+  if (!('code' in err)) return false;
+  return typeof err.code === 'string' && err.code === code;
+};
+
+/**
+ * Acquire a proper-lockfile advisory lock on the memory `<name>`'s lock
+ * target. Returns the release function. Uses `realpath: false` so the lock
+ * works even when the target file does not exist yet (fresh save), and
+ * `stale: 5000` so an orphaned lock from a crashed prior holder is
+ * reclaimed instead of blocking indefinitely (DAR-923 ac-3).
+ *
+ * Translates proper-lockfile's `ELOCKED` error into a clearer
+ * "MemoryStore: lock for memory `<name>` is busy" message that surfaces
+ * the memory name -- consumers (sibling DAR-924 tooling, MCP layer
+ * DAR-919) need the name to render an actionable error.
+ */
+const acquireNameLock = async (dir: string, name: string): Promise<() => Promise<void>> => {
+  const target = lockTargetForName(dir, name);
+  try {
+    const release = await lockfile.lock(target, {
+      stale: STALE_LOCK_MS,
+      realpath: false,
+      retries: LOCK_RETRIES,
+    });
+    return release;
+  } catch (err) {
+    if (hasErrorCode(err, 'ELOCKED')) {
+      throw new Error(
+        `MemoryStore: lock for memory \`${name}\` is busy (another process is writing or has a stale lock younger than ${STALE_LOCK_MS}ms)`,
+      );
+    }
+    throw err;
+  }
+};
 
 /**
  * Structural contract MemoryStore needs from any Embedder. Matches the public
@@ -143,11 +206,42 @@ export class MemoryStore {
   readonly #graph: MemoryGraph | undefined;
   /** The authoritative in-memory entry array. */
   #entries: MemoryEntry[] = [];
+  /**
+   * Last observed `mtimeMs` of the memory directory, captured at the end of
+   * each successful {@link scan}. Used by {@link search} and {@link list}
+   * to detect external writers (DAR-923 ac-4) -- if the directory's mtime
+   * has advanced since this value, a rescan is forced before answering.
+   *
+   * `null` means "we have not scanned yet"; the next {@link search} or
+   * {@link list} call will trigger an initial scan.
+   */
+  #lastScanMtimeMs: number | null = null;
 
   public constructor(opts: MemoryStoreOptions) {
     this.#dir = opts.dir;
     this.#embedder = opts.embedder;
     this.#graph = opts.graph;
+  }
+
+  /**
+   * If the memory directory's mtime has advanced since the last scan, run
+   * a fresh {@link scan}. Cheap (~1ms): we only stat the dir; the scan
+   * itself is unconditional only when the mtime check fires.
+   *
+   * Used by {@link search} and {@link list} (DAR-923 ac-4).
+   */
+  async #rescanIfMtimeChanged(): Promise<void> {
+    if (!existsSync(this.#dir)) {
+      // Dir does not exist (yet). Nothing to scan; treat the in-memory
+      // state as authoritative. A subsequent save() / scan() will create
+      // it as needed.
+      return;
+    }
+    const st = statSync(this.#dir);
+    const mtimeMs = st.mtimeMs;
+    if (this.#lastScanMtimeMs === null || mtimeMs > this.#lastScanMtimeMs) {
+      await this.scan();
+    }
   }
 
   /**
@@ -213,7 +307,10 @@ export class MemoryStore {
           contentSha: sha,
           vector,
         });
-        writeFileSync(sidecarPath, buf);
+        // DAR-923 ac-1: route the sidecar (re-)write through the atomic
+        // helper so a concurrent reader either sees the prior sidecar or
+        // the new one, never a partial file. Same-fs guard + fsync apply.
+        await atomicWrite(sidecarPath, buf);
         reembedded += 1;
       }
 
@@ -244,6 +341,12 @@ export class MemoryStore {
       }
       this.#graph.rebuild(next, mentions);
     }
+    // Capture the directory mtime AFTER all writes have completed so the
+    // next mtime check (search() / list()) compares against the post-write
+    // state. If the dir does not exist (no .md files ever written), treat
+    // the baseline as 0 -- the first save() will advance the mtime, which
+    // we'll observe on the following search() / list().
+    this.#lastScanMtimeMs = existsSync(this.#dir) ? statSync(this.#dir).mtimeMs : 0;
     return { loaded: next.length, reembedded };
   }
 
@@ -280,47 +383,80 @@ export class MemoryStore {
 
     const mdPath = join(this.#dir, `${name}.md`);
     const sidecarPath = join(this.#dir, `${name}.embedding`);
-    if (existsSync(mdPath)) {
-      throw new Error(
-        `MemoryStore.save: a memory file already exists at ${mdPath} (name=\`${name}\`); delete it first to replace`,
-      );
-    }
 
-    // Note: we write the .md first so that contentSha is computed against the
-    // exact memory the caller passed in (which is what writeMemory persists
-    // post-dedupe). This pairing keeps the embedding sidecar's contentSha
-    // aligned with the on-disk source-of-truth.
-    writeMemory(mdPath, memory);
-    const sha = contentSha(memory);
-    const vector = await this.#embedder.embed(memory.body);
-    const buf = encodeSidecar({
-      modelId: this.#embedder.modelId,
-      dim: this.#embedder.dim,
-      contentSha: sha,
-      vector,
-    });
-    writeFileSync(sidecarPath, buf);
+    // DAR-923 ac-3: hold a per-name advisory lock for the entire write
+    // (md + embedding). This serialises racing writers on the same name
+    // both within and across processes. Stale locks (>5s) are reclaimed
+    // automatically -- see acquireNameLock.
+    const release = await acquireNameLock(this.#dir, name);
+    try {
+      // Re-check disk presence under the lock so another process that won
+      // the race (and finished before we acquired) is observed here -- the
+      // duplicate-name semantics from DAR-916 are preserved across
+      // processes via this on-disk check.
+      if (existsSync(mdPath)) {
+        throw new Error(
+          `MemoryStore.save: a memory file already exists at ${mdPath} (name=\`${name}\`); delete it first to replace`,
+        );
+      }
 
-    const entry: MemoryEntry = {
-      name: memory.name,
-      description: memory.description,
-      type: memory.type,
-      body: memory.body,
-      relations: memory.relations ?? [],
-      supersedes: memory.supersedes ?? [],
-      vector,
-      contentSha: sha,
-      modelId: this.#embedder.modelId,
-      dim: this.#embedder.dim,
-    };
-    this.#entries.push(entry);
-    if (this.#graph !== undefined) {
-      this.#graph.add(entry);
-      // DAR-927: extract `[[name]]` mentions and add one mentions edge
-      // per unique target. The helper handles env-var gating and the
-      // self-edge bridge -- see {@link #mentionsFor}.
-      for (const edge of this.#mentionsFor(entry)) {
-        this.#graph.addMentionsEdge(edge);
+      // DAR-923 ac-1: route both the .md and .embedding writes through the
+      // atomic helper so a crash mid-write leaves the prior file intact.
+      // .md is written first so contentSha is computed against the exact
+      // memory the caller passed in (which is what serializeMemory
+      // persists post-dedupe).
+      const mdBytes = Buffer.from(serializeMemory(memory), 'utf8');
+      await atomicWrite(mdPath, mdBytes);
+
+      const sha = contentSha(memory);
+      const vector = await this.#embedder.embed(memory.body);
+      const buf = encodeSidecar({
+        modelId: this.#embedder.modelId,
+        dim: this.#embedder.dim,
+        contentSha: sha,
+        vector,
+      });
+      await atomicWrite(sidecarPath, buf);
+
+      const entry: MemoryEntry = {
+        name: memory.name,
+        description: memory.description,
+        type: memory.type,
+        body: memory.body,
+        relations: memory.relations ?? [],
+        supersedes: memory.supersedes ?? [],
+        vector,
+        contentSha: sha,
+        modelId: this.#embedder.modelId,
+        dim: this.#embedder.dim,
+      };
+      this.#entries.push(entry);
+      if (this.#graph !== undefined) {
+        this.#graph.add(entry);
+        // DAR-927: extract `[[name]]` mentions and add one mentions edge
+        // per unique target. The helper handles env-var gating and the
+        // self-edge bridge -- see {@link #mentionsFor}.
+        for (const edge of this.#mentionsFor(entry)) {
+          this.#graph.addMentionsEdge(edge);
+        }
+      }
+      // Refresh the mtime baseline so a search() immediately after save()
+      // does not see "the dir changed since last scan" and re-scan from
+      // disk (which would be both wasteful and could re-read what we just
+      // wrote, embedder-dependent).
+      if (existsSync(this.#dir)) {
+        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
+      }
+    } finally {
+      // Release on every path -- success and any thrown error -- so the
+      // next save() / delete() on the same name can proceed (DAR-923
+      // ac-3: "lock not leaked on error path").
+      try {
+        await release();
+      } catch {
+        // proper-lockfile may throw if the lock was already released
+        // (e.g. stale-lock reclaim by another process); swallow so the
+        // original error from inside the try-block surfaces.
       }
     }
   }
@@ -378,11 +514,26 @@ export class MemoryStore {
 
     const mdPath = join(this.#dir, `${name}.md`);
     const sidecarPath = join(this.#dir, `${name}.embedding`);
-    if (existsSync(mdPath)) unlinkSync(mdPath);
-    if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
-    this.#entries.splice(idx, 1);
-    if (this.#graph !== undefined) {
-      this.#graph.remove(name);
+
+    // DAR-923 ac-3: take the same per-name lock that save() holds, so a
+    // delete cannot interleave with an in-flight save on the same name.
+    const release = await acquireNameLock(this.#dir, name);
+    try {
+      if (existsSync(mdPath)) unlinkSync(mdPath);
+      if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
+      this.#entries.splice(idx, 1);
+      if (this.#graph !== undefined) {
+        this.#graph.remove(name);
+      }
+      if (existsSync(this.#dir)) {
+        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
+      }
+    } finally {
+      try {
+        await release();
+      } catch {
+        // see save()'s release-swallow comment
+      }
     }
   }
 
@@ -402,6 +553,25 @@ export class MemoryStore {
    * compile-time guard rail, not a runtime fence.
    */
   public all(): ReadonlyArray<MemoryEntry> {
+    return this.#entries;
+  }
+
+  /**
+   * Rescan-aware analogue of {@link all} for callers that need to observe
+   * external writers (DAR-923 ac-4). Stats the memory directory and forces
+   * a full {@link scan} when its mtime has advanced since the last scan;
+   * otherwise returns the existing in-memory entry array unchanged.
+   *
+   * Use this from public API surfaces (MCP tools, CLI listings) where a
+   * concurrent process may have written or deleted a memory; use {@link all}
+   * directly when the caller is willing to read from cache (e.g. inside a
+   * tight loop within a single request).
+   *
+   * Returns `ReadonlyArray<MemoryEntry>` for the same reason {@link all}
+   * does -- the returned array is the store's authoritative state.
+   */
+  public async list(): Promise<ReadonlyArray<MemoryEntry>> {
+    await this.#rescanIfMtimeChanged();
     return this.#entries;
   }
 
@@ -444,6 +614,10 @@ export class MemoryStore {
    *     responsible for caller-side validation.
    */
   public async search(query: string, opts: SearchOptions = {}): Promise<SearchHit[]> {
+    // DAR-923 ac-4: rescan if an external process advanced the dir mtime
+    // since our last scan. Cheap stat() in the common no-op case.
+    await this.#rescanIfMtimeChanged();
+
     if (this.#entries.length === 0) return [];
 
     const queryVec = await this.#embedder.embed(query);

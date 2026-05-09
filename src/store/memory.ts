@@ -352,6 +352,19 @@ export const readMemory = (path: string): ReadMemory => {
  * not `mkdir -p`.
  */
 export const writeMemory = (path: string, memory: Memory): void => {
+  writeFileSync(path, serializeMemory(memory), 'utf8');
+};
+
+/**
+ * Serialise a memory to its canonical UTF-8 markdown text WITHOUT touching
+ * the filesystem. Validates and dedupes the same way {@link writeMemory}
+ * does; the round-trip and byte-idempotence guarantees on writeMemory hold
+ * for the bytes returned here.
+ *
+ * Exposed so DAR-923 can route the `.md` write through the atomic helper
+ * (which takes raw bytes) without duplicating the canonical-form logic.
+ */
+export const serializeMemory = (memory: Memory): string => {
   if (!isMemoryType(memory.type)) {
     throw new Error(
       `memory.type must be one of ${MEMORY_TYPES.join(', ')}; got ${JSON.stringify(memory.type)}`,
@@ -394,8 +407,7 @@ export const writeMemory = (path: string, memory: Memory): void => {
   // ends with `\n`, so the framing reads:
   //   ---\n<yaml>\n---\n<body>
   const fmYaml = stringifyYaml(fmObject);
-  const out = `---\n${fmYaml}---\n${memory.body}`;
-  writeFileSync(path, out, 'utf8');
+  return `---\n${fmYaml}---\n${memory.body}`;
 };
 
 /**
