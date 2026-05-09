@@ -200,6 +200,19 @@ export interface ScanResult {
    * WOULD have been removed -- the orphans are left on disk.
    */
   orphaned: number;
+  /**
+   * DAR-918: number of `.md` files whose existing sidecar was already valid
+   * (matching modelId, dim, contentSha) and was reused without touching the
+   * embedder or disk. Disjoint from {@link embedded} and
+   * {@link staleReembedded}; their sum equals the count of `.md` files
+   * processed by this scan. Surfaced directly so callers like the migrate
+   * CLI can report "unchanged" without subtracting from {@link loaded},
+   * which has different semantics across live and dry-run modes (in dry-run,
+   * `loaded` counts only the entries actually placed in the in-memory array
+   * -- i.e. only the fresh ones -- so subtraction would produce zero or
+   * negative numbers).
+   */
+  fresh: number;
 }
 
 /** Options for {@link MemoryStore.scan} (DAR-918). */
@@ -400,6 +413,7 @@ export class MemoryStore {
     }
     let embedded = 0;
     let staleReembedded = 0;
+    let fresh = 0;
 
     for (const filename of mdFiles) {
       const mdPath = join(this.#dir, filename);
@@ -462,6 +476,13 @@ export class MemoryStore {
         // helper so a concurrent reader either sees the prior sidecar or
         // the new one, never a partial file. Same-fs guard + fsync apply.
         await atomicWrite(sidecarPath, buf);
+      } else {
+        // Sidecar on disk decoded cleanly with matching modelId/dim/
+        // contentSha -- the cached vector is reused, no embed call, no
+        // disk write. Counted as `fresh` so the migrate CLI can report
+        // "unchanged" directly without subtracting from `loaded`, whose
+        // value differs across live and dry-run modes.
+        fresh += 1;
       }
 
       next.push({
@@ -522,6 +543,7 @@ export class MemoryStore {
       embedded,
       staleReembedded,
       orphaned,
+      fresh,
     };
   }
 

@@ -110,6 +110,15 @@ export interface MigrateResult {
    * removed.
    */
   orphaned: number;
+  /**
+   * Number of `.md` files whose existing sidecar was already valid and was
+   * reused without invoking the embedder or writing to disk. Mirrors
+   * {@link import('../store/memory-store.js').ScanResult.fresh} so the CLI
+   * summary line "loaded: N unchanged" can be reported directly without
+   * subtracting from {@link loaded} (whose semantics differ between live
+   * and dry-run modes -- see DAR-918 review f-1).
+   */
+  fresh: number;
   /** One entry per .md that had dangling edges pruned. Empty when nothing to prune. */
   pruned: PrunedFile[];
 }
@@ -184,6 +193,7 @@ export const runMigrate = async (opts: MigrateOptions): Promise<MigrateResult> =
     embedded: scan.embedded,
     reembedded: scan.staleReembedded,
     orphaned: scan.orphaned,
+    fresh: scan.fresh,
     pruned,
   };
 };
@@ -373,17 +383,16 @@ export const migrateMain = async (opts: MigrateMainOptions): Promise<MigrateMain
   // asserts the exact strings 'loaded', 'embedded', 're-embedded', and
   // 'orphaned' appear in the output.
   const dryRunBanner = parsed.dryRun ? ' (dry-run)' : '';
-  // `loaded` here is "memories indexed that did not require any
-  // (re)embed work this run" -- i.e., total - embedded - reembedded. This
-  // matches the issue body's example summary line "loaded: 3 unchanged".
-  const unchanged = result.loaded - result.embedded - result.reembedded;
-  // Guard against negative values in dry-run mode (where `loaded` only
-  // counts entries with reusable sidecars). Display max(0, ...) so a
-  // dry-run on a fully-stale corpus still prints a sensible "loaded: 0".
-  const loadedDisplay = unchanged < 0 ? 0 : unchanged;
+  // `fresh` is "memories whose existing sidecar was reused -- no embed work
+  // was done for them this run" (see ScanResult.fresh). Surfaced directly by
+  // scan() so the user-visible "loaded: N unchanged" line has identical
+  // semantics in live and dry-run modes; previously we computed it via
+  // `loaded - embedded - reembedded`, which collapses to zero or goes
+  // negative in dry-run because dry-run's `loaded` counts only the entries
+  // actually placed in the in-memory array.
   const lines: string[] = [
     `commonplace migrate ${parsed.dir}${dryRunBanner}`,
-    `  loaded:       ${loadedDisplay} unchanged`,
+    `  loaded:       ${result.fresh} unchanged`,
     `  embedded:     ${result.embedded} new sidecars`,
     `  re-embedded:  ${result.reembedded} stale sidecar${result.reembedded === 1 ? '' : 's'}`,
     `  orphaned:     ${result.orphaned} sidecar${result.orphaned === 1 ? '' : 's'} without matching .md${result.orphaned === 0 ? '' : parsed.dryRun ? ' (would be cleaned up)' : ' (cleaned up)'}`,

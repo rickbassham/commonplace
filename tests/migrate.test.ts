@@ -83,8 +83,7 @@ describe('ac-1: runMigrate routes through MemoryStore.scan()', () => {
     // Assert: exactly one embed call (from scan's missing-sidecar branch),
     // sidecar exists with the expected shape, and the result reports the
     // missing-sidecar case as embedded.
-    const embedMock = embedder.embed as unknown as { mock: { calls: unknown[][] } };
-    expect(embedMock.mock.calls.length).toBe(1);
+    expect(vi.mocked(embedder.embed).mock.calls.length).toBe(1);
     expect(existsSync(join(tmp, 'alpha.embedding'))).toBe(true);
     expect(result.embedded).toBe(1);
     expect(result.reembedded).toBe(0);
@@ -170,10 +169,53 @@ describe('ac-2: summary fields', () => {
     expect(typeof result.embedded).toBe('number');
     expect(typeof result.reembedded).toBe('number');
     expect(typeof result.orphaned).toBe('number');
+    expect(typeof result.fresh).toBe('number');
     expect(result.loaded).toBe(1);
     expect(result.embedded).toBe(1);
     expect(result.reembedded).toBe(0);
     expect(result.orphaned).toBe(0);
+    // The single .md was new, so nothing was already-fresh on disk.
+    expect(result.fresh).toBe(0);
+  });
+
+  it('runMigrate on a directory whose sidecars are all already valid reports fresh=N and embedded=reembedded=0 (DAR-918 review f-1: `fresh` surfaces unchanged-entry count directly)', async () => {
+    const embedder = makeStubEmbedder();
+    writeMemoryFile(tmp, makeMemory('alpha'));
+    writeMemoryFile(tmp, makeMemory('beta'));
+    // First run populates sidecars.
+    await runMigrate({ dir: tmp, embedder, pruneDangling: false });
+
+    // Second run: every sidecar is already valid -- nothing to do.
+    const second = await runMigrate({ dir: tmp, embedder, pruneDangling: false });
+
+    expect(second.embedded).toBe(0);
+    expect(second.reembedded).toBe(0);
+    expect(second.orphaned).toBe(0);
+    expect(second.fresh).toBe(2);
+    expect(second.loaded).toBe(2);
+  });
+
+  it('runMigrate in dry-run mode reports `fresh` independently of `loaded` (DAR-918 review f-1: dry-run `loaded` only counts entries placed in memory, so subtraction can go negative -- `fresh` does not)', async () => {
+    const embedder = makeStubEmbedder();
+    // Two .md files, neither has a sidecar. In dry-run, scan() doesn't
+    // embed them, so they don't go into the in-memory array, and `loaded`
+    // is 0. `fresh` is also 0 (no sidecars were already valid), but the
+    // direct field avoids the negative-subtraction trap (loaded - embedded
+    // - reembedded == 0 - 2 - 0 == -2 here).
+    writeMemoryFile(tmp, makeMemory('alpha'));
+    writeMemoryFile(tmp, makeMemory('beta'));
+
+    const result = await runMigrate({ dir: tmp, embedder, pruneDangling: false, dryRun: true });
+
+    // Both .md files are missing sidecars -> embedded=2, reembedded=0
+    // (reembedded counts only stale-replaced cases per ScanResult contract).
+    expect(result.embedded).toBe(2);
+    expect(result.reembedded).toBe(0);
+    expect(result.loaded).toBe(0);
+    // No sidecars were already valid -> fresh=0. Crucially, this is a
+    // direct count from scan(), not derived by subtraction (which would
+    // give 0 - 2 - 0 == -2 in dry-run if we tried to compute it).
+    expect(result.fresh).toBe(0);
   });
 });
 
@@ -546,12 +588,18 @@ describe('ac-8: mixed-state fixture', () => {
     // chose "loaded = total .md files now indexed" (3), with the embed/
     // reembed counts capturing the action breakdown. The contract test
     // asserts those action counts (embedded=1, reembedded=1, orphaned=1)
-    // explicitly; the "loaded=2" reading is captured by:
-    //   loaded - embedded - reembedded === 1 (the truly-unchanged entry)
-    // which we assert here so the behavioural intent stands:
+    // explicitly; the "loaded=2" reading is now surfaced directly via
+    // `fresh` (DAR-918 review f-1) rather than reconstructed by subtraction.
     expect(result.embedded).toBe(1);
     expect(result.reembedded).toBe(1);
     expect(result.orphaned).toBe(1);
-    expect(result.loaded - result.embedded - result.reembedded).toBe(1);
+    // Only the already-valid memory was reused as-is; the other two had
+    // their sidecars (re)written. `fresh` captures that single truly-
+    // unchanged entry directly.
+    expect(result.fresh).toBe(1);
+    // Subtraction-based view kept as a sanity check: it must agree with
+    // `fresh` in live mode (where `loaded` counts every .md placed in the
+    // in-memory array).
+    expect(result.loaded - result.embedded - result.reembedded).toBe(result.fresh);
   });
 });
