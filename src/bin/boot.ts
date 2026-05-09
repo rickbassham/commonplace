@@ -39,6 +39,7 @@ import { createServer, installCallToolHandler } from '../server/server.js';
 import { createDefaultHandlers } from '../server/tools.js';
 import { MemoryGraph } from '../store/graph.js';
 import { MemoryStore, type Embedder as EmbedderShape } from '../store/memory-store.js';
+import { resolveDefaultLimit, resolveModelId } from './env.js';
 import { detectScope, type RootEntry, type ScopeDetectionResult } from './scope.js';
 
 /** Inputs to {@link bootServer}. */
@@ -79,8 +80,10 @@ export interface BootResult {
   scope: ScopeDetectionResult;
 }
 
-/** Default model id for the embedder when the caller doesn't supply one. */
-const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
+// `DEFAULT_MODEL_ID` lives in `./env.ts` post-DAR-913 (alongside the
+// `COMMONPLACE_MODEL` env var that may override it). The bin still resolves
+// the model id via `resolveModelId()` below so test harnesses passing a
+// stub embedder bypass the resolver entirely.
 
 /**
  * Issue a `roots/list` request to the connected client and translate the
@@ -126,7 +129,12 @@ const requestRoots = async (server: Server): Promise<RootEntry[] | null> => {
  * the step-by-step contract.
  */
 export async function bootServer(options: BootOptions): Promise<BootResult> {
-  const embedder = options.embedder ?? new Embedder(DEFAULT_MODEL_ID);
+  // Step 0: resolve the env-driven knobs (DAR-913). `resolveDefaultLimit`
+  // throws on invalid `COMMONPLACE_DEFAULT_LIMIT` values; we do this BEFORE
+  // mkdir-ing the user dir so a misconfigured operator gets a clear stderr
+  // message without the bin first creating directories on disk.
+  const defaultLimit = resolveDefaultLimit(options.env);
+  const embedder = options.embedder ?? new Embedder(resolveModelId(options.env));
 
   // Step 1+2: resolve user dir, mkdir -p so first-run users get a clean
   // start. The deprecation warning is issued post-detection (we already
@@ -159,8 +167,10 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
 
   // Step 3+4: wire handlers WITHOUT a project store yet. roots/list
   // happens after server.connect, so the project store -- if any -- is
-  // only known after the round-trip completes.
-  const handlers = createDefaultHandlers({ userStore, graph: userGraph });
+  // only known after the round-trip completes. `defaultLimit` is the
+  // resolved `COMMONPLACE_DEFAULT_LIMIT` value (DAR-913); the search
+  // handler uses it when the caller omits `limit`.
+  const handlers = createDefaultHandlers({ userStore, graph: userGraph, defaultLimit });
   const server = createServer({ handlers });
 
   // Step 5: connect first so the transport is ready to issue requests.
@@ -198,6 +208,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
       userStore,
       projectStore,
       graph: userGraph,
+      defaultLimit,
     });
     installCallToolHandler(server, handlersWithProject);
   }

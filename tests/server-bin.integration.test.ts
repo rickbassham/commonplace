@@ -185,3 +185,83 @@ describe('DAR-919 bin integration: spawned bin with real Embedder + MemoryStore'
     expect(parsed.totalScanned).toBe(0);
   });
 });
+
+describe('DAR-913 ac-6 bin integration: spawned bin honours COMMONPLACE_DEFAULT_LIMIT', () => {
+  const binPath = readBinPath();
+  let memoryDir: string;
+  let client: Client;
+  let transport: StdioClientTransport;
+
+  beforeAll(() => {
+    const res = spawnSync('make', ['build'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 180_000,
+      env: { ...process.env, CI: '1' },
+    });
+    if (res.status !== 0) {
+      throw new Error(`make build failed: ${res.stderr || res.stdout}`);
+    }
+    if (!existsSync(binPath)) {
+      throw new Error(`bin not found after build: ${binPath}`);
+    }
+  }, 200_000);
+
+  beforeEach(async () => {
+    memoryDir = mkdtempSync(join(tmpdir(), 'dar913-bin-int-'));
+    transport = new StdioClientTransport({
+      command: 'node',
+      args: [binPath],
+      env: {
+        ...process.env,
+        COMMONPLACE_USER_DIR: memoryDir,
+        COMMONPLACE_DEFAULT_LIMIT: '2',
+      } as Record<string, string>,
+      stderr: 'inherit',
+    });
+    client = new Client({ name: 'dar913-bin-int', version: '0.0.0' });
+    await client.connect(transport);
+  });
+
+  afterEach(async () => {
+    try {
+      await client.close();
+    } catch {
+      // best-effort cleanup
+    }
+    rmSync(memoryDir, { recursive: true, force: true });
+  });
+
+  it("spawned commonplace-mcp bin with env.COMMONPLACE_DEFAULT_LIMIT='2' returns at most 2 hits for a memory_search request that omits limit", async () => {
+    // Save four memories so the corpus has more than the env-resolved
+    // default. If the env var is honoured, memory_search should slice to
+    // 2; if it's ignored, we'd see up to 4 (or the built-in 5).
+    for (let i = 0; i < 4; i++) {
+      const save = await client.callTool({
+        name: 'memory_save',
+        arguments: {
+          name: `dar913_entry_${i}`,
+          type: 'reference',
+          description: `entry ${i}`,
+          body: `body ${i} -- lorem ipsum dolor sit amet.`,
+        },
+      });
+      expect(save.isError).toBeFalsy();
+    }
+
+    const search = await client.callTool({
+      name: 'memory_search',
+      arguments: { query: 'lorem ipsum' },
+    });
+    expect(search.isError).toBeFalsy();
+    const text = firstTextContent(search.content);
+    const parsed: unknown = JSON.parse(text);
+    if (!isObject(parsed) || !Array.isArray(parsed.matches)) {
+      throw new Error(`memory_search payload missing matches[]: ${text}`);
+    }
+    expect(parsed.matches.length).toBeLessThanOrEqual(2);
+    // With four entries in the corpus the env-resolved limit (2) is the
+    // active slice; we expect exactly 2 hits.
+    expect(parsed.matches.length).toBe(2);
+  }, 180_000);
+});

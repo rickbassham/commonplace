@@ -12,14 +12,19 @@
  * For Claude Code:
  *   claude mcp add commonplace ./dist/bin/commonplace-mcp.js
  *
- * # Environment variables (DAR-924)
+ * # Environment variables
  *
- *   COMMONPLACE_USER_DIR     user-level memory dir
- *                            (default: ~/.commonplace/memory)
- *   COMMONPLACE_PROJECT_DIR  project-level memory dir; explicit override
- *                            for the env > roots > cwd > none priority
- *   COMMONPLACE_MEMORY_DIR   deprecated alias for COMMONPLACE_USER_DIR;
- *                            stderr deprecation warning emitted on use
+ *   COMMONPLACE_USER_DIR        user-level memory dir (DAR-924)
+ *                               (default: ~/.commonplace/memory)
+ *   COMMONPLACE_PROJECT_DIR     project-level memory dir (DAR-924); explicit
+ *                               override for env > roots > cwd > none
+ *   COMMONPLACE_MEMORY_DIR      deprecated alias for COMMONPLACE_USER_DIR
+ *                               (DAR-924); stderr deprecation warning on use
+ *   COMMONPLACE_MODEL           embedding model id passed to transformers.js
+ *                               (DAR-913); default Xenova/bge-base-en-v1.5
+ *   COMMONPLACE_DEFAULT_LIMIT   default top-k for memory_search when the
+ *                               caller omits `limit` (DAR-913); default 5,
+ *                               must be a positive integer
  *
  * # Detection priority for the project store
  *

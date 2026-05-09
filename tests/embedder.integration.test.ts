@@ -69,3 +69,21 @@ describe('ac-6 (integration): bge-base load + embed round trip', () => {
     expect(e.modelId).toBe(MODEL_ID);
   }, 120_000);
 });
+
+describe('DAR-913 ac-5 (integration): unknown COMMONPLACE_MODEL surfaces a lazy load error naming the offending model id', () => {
+  it('memory_search against a store using an unknown COMMONPLACE_MODEL surfaces an error whose message names the offending model id when the embedder first loads', async () => {
+    const bogus = 'definitely-not-a-real/commonplace-test-model';
+    const e = new Embedder(bogus);
+    let msg = '';
+    try {
+      // First embed call triggers transformers.js's pipeline() factory,
+      // which is where an unknown id surfaces. We don't pre-validate at
+      // construction time per DAR-913 ac-5.
+      await e.embed('anything');
+    } catch (err) {
+      msg = err instanceof Error ? err.message : String(err);
+    }
+    expect(msg, 'expected the embedder to throw on unknown model id').not.toBe('');
+    expect(msg, 'expected error message to name the offending model id').toContain(bogus);
+  }, 120_000);
+});
