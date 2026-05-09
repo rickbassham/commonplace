@@ -519,12 +519,19 @@ export class MemoryStore {
     // delete cannot interleave with an in-flight save on the same name.
     const release = await acquireNameLock(this.#dir, name);
     try {
-      if (existsSync(mdPath)) unlinkSync(mdPath);
-      if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
+      // Splice the in-memory entry out FIRST under the lock so the store's
+      // in-memory-authoritative invariant holds even if a subsequent unlink
+      // fails (e.g. EACCES, EBUSY). A partial unlink then leaves only stale
+      // on-disk files, which the next scan() reconciles -- it never leaves
+      // an in-memory entry whose backing .md has already been removed (the
+      // failure mode where search() could return a hit whose bytes can no
+      // longer be read). See PR #10 review f-1.
       this.#entries.splice(idx, 1);
       if (this.#graph !== undefined) {
         this.#graph.remove(name);
       }
+      if (existsSync(mdPath)) unlinkSync(mdPath);
+      if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
       if (existsSync(this.#dir)) {
         this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
       }

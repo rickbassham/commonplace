@@ -36,6 +36,15 @@ const makeStubEmbedder = (
     dim,
     embed: async (text: string): Promise<Float32Array> => {
       if (delayMs > 0) {
+        // PR #10 review f-2: signal "ready" from inside embed(), AFTER the
+        // per-name lock is held and AFTER the .md atomic-write has
+        // completed (save() awaits atomicWrite(mdPath, ...) before calling
+        // embed()). This guarantees SIGKILL from the test lands in the
+        // gap between the md write and the sidecar write, regardless of
+        // CI runner speed -- the prior assumption (50ms slack after a
+        // pre-save 'ready' print) could fire before the .md rename
+        // completed on a slow runner.
+        process.stdout.write('ready\n');
         await new Promise((r) => setTimeout(r, delayMs));
       }
       const out = new Float32Array(dim);
@@ -92,9 +101,10 @@ const main = async (): Promise<void> => {
       dir,
       embedder: makeStubEmbedder(Number(delayStr)),
     });
-    // Print "ready" to stdout so the test can wait for the child to be
-    // poised mid-embed before SIGKILL'ing.
-    process.stdout.write('ready\n');
+    // PR #10 review f-2: the embedder stub itself emits 'ready' from
+    // inside embed(), so the print fires AFTER lock acquisition AND
+    // AFTER the .md atomic-write -- guaranteeing the SIGKILL window
+    // sits between md and sidecar writes. Don't print here.
     await store.save(makeMemory(name));
     return;
   }
