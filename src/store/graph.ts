@@ -267,6 +267,98 @@ export class MemoryGraph {
   }
 
   /**
+   * Incrementally add a single authored edge to the graph (DAR-928). Used by
+   * the `memory_link` handler when it appends an edge to an already-loaded
+   * source memory's frontmatter -- a full `add(memory)` would throw because
+   * the memory is already present, and a `rebuild()` would be wasteful.
+   *
+   * Routing matches the rebuild-from-scratch path:
+   *
+   *   - `RelationType` edges (the four authored types) are stored as
+   *     `{ type: <RelationType> }`.
+   *   - `'supersedes'` edges populate the `#supersededBy` index in addition
+   *     to the outbound/inbound buckets, so `isSuperseded` keeps answering
+   *     correctly.
+   *
+   * Self-edges are rejected. The caller (handler) is also expected to have
+   * verified that `to` resolves to a loaded memory; this method does not
+   * re-check that invariant -- a dangling edge added here will appear in
+   * {@link detectDangling} on the next call.
+   */
+  public addEdge(args: { from: string; to: string; type: RelationType | 'supersedes' }): void {
+    if (args.from === args.to) {
+      throw new Error(
+        `MemoryGraph.addEdge: self-edge ${args.from} -> ${args.to} (type=${args.type}) is not allowed`,
+      );
+    }
+    const edge: Edge = { from: args.from, to: args.to, type: args.type };
+    appendEdge(this.#outbound, args.from, edge);
+    appendEdge(this.#inbound, args.to, edge);
+    if (args.type === 'supersedes') {
+      let supers = this.#supersededBy.get(args.to);
+      if (supers === undefined) {
+        supers = new Set<string>();
+        this.#supersededBy.set(args.to, supers);
+      }
+      supers.add(args.from);
+    }
+  }
+
+  /**
+   * Incrementally remove a single authored edge from the graph (DAR-928).
+   * Used by the `memory_unlink` handler when an edge is dropped from a
+   * source memory's frontmatter.
+   *
+   * No-op if the edge does not exist. Returns `true` when an edge was
+   * removed, `false` otherwise -- callers can use this to decide whether to
+   * follow up with a disk write.
+   *
+   * For `'supersedes'` edges this also clears the matching entry from the
+   * `#supersededBy` index so `isSuperseded` reflects the change.
+   */
+  public removeEdge(args: {
+    from: string;
+    to: string;
+    type: RelationType | 'supersedes';
+  }): boolean {
+    const out = this.#outbound.get(args.from);
+    if (out === undefined) return false;
+    let removed = false;
+    for (let i = 0; i < out.length; i++) {
+      const edge = out[i]!;
+      if (edge.to === args.to && edge.type === args.type) {
+        out.splice(i, 1);
+        removed = true;
+        break;
+      }
+    }
+    if (!removed) return false;
+    if (out.length === 0) this.#outbound.delete(args.from);
+
+    // Mirror the change on the inbound side.
+    const inb = this.#inbound.get(args.to);
+    if (inb !== undefined) {
+      for (let i = 0; i < inb.length; i++) {
+        const edge = inb[i]!;
+        if (edge.from === args.from && edge.type === args.type) {
+          inb.splice(i, 1);
+          break;
+        }
+      }
+      if (inb.length === 0) this.#inbound.delete(args.to);
+    }
+
+    if (args.type === 'supersedes') {
+      const supers = this.#supersededBy.get(args.to);
+      if (supers !== undefined) {
+        supers.delete(args.from);
+        if (supers.size === 0) this.#supersededBy.delete(args.to);
+      }
+    }
+    return true;
+  }
+
+  /**
    * Add a `mentions` edge from one loaded memory to another. The edge is
    * stored alongside authored edges and shows up in `outbound`/`inbound`
    * results. DAR-927 will own the body-tokenizer that decides which

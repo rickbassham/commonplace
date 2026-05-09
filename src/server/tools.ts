@@ -20,17 +20,27 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
-import { MEMORY_TYPES } from '../store/memory.js';
+import { MEMORY_TYPES, RELATION_TYPES } from '../store/memory.js';
+import type { MemoryGraph } from '../store/graph.js';
 import type { MemoryStore } from '../store/memory-store.js';
 import {
   createMemoryDeleteHandler,
+  createMemoryLinkHandler,
   createMemoryListHandler,
   createMemorySaveHandler,
   createMemorySearchHandler,
+  createMemoryUnlinkHandler,
 } from './handlers.js';
 
 /** The exact tool names this server exposes, in registration order. */
-export const TOOL_NAMES = ['memory_search', 'memory_save', 'memory_list', 'memory_delete'] as const;
+export const TOOL_NAMES = [
+  'memory_search',
+  'memory_save',
+  'memory_list',
+  'memory_delete',
+  'memory_link',
+  'memory_unlink',
+] as const;
 
 /** Element type of {@link TOOL_NAMES}. */
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -85,29 +95,51 @@ const notImplemented: ToolHandler = async () => {
 export interface CreateDefaultHandlersOptions {
   /**
    * MemoryStore instance to wire the DAR-919 CRUD handlers (memory_save,
-   * memory_list, memory_delete) against. When omitted, all four tools fall
-   * back to the not-implemented stub -- matches the bare scaffold from
-   * DAR-909 so callers that construct a server before the store layer is
-   * available (e.g. early-boot smoke tests) keep working.
+   * memory_list, memory_delete), the DAR-920 search handler, and the
+   * DAR-928 link/unlink handlers against. When omitted, all six tools
+   * fall back to the not-implemented stub -- matches the bare scaffold
+   * from DAR-909 so callers that construct a server before the store
+   * layer is available (e.g. early-boot smoke tests) keep working.
    */
   store?: MemoryStore;
+  /**
+   * Optional in-memory graph (DAR-926). The graph is owned by the
+   * {@link MemoryStore} (passed to `new MemoryStore({ dir, embedder, graph })`)
+   * which keeps it in sync via scan/save/delete/linkEdge/unlinkEdge. The
+   * link/unlink handlers themselves do not need a graph reference -- they
+   * dispatch through the store, which owns the single graph instance.
+   *
+   * This option is accepted (and the bin passes it) to make the wiring
+   * intent explicit at the call site -- "this server has a graph, and it is
+   * threaded through both the store and the handler layer" -- per DAR-928
+   * ac-5. It is otherwise unused.
+   */
+  graph?: MemoryGraph;
 }
 
 /**
- * Default handler map. When a `store` is supplied, all four tools are wired
- * to the real handlers from {@link ./handlers} (memory_search via DAR-920,
- * the three CRUD tools via DAR-919). When `store` is omitted, every tool
- * falls back to the not-implemented stub -- preserving the DAR-909 baseline
- * for callers that haven't wired a store yet (e.g. early-boot smoke tests).
+ * Default handler map. When a `store` is supplied, all six tools are wired
+ * to real handlers (memory_search via DAR-920, CRUD via DAR-919,
+ * link/unlink via DAR-928). When `store` is omitted, every tool falls back
+ * to the not-implemented stub -- preserving the DAR-909 baseline for
+ * callers that haven't wired a store yet (e.g. early-boot smoke tests).
+ *
+ * The optional `graph` argument exists for explicit ac-5 wiring symmetry;
+ * it is owned by the {@link MemoryStore} and not forwarded to the
+ * link/unlink handler factories (the store already updates it
+ * incrementally on linkEdge/unlinkEdge).
  */
 export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}): ToolHandlerMap {
   const { store } = options;
+  // `options.graph` is intentionally unused here -- see CreateDefaultHandlersOptions.
   if (store === undefined) {
     return {
       memory_search: notImplemented,
       memory_save: notImplemented,
       memory_list: notImplemented,
       memory_delete: notImplemented,
+      memory_link: notImplemented,
+      memory_unlink: notImplemented,
     };
   }
   return {
@@ -115,6 +147,8 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     memory_save: createMemorySaveHandler({ store }),
     memory_list: createMemoryListHandler({ store }),
     memory_delete: createMemoryDeleteHandler({ store }),
+    memory_link: createMemoryLinkHandler({ store }),
+    memory_unlink: createMemoryUnlinkHandler({ store }),
   };
 }
 
@@ -208,6 +242,54 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
         name: { type: 'string', description: 'Memory name (filename stem) to delete.' },
       },
       required: ['name'],
+    },
+  },
+  memory_link: {
+    description:
+      "Append a typed graph edge from one saved memory to another. The source memory's frontmatter is rewritten atomically. Default `type` is `related-to`; passing `supersedes` routes the edge into the source's `supersedes[]` list instead of `relations[]`. Refuses self-edges, missing targets, and duplicate (to, type) edges.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Source memory name. Edge is appended to this memory.',
+        },
+        to: {
+          type: 'string',
+          description: 'Target memory name. Must already exist.',
+        },
+        type: {
+          type: 'string',
+          enum: [...RELATION_TYPES, 'supersedes'],
+          description:
+            "Edge type. One of the four `RelationType` values (`related-to`, `builds-on`, `contradicts`, `child-of`) or `supersedes`. Defaults to `related-to`. When `supersedes`, the edge is appended to the source's `supersedes[]` field rather than `relations[]`.",
+        },
+      },
+      required: ['from', 'to'],
+    },
+  },
+  memory_unlink: {
+    description:
+      "Remove a typed graph edge from one saved memory to another. The source memory's frontmatter is rewritten atomically. When `type` is omitted, removes ALL edges from -> to regardless of type. No-op (with note) when the requested edge does not exist.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Source memory name. Edge is removed from this memory.',
+        },
+        to: {
+          type: 'string',
+          description: 'Target memory name.',
+        },
+        type: {
+          type: 'string',
+          enum: [...RELATION_TYPES, 'supersedes'],
+          description:
+            'Optional edge type to remove. When omitted, removes every edge from -> to regardless of type.',
+        },
+      },
+      required: ['from', 'to'],
     },
   },
 };

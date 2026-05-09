@@ -29,7 +29,14 @@ import { join } from 'node:path';
 import * as lockfile from 'proper-lockfile';
 
 import { atomicWrite } from './atomic-write.js';
-import { contentSha, readMemory, serializeMemory, type Memory, type Relation } from './memory.js';
+import {
+  contentSha,
+  readMemory,
+  serializeMemory,
+  type Memory,
+  type Relation,
+  type RelationType,
+} from './memory.js';
 import { MemoryGraph } from './graph.js';
 import { extractMentions, mentionsExtractionEnabled } from './mentions.js';
 import { decodeSidecar, encodeSidecar } from './sidecar.js';
@@ -266,6 +273,40 @@ export class MemoryStore {
   }
 
   /**
+   * Capture the memory directory's current `mtimeMs` into `#lastScanMtimeMs`,
+   * so a subsequent {@link search} / {@link list} does not see "the dir
+   * changed since last scan" and trigger a wasteful rescan that would
+   * re-read what we just wrote.
+   *
+   * Wraps `statSync` in a single try/catch instead of the
+   * `existsSync` + `statSync` pattern so the ENOENT TOCTOU window (dir
+   * removed between the two calls) is closed: any ENOENT from the stat is
+   * treated as "no dir, no baseline to refresh" and swallowed. Other
+   * errors (EACCES, EIO, ...) propagate.
+   *
+   * Used by {@link save}, {@link delete}, {@link linkEdge}, and
+   * {@link unlinkEdge}.
+   */
+  #refreshMtimeBaseline(): void {
+    try {
+      this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
+    } catch (err) {
+      // Dir was removed between the write and this stat. Nothing to
+      // baseline against -- the next scan will start from scratch.
+      // Other errors (EACCES, EIO, ...) propagate.
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'code' in err &&
+        err.code === 'ENOENT'
+      ) {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  /**
    * Glob `<dir>/*.md`, decide for each one whether the matching
    * `<name>.embedding` is reusable, embed (and rewrite the sidecar) when not,
    * and populate the in-memory entry array with the result.
@@ -465,9 +506,7 @@ export class MemoryStore {
       // does not see "the dir changed since last scan" and re-scan from
       // disk (which would be both wasteful and could re-read what we just
       // wrote, embedder-dependent).
-      if (existsSync(this.#dir)) {
-        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
-      }
+      this.#refreshMtimeBaseline();
     } finally {
       // Release on every path -- success and any thrown error -- so the
       // next save() / delete() on the same name can proceed (DAR-923
@@ -553,9 +592,7 @@ export class MemoryStore {
       }
       if (existsSync(mdPath)) unlinkSync(mdPath);
       if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
-      if (existsSync(this.#dir)) {
-        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
-      }
+      this.#refreshMtimeBaseline();
     } finally {
       try {
         await release();
@@ -563,6 +600,239 @@ export class MemoryStore {
         // see save()'s release-swallow comment
       }
     }
+  }
+
+  /**
+   * DAR-928 ac-2/ac-3: append a single typed edge to a loaded memory's
+   * frontmatter and atomically rewrite the source `.md`. Sidecar / vector
+   * are deliberately untouched -- the canonical `contentSha` is scoped over
+   * `(type, name, description, body)` only (see {@link contentSha}), so
+   * adding or removing graph edges does NOT invalidate the embedding.
+   *
+   * Routing:
+   *
+   *   - `RelationType` edges (`related-to`, `builds-on`, `contradicts`,
+   *     `child-of`) append to `relations[]` (deduped by `(to, type)`).
+   *   - `'supersedes'` appends to `supersedes[]` (deduped by name).
+   *
+   * Errors raised before any disk write:
+   *
+   *   - `from === to` (self-edge)
+   *   - source memory `from` is not loaded
+   *   - target memory `to` is not loaded
+   *   - duplicate edge (same `(to, type)` already present on the source)
+   *
+   * On success: the source `.md` is rewritten through the
+   * {@link atomicWrite} helper (DAR-923), the in-memory entry's
+   * `relations` / `supersedes` fields are updated in place, and the graph
+   * (when one is wired) gets an incremental {@link MemoryGraph.addEdge}
+   * call -- no `scan()` and no `rebuild()`. The directory mtime baseline
+   * is refreshed afterwards so a subsequent `search()` / `list()` does not
+   * trigger a wasteful rescan.
+   */
+  public async linkEdge(args: {
+    from: string;
+    to: string;
+    type: RelationType | 'supersedes';
+  }): Promise<{ relations: Relation[]; supersedes: string[] }> {
+    const { from, to, type } = args;
+    if (from === to) {
+      throw new Error(`MemoryStore.linkEdge: self-edge \`${from}\` -> \`${to}\` is not allowed`);
+    }
+    const idx = this.#entries.findIndex((e) => e.name === from);
+    if (idx === -1) {
+      throw new Error(
+        `MemoryStore.linkEdge: source memory \`${from}\` is not present in the in-memory index`,
+      );
+    }
+    if (!this.#entries.some((e) => e.name === to)) {
+      throw new Error(
+        `MemoryStore.linkEdge: target memory \`${to}\` does not exist in the in-memory index`,
+      );
+    }
+    const entry = this.#entries[idx]!;
+    if (type === 'supersedes') {
+      if (entry.supersedes.includes(to)) {
+        throw new Error(
+          `MemoryStore.linkEdge: a supersedes edge \`${from}\` -> \`${to}\` already exists`,
+        );
+      }
+    } else {
+      if (entry.relations.some((r) => r.to === to && r.type === type)) {
+        throw new Error(
+          `MemoryStore.linkEdge: a duplicate edge \`${from}\` -> \`${to}\` (type=${type}) already exists`,
+        );
+      }
+    }
+
+    const nextRelations: Relation[] =
+      type === 'supersedes' ? entry.relations.slice() : [...entry.relations, { to, type }];
+    const nextSupersedes: string[] =
+      type === 'supersedes' ? [...entry.supersedes, to] : entry.supersedes.slice();
+
+    const updated: Memory = {
+      name: entry.name,
+      description: entry.description,
+      type: entry.type,
+      body: entry.body,
+      relations: nextRelations,
+      supersedes: nextSupersedes,
+    };
+
+    const mdPath = join(this.#dir, `${from}.md`);
+    const release = await acquireNameLock(this.#dir, from);
+    try {
+      const mdBytes = Buffer.from(serializeMemory(updated), 'utf8');
+      await atomicWrite(mdPath, mdBytes);
+
+      // Mutate the in-memory entry in place so `store.all()` (which returns
+      // the live array) reflects the new edge without copying.
+      entry.relations = nextRelations;
+      entry.supersedes = nextSupersedes;
+
+      if (this.#graph !== undefined) {
+        this.#graph.addEdge({ from, to, type });
+      }
+
+      // Refresh the mtime baseline so a search()/list() right after this
+      // does not see the dir mtime advancing past lastScanMtimeMs and trigger
+      // a wasteful rescan.
+      this.#refreshMtimeBaseline();
+    } finally {
+      try {
+        await release();
+      } catch {
+        // see save()'s release-swallow comment
+      }
+    }
+    return { relations: entry.relations.slice(), supersedes: entry.supersedes.slice() };
+  }
+
+  /**
+   * DAR-928 ac-2/ac-3 counterpart of {@link linkEdge}: remove edges from a
+   * loaded memory's frontmatter and atomically rewrite the source `.md`.
+   * Sidecar / vector are untouched (same `contentSha` scoping argument as
+   * {@link linkEdge}).
+   *
+   * Routing:
+   *
+   *   - When `type` is provided, removes only the matching edge
+   *     (`(to, type)` pair). For `'supersedes'`, that's the entry in
+   *     `supersedes[]` equal to `to`; for the four `RelationType` values,
+   *     the entry in `relations[]` with the matching `to` and `type`.
+   *   - When `type` is omitted, removes ALL edges from -> to regardless of
+   *     type (every relations entry whose `to` matches plus the supersedes
+   *     entry equal to `to`).
+   *
+   * Behaviour:
+   *
+   *   - No-op when the requested edge does not exist (no atomic write, no
+   *     graph mutation). Returns `{ ..., note: '<reason>' }` so the caller
+   *     can surface a friendly message.
+   *   - When there ARE edges to remove, writes the source `.md` through
+   *     {@link atomicWrite}, updates the in-memory entry in place, and
+   *     calls {@link MemoryGraph.removeEdge} for each removed edge.
+   *
+   * Returns the post-mutation `relations` / `supersedes` lists.
+   */
+  public async unlinkEdge(args: {
+    from: string;
+    to: string;
+    type?: RelationType | 'supersedes';
+  }): Promise<{ relations: Relation[]; supersedes: string[]; note?: string }> {
+    const { from, to, type } = args;
+    const idx = this.#entries.findIndex((e) => e.name === from);
+    if (idx === -1) {
+      throw new Error(
+        `MemoryStore.unlinkEdge: source memory \`${from}\` is not present in the in-memory index`,
+      );
+    }
+    const entry = this.#entries[idx]!;
+
+    // Compute the set of edges that would be removed and the resulting
+    // post-removal lists. Capture the actual edge types removed so the graph
+    // can mirror them.
+    const removed: Array<{ to: string; type: RelationType | 'supersedes' }> = [];
+    let nextRelations: Relation[];
+    let nextSupersedes: string[];
+    if (type === undefined) {
+      // Remove ALL edges from -> to.
+      nextRelations = entry.relations.filter((r) => {
+        if (r.to === to) {
+          removed.push({ to, type: r.type });
+          return false;
+        }
+        return true;
+      });
+      nextSupersedes = entry.supersedes.filter((s) => {
+        if (s === to) {
+          removed.push({ to, type: 'supersedes' });
+          return false;
+        }
+        return true;
+      });
+    } else if (type === 'supersedes') {
+      nextRelations = entry.relations.slice();
+      nextSupersedes = entry.supersedes.filter((s) => {
+        if (s === to) {
+          removed.push({ to, type: 'supersedes' });
+          return false;
+        }
+        return true;
+      });
+    } else {
+      nextSupersedes = entry.supersedes.slice();
+      nextRelations = entry.relations.filter((r) => {
+        if (r.to === to && r.type === type) {
+          removed.push({ to, type });
+          return false;
+        }
+        return true;
+      });
+    }
+
+    if (removed.length === 0) {
+      // No-op: don't take the lock, don't atomicWrite, don't refresh mtime.
+      return {
+        relations: entry.relations.slice(),
+        supersedes: entry.supersedes.slice(),
+        note: `no edge ${from} -> ${to}${type === undefined ? '' : ` (type=${type})`} present; nothing to unlink`,
+      };
+    }
+
+    const updated: Memory = {
+      name: entry.name,
+      description: entry.description,
+      type: entry.type,
+      body: entry.body,
+      relations: nextRelations,
+      supersedes: nextSupersedes,
+    };
+
+    const mdPath = join(this.#dir, `${from}.md`);
+    const release = await acquireNameLock(this.#dir, from);
+    try {
+      const mdBytes = Buffer.from(serializeMemory(updated), 'utf8');
+      await atomicWrite(mdPath, mdBytes);
+
+      entry.relations = nextRelations;
+      entry.supersedes = nextSupersedes;
+
+      if (this.#graph !== undefined) {
+        for (const e of removed) {
+          this.#graph.removeEdge({ from, to: e.to, type: e.type });
+        }
+      }
+
+      this.#refreshMtimeBaseline();
+    } finally {
+      try {
+        await release();
+      } catch {
+        // see save()'s release-swallow comment
+      }
+    }
+    return { relations: entry.relations.slice(), supersedes: entry.supersedes.slice() };
   }
 
   /**

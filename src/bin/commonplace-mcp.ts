@@ -30,6 +30,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Embedder } from '../embedder/index.js';
 import { createServer } from '../server/server.js';
 import { createDefaultHandlers } from '../server/tools.js';
+import { MemoryGraph } from '../store/graph.js';
 import { MemoryStore } from '../store/memory-store.js';
 
 const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
@@ -43,13 +44,22 @@ async function main(): Promise<void> {
   await mkdir(memoryDir, { recursive: true });
 
   const embedder = new Embedder(DEFAULT_MODEL_ID);
-  const store = new MemoryStore({ dir: memoryDir, embedder });
+  // DAR-928 ac-5: instantiate the in-memory graph (DAR-926) and wire it
+  // into BOTH the store (so scan/save/delete keep it in sync) AND the
+  // handler map (so memory_link/memory_unlink can update it incrementally
+  // without a full rescan). Without this wiring, `MemoryGraph` would be
+  // dormant in the running server and M5's retrieval work would have
+  // nothing to read from.
+  const graph = new MemoryGraph();
+  const store = new MemoryStore({ dir: memoryDir, embedder, graph });
   // Load any existing memories before accepting traffic. Cold-start cost
   // is the embedder's first-call price (~6s for bge-base) plus one I/O
-  // pass over the directory.
+  // pass over the directory. `scan()` populates `graph` via its
+  // `rebuild(entries)` call so the graph is non-empty by the time we
+  // accept the first MCP request.
   await store.scan();
 
-  const handlers = createDefaultHandlers({ store });
+  const handlers = createDefaultHandlers({ store, graph });
   const server = createServer({ handlers });
   const transport = new StdioServerTransport();
   await server.connect(transport);
