@@ -224,6 +224,18 @@ export class MemoryStore {
   }
 
   /**
+   * The on-disk directory this store was constructed against. Exposed so
+   * adjacent layers (e.g. the MCP CRUD handlers in DAR-919) can derive
+   * canonical file paths for response payloads without reaching into
+   * private state. Read-only by convention; callers MUST NOT mutate the
+   * directory contents directly -- always go through {@link save},
+   * {@link delete}, or {@link scan}.
+   */
+  public get dir(): string {
+    return this.#dir;
+  }
+
+  /**
    * If the memory directory's mtime has advanced since the last scan, run
    * a fresh {@link scan}. Cheap (~1ms): we only stat the dir; the scan
    * itself is unconditional only when the mtime check fires.
