@@ -30,7 +30,7 @@ import {
   type RelationType,
 } from '../store/memory.js';
 import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
-import type { MemoryEntry, MemoryStore, SearchOptions } from '../store/memory-store.js';
+import type { MemoryEntry, MemoryStore, SearchHit, SearchOptions } from '../store/memory-store.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /**
@@ -562,8 +562,13 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // request `limit` per store so the merged set has enough headroom even
     // if all top-`limit` hits come from one store; the merged slice then
     // applies the caller's limit again.
-    const allHits: Array<{ hit: import('../store/memory-store.js').SearchHit; scope: Scope }> = [];
+    const allHits: Array<{ hit: SearchHit; scope: Scope }> = [];
     let totalScanned = 0;
+
+    // Per-scope superseded map cache. Built once per target store during the
+    // search loop and reused in the projection loop below for `supersededBy`
+    // lookups -- avoids rebuilding the same map per result match (f-1).
+    const supersededByScope = new Map<Scope, ReadonlyMap<string, string>>();
 
     for (const target of targets) {
       const searchOpts: SearchOptions = {};
@@ -594,6 +599,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       const hits = await target.store.search(query, searchOpts);
       const allEntries = target.store.all();
       const supersededMap = buildSupersededMap(allEntries);
+      supersededByScope.set(target.scope, supersededMap);
 
       // Per-store totalScanned contribution. Mirrors the DAR-929 semantics
       // (post-supersede when not including superseded).
@@ -632,10 +638,22 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       };
       if (includeSuperseded) {
         // For supersededBy lookups we use the matching store's superseded
-        // map. Build it lazily here -- we already have it per-store but
-        // didn't carry it through; rebuild from the per-scope corpus.
-        const corpus = sc === 'user' ? userStore.all() : projectStore!.all();
-        const supersededMap = buildSupersededMap(corpus);
+        // map. The map was already built once per target store during the
+        // search loop and cached in `supersededByScope` -- consult it here
+        // (f-1) rather than rebuilding from the per-scope corpus.
+        let supersededMap = supersededByScope.get(sc);
+        if (supersededMap === undefined) {
+          // Defensive: the search loop only populates the map for targets
+          // it queried. When `includeSuperseded` is true the map isn't
+          // strictly needed for filtering -- but we still want
+          // `supersededBy` annotations on matches, so build it lazily here
+          // for any scope we somehow missed (should not happen given the
+          // current targets construction, but the lazy build keeps the
+          // invariant local).
+          const corpus = sc === 'user' ? userStore.all() : projectStore!.all();
+          supersededMap = buildSupersededMap(corpus);
+          supersededByScope.set(sc, supersededMap);
+        }
         const superseder = supersededMap.get(hit.memory.name);
         if (superseder !== undefined) {
           projection.supersededBy = superseder;
