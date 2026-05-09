@@ -20,8 +20,14 @@
 
 import { join } from 'node:path';
 
-import { MEMORY_TYPES, validateName, type Memory, type MemoryType } from '../store/memory.js';
-import type { MemoryStore, SearchOptions } from '../store/memory-store.js';
+import {
+  MEMORY_TYPES,
+  validateName,
+  type Memory,
+  type MemoryType,
+  type Relation,
+} from '../store/memory.js';
+import type { MemoryEntry, MemoryStore, SearchOptions } from '../store/memory-store.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /** Construction options shared by all three handler factories. */
@@ -49,6 +55,32 @@ export interface MemoryListResult {
   }>;
 }
 
+/**
+ * Build a map from superseded-name -> superseding-name. The map records the
+ * first superseding entry found per target (rather than every superseder),
+ * which matches the contract test "match for A carries `supersededBy: 'B'`
+ * (string equal to the superseding memory's name)" -- the field is a single
+ * string, not an array. Multiple superseders is an unusual case that the AC
+ * does not specify; we surface only the first encountered.
+ *
+ * The map is built from `store.all()` -- the entries' frontmatter
+ * `supersedes[]` field is the source of truth (the in-memory graph indexes
+ * the same data). This keeps the search/list handlers self-contained:
+ * neither needs to reach into the store's optional graph instance, and the
+ * filter still works whether or not a graph is wired in (DAR-928).
+ */
+const buildSupersededMap = (entries: ReadonlyArray<MemoryEntry>): Map<string, string> => {
+  const out = new Map<string, string>();
+  for (const entry of entries) {
+    for (const target of entry.supersedes) {
+      if (!out.has(target)) {
+        out.set(target, entry.name);
+      }
+    }
+  }
+  return out;
+};
+
 /** Return shape for {@link createMemoryDeleteHandler}. */
 export interface MemoryDeleteResult {
   deleted: string;
@@ -67,6 +99,26 @@ export interface MemorySearchMatch {
   body: string;
   /** Cosine similarity from {@link MemoryStore.search}, rounded to 3 decimals. */
   score: number;
+  /**
+   * Outgoing graph edges authored on this memory's frontmatter `relations:`
+   * list (DAR-925/DAR-929). Always present -- empty array when the memory has
+   * no authored outgoing edges.
+   *
+   * Only the four authored {@link import('../store/memory.js').RelationType}
+   * values surface here (`related-to`, `builds-on`, `contradicts`,
+   * `child-of`). The `supersedes:` frontmatter list does NOT round-trip
+   * through `relations` (`supersededBy` already carries that signal). Body
+   * `[[name]]` mention edges (DAR-927) are deliberately excluded too --
+   * surfacing them is deferred to the v0.2 `memory_graph` tool (DAR-930+).
+   */
+  relations: Relation[];
+  /**
+   * When `includeSuperseded: true` AND this memory is superseded by another
+   * memory, the name of the superseding memory. Otherwise the field is
+   * omitted entirely (key absent, not `undefined`) so JSON callers can rely
+   * on `'supersededBy' in match` as the predicate.
+   */
+  supersededBy?: string;
 }
 
 /** Return shape for {@link createMemorySearchHandler}. */
@@ -186,12 +238,19 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
 };
 
 /**
- * Construct the `memory_list` handler bound to a specific store. The
- * arguments object is optional; when present, the only recognised field is
- * `type`, which (when set) restricts the result to entries of that type.
+ * Construct the `memory_list` handler bound to a specific store. Recognised
+ * fields on the optional arguments object:
+ *
+ *   - `type` -- restrict results to entries of this {@link MemoryType}.
+ *   - `includeSuperseded` (DAR-929) -- when `true`, include memories that
+ *     have been superseded by another memory; default `false`, which omits
+ *     them from the response.
  *
  * The response strips the body and any graph metadata, matching the
- * documented frontmatter-only shape.
+ * documented frontmatter-only shape; per the DAR-929 contract, `relations`
+ * is NOT mirrored on `memory_list` -- only `memory_search` matches gain
+ * outgoing relations. The `includeSuperseded` flag is mirrored here so
+ * callers can scan the corpus consistently across both tools.
  */
 export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
   const { store } = opts;
@@ -201,11 +260,21 @@ export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
     if (args.type !== undefined) {
       filter = validateMemoryType(args.type, 'memory_list');
     }
+    const includeSuperseded =
+      validateBoolean(args.includeSuperseded, 'includeSuperseded', 'memory_list') ?? false;
 
     const entries = await store.list();
-    const filtered = filter === undefined ? entries : entries.filter((e) => e.type === filter);
+    let candidates = filter === undefined ? entries : entries.filter((e) => e.type === filter);
+    if (!includeSuperseded) {
+      // Build the superseded map from the (post-rescan) entry list; only
+      // entries that appear as a target in some loaded memory's
+      // `supersedes[]` are filtered out. Building from the same array we
+      // filter avoids any race between rescan and filter.
+      const supersededMap = buildSupersededMap(entries);
+      candidates = candidates.filter((e) => !supersededMap.has(e.name));
+    }
     return {
-      memories: filtered.map((e) => ({
+      memories: candidates.map((e) => ({
         name: e.name,
         type: e.type,
         description: e.description,
@@ -231,6 +300,27 @@ const validateLimit = (raw: unknown, toolName: string): number | undefined => {
   if (!Number.isInteger(raw) || raw <= 0) {
     throw new Error(
       `${toolName}: field \`limit\` must be a positive integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
+ * Validate an optional boolean field. `undefined` is allowed (returns
+ * `undefined`); anything else must be a literal boolean. The error message
+ * names the offending field so the caller's UI can highlight it.
+ *
+ * Used by both `memory_search` and `memory_list` for `includeSuperseded`
+ * (DAR-929). We deliberately reject truthy strings like `'true'` and
+ * numerics like `1` so callers learn the type contract early -- this keeps
+ * the wire shape predictable across MCP clients (some of which would
+ * happily pass `'true'` if accepted).
+ */
+const validateBoolean = (raw: unknown, field: string, toolName: string): boolean | undefined => {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'boolean') {
+    throw new Error(
+      `${toolName}: field \`${field}\` must be a boolean; got ${JSON.stringify(raw)}`,
     );
   }
   return raw;
@@ -266,9 +356,10 @@ const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
 
 /**
  * Construct the `memory_search` handler bound to a specific store. Validates
- * the `{ query, limit?, type?, threshold? }` argument shape, dispatches to
- * `store.search()`, and serialises the {@link SearchHit}s into the
- * documented `{ matches, query, totalScanned }` envelope.
+ * the `{ query, limit?, type?, threshold?, includeSuperseded? }` argument
+ * shape, dispatches to `store.search()`, applies the DAR-929 supersede
+ * filter, and serialises the {@link SearchHit}s into the documented
+ * `{ matches, query, totalScanned }` envelope.
  *
  * Why this shape:
  *
@@ -281,16 +372,34 @@ const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
  *     response with the original prompt without round-tripping their own
  *     state.
  *   - `totalScanned` reflects the entries the store actually considered
- *     (ac-6) -- distinct from `matches.length`, which can be lower because
- *     of `type` / `threshold` / `limit`.
+ *     post-supersede-filter (DAR-929 ac-2) -- distinct from `matches.length`,
+ *     which can be lower because of `type` / `threshold` / `limit`. When
+ *     `includeSuperseded: true` is passed, `totalScanned` reflects the full
+ *     corpus including superseded entries (the filter is a no-op).
  *
  * Limit sanitisation is the MCP tool layer's responsibility per DAR-917; we
  * reject NaN / negative / non-integer `limit` values rather than coercing.
  *
- * Out of scope (per the DAR-920 contract envelope): graph `relations` on
- * matches and default-exclude superseded (DAR-929), one-hop expansion
+ * Why we apply the supersede filter AFTER calling `store.search`:
+ *
+ *   - The store has no notion of "exclude superseded"; it ranks every entry
+ *     in `all()` against the query and slices to `limit`.
+ *   - If we passed the caller's `limit` straight through to the store, a
+ *     top-ranked superseded entry would consume one of the slots and the
+ *     final response would be short by one. So we omit the caller's
+ *     `limit` from the store call (the store ranks everything), drop
+ *     superseded entries here, and then take the caller's `limit` slice.
+ *
+ * The filter source-of-truth is the entries' frontmatter `supersedes[]`
+ * field via {@link buildSupersededMap}; we do not depend on the store's
+ * optional graph instance, so the filter works in test setups that do not
+ * wire a graph (and matches the graph's `isSuperseded` semantics: an entry
+ * is excluded iff some loaded memory has it in its `supersedes[]`).
+ *
+ * Out of scope (per the DAR-929 contract envelope): one-hop expansion
  * (DAR-930), connectedness boost (DAR-931), env-var resolution for
- * `COMMONPLACE_DEFAULT_LIMIT` (DAR-913), reranking, and snippet generation.
+ * `COMMONPLACE_DEFAULT_LIMIT` (DAR-913), reranking, snippet generation,
+ * and surfacing `mentions` edges in match.relations.
  */
 export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
   const { store } = opts;
@@ -307,9 +416,9 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // will own the override; re-reading the env var here would duplicate
     // its scope.
     const searchOpts: SearchOptions = {};
-    const limit = validateLimit(args.limit, 'memory_search');
-    if (limit !== undefined) {
-      searchOpts.limit = limit;
+    const callerLimit = validateLimit(args.limit, 'memory_search');
+    if (callerLimit !== undefined) {
+      searchOpts.limit = callerLimit;
     }
     if (args.type !== undefined) {
       searchOpts.type = validateMemoryType(args.type, 'memory_search');
@@ -318,24 +427,109 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     if (threshold !== undefined) {
       searchOpts.threshold = threshold;
     }
+    const includeSuperseded =
+      validateBoolean(args.includeSuperseded, 'includeSuperseded', 'memory_search') ?? false;
+
+    // DAR-929: when filtering out superseded entries the post-filter set
+    // could be smaller than the caller's `limit`. The store does not know
+    // about supersedes, so it slices to `limit` first; we enlarge the
+    // store-side limit so enough candidates survive the filter.
+    //
+    // The contract for the DAR-920 "omits unset SearchOptions fields"
+    // test must continue to hold: when the caller passes no `limit` we do
+    // NOT inject one for the include-superseded path. For the filter
+    // path, we need *something* large enough to give the supersede pass
+    // headroom, so we set a corpus-bound ceiling -- only when
+    // `includeSuperseded` is false AND the store's default would be too
+    // small to clear the filter.
+    if (!includeSuperseded) {
+      const corpusSize = store.all().length;
+      const desired = callerLimit ?? DEFAULT_SEARCH_LIMIT;
+      // Headroom = full corpus, so even if every other entry is superseded
+      // we still surface `desired` non-superseded matches (when they exist).
+      const headroom = Math.max(desired, corpusSize);
+      // Only override the store-side limit when the corpus is bigger than
+      // the headroom we'd have used naturally.
+      if (callerLimit === undefined && corpusSize > DEFAULT_SEARCH_LIMIT) {
+        searchOpts.limit = headroom;
+      } else if (callerLimit !== undefined && headroom > callerLimit) {
+        searchOpts.limit = headroom;
+      }
+    }
 
     // Reading store.all() after store.search() returns intentionally
     // captures any rescan store.search performed internally (DAR-923 mtime
-    // watch), so totalScanned reflects the post-rescan view the caller
-    // would observe via list().
+    // watch), so subsequent reads of `all()` reflect the post-rescan view
+    // the caller would observe via list().
     const hits = await store.search(query, searchOpts);
-    const totalScanned = store.all().length;
+    const allEntries = store.all();
+    const supersededMap = buildSupersededMap(allEntries);
 
-    const matches: MemorySearchMatch[] = hits.map((hit) => ({
-      name: hit.memory.name,
-      type: hit.memory.type,
-      description: hit.memory.description,
-      body: hit.memory.body,
-      score: roundScore(hit.score),
-    }));
+    // totalScanned is the size of the corpus the store considered AFTER the
+    // supersede filter (when not including superseded). When including, we
+    // report the full corpus. This mirrors the contract test for ac-2.
+    const totalScanned = includeSuperseded
+      ? allEntries.length
+      : allEntries.length - countSupersededInCorpus(allEntries, supersededMap);
+
+    const filteredHits = includeSuperseded
+      ? hits
+      : hits.filter((hit) => !supersededMap.has(hit.memory.name));
+
+    const sliceLimit = callerLimit ?? DEFAULT_SEARCH_LIMIT;
+    const limited = filteredHits.slice(0, sliceLimit);
+
+    const matches: MemorySearchMatch[] = limited.map((hit) => {
+      // Authored relations only: filter to the four RelationType values is
+      // implicit since `entry.relations` is `Relation[]` and `Relation.type`
+      // is constrained to the four authored types at parse time. The
+      // `mentions`/`supersedes` edge types live on the in-memory graph,
+      // not on the entry; reading from `entry.relations` therefore
+      // structurally excludes them.
+      const projection: MemorySearchMatch = {
+        name: hit.memory.name,
+        type: hit.memory.type,
+        description: hit.memory.description,
+        body: hit.memory.body,
+        score: roundScore(hit.score),
+        relations: hit.memory.relations.map((r) => ({ to: r.to, type: r.type })),
+      };
+      if (includeSuperseded) {
+        const superseder = supersededMap.get(hit.memory.name);
+        if (superseder !== undefined) {
+          projection.supersededBy = superseder;
+        }
+      }
+      return projection;
+    });
 
     return { matches, query, totalScanned };
   };
+};
+
+/**
+ * Default `limit` applied to `memory_search` matches when the caller omits
+ * one. Mirrors the store-level default (DAR-917). Centralised here because
+ * the handler now performs its own post-filter slice (DAR-929) instead of
+ * relying on the store's default.
+ */
+const DEFAULT_SEARCH_LIMIT = 5;
+
+/**
+ * Count how many entries in `entries` are superseded according to the map.
+ * Exists as a named helper so the call site reads naturally and the cost
+ * (one linear pass) is obvious -- the alternative inline `entries.filter`
+ * would allocate a discarded array on every search.
+ */
+const countSupersededInCorpus = (
+  entries: ReadonlyArray<MemoryEntry>,
+  supersededMap: ReadonlyMap<string, string>,
+): number => {
+  let n = 0;
+  for (const entry of entries) {
+    if (supersededMap.has(entry.name)) n++;
+  }
+  return n;
 };
 
 /**

@@ -127,7 +127,7 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
 const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['inputSchema'] }> = {
   memory_search: {
     description:
-      'Semantic search over saved memories. Returns the top-k matches by cosine similarity against the embedding index, with full memory bodies inline so the caller does not need a follow-up read.',
+      'Semantic search over saved memories. Returns the top-k matches by cosine similarity against the embedding index, with full memory bodies inline so the caller does not need a follow-up read. By default, memories that have been superseded by another entry are excluded from results.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -146,6 +146,11 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           type: 'number',
           description:
             'Optional minimum cosine similarity for an entry to appear in results. Cosine range is [-1, 1].',
+        },
+        includeSuperseded: {
+          type: 'boolean',
+          description:
+            'When true, include memories that have been superseded by another memory. Defaults to false. Superseded matches carry a `supersededBy` field naming the superseding memory.',
         },
       },
       required: ['query'],
@@ -178,7 +183,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_list: {
     description:
-      'List saved memories. Returns frontmatter-only entries (name, type, description) -- no body.',
+      'List saved memories. Returns frontmatter-only entries (name, type, description) -- no body. By default, memories that have been superseded by another entry are excluded from results.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -186,6 +191,11 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           type: 'string',
           enum: [...MEMORY_TYPES],
           description: 'Optional filter restricting results to memories of this type.',
+        },
+        includeSuperseded: {
+          type: 'boolean',
+          description:
+            'When true, include memories that have been superseded by another memory. Defaults to false.',
         },
       },
     },
