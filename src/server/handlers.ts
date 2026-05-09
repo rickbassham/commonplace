@@ -31,10 +31,9 @@ import {
 } from '../store/memory.js';
 import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchOptions } from '../store/memory-store.js';
-import type { MemoryGraph } from '../store/graph.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
-/** Construction options shared by all three handler factories. */
+/** Construction options shared by all handler factories. */
 export interface HandlerOptions {
   /** The MemoryStore instance the handler will dispatch to. */
   store: MemoryStore;
@@ -557,24 +556,6 @@ export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => 
   };
 };
 
-/**
- * Construction options for the DAR-928 link/unlink handler factories. The
- * `graph` field is optional: when present the store will dispatch
- * incremental graph updates through it; when absent the handler still
- * works (the store mutates only its in-memory entries and on-disk
- * frontmatter).
- *
- * In production `graph` MUST be the same instance that was passed to
- * `MemoryStore({ dir, embedder, graph })`; otherwise a save/delete on the
- * store would update one graph and a link/unlink on the handler would
- * update a different one. See `src/bin/commonplace-mcp.ts` for the
- * canonical wiring.
- */
-export interface LinkHandlerOptions extends HandlerOptions {
-  /** Optional in-memory graph (DAR-926) used for incremental updates. */
-  graph?: MemoryGraph;
-}
-
 /** Return shape for {@link createMemoryLinkHandler}. */
 export interface MemoryLinkResult {
   from: string;
@@ -621,28 +602,26 @@ const validateLinkType = (
 };
 
 /**
- * Construct the `memory_link` handler bound to a specific store (and
- * optional graph). Validates the `{ from, to, type? }` argument shape,
- * defaults `type` to `'related-to'`, and dispatches to
- * {@link MemoryStore.linkEdge}, which:
+ * Construct the `memory_link` handler bound to a specific store. Validates
+ * the `{ from, to, type? }` argument shape, defaults `type` to
+ * `'related-to'`, and dispatches to {@link MemoryStore.linkEdge}, which:
  *
  *   - rejects self-edges, missing targets, and duplicate `(to, type)`
  *     edges before any disk write
  *   - rewrites the source `.md` through the DAR-923 atomic helper
- *   - updates the in-memory entry and the optional graph incrementally
- *     (no scan, no rebuild)
+ *   - updates the in-memory entry and the store's `graph` (when one was
+ *     passed at construction time) incrementally (no scan, no rebuild)
+ *
+ * The graph is owned by the {@link MemoryStore} (passed to its constructor).
+ * The handler factory deliberately does NOT take a `graph` option so there
+ * is no second source of truth to keep aligned -- whatever graph the store
+ * holds is the one that gets updated.
  *
  * `'supersedes'` routes to the `supersedes[]` field rather than
  * `relations[]`, matching the documented tool behaviour.
  */
-export const createMemoryLinkHandler = (opts: LinkHandlerOptions): ToolHandler => {
+export const createMemoryLinkHandler = (opts: HandlerOptions): ToolHandler => {
   const { store } = opts;
-  // `opts.graph` is documented as advisory: the store's own graph (set at
-  // construction time) is the one that gets updated. Accepting `graph`
-  // here keeps the factory signature consistent with
-  // `createDefaultHandlers({ store, graph })` -- the bin passes both so
-  // the handler-side wiring stays explicit even though the actual
-  // incremental update goes through the store. See `LinkHandlerOptions`.
   return async (rawArgs: ToolArguments): Promise<MemoryLinkResult> => {
     const args = requireArgsObject(rawArgs, 'memory_link');
     const from = requireString(args, 'from', 'memory_link');
@@ -673,9 +652,8 @@ export const createMemoryLinkHandler = (opts: LinkHandlerOptions): ToolHandler =
  * response so the MCP client can surface "nothing to unlink" without
  * having to interpret an error.
  */
-export const createMemoryUnlinkHandler = (opts: LinkHandlerOptions): ToolHandler => {
+export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => {
   const { store } = opts;
-  // See `createMemoryLinkHandler` -- `opts.graph` is advisory.
   return async (rawArgs: ToolArguments): Promise<MemoryUnlinkResult> => {
     const args = requireArgsObject(rawArgs, 'memory_unlink');
     const from = requireString(args, 'from', 'memory_unlink');

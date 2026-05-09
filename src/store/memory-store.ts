@@ -273,6 +273,40 @@ export class MemoryStore {
   }
 
   /**
+   * Capture the memory directory's current `mtimeMs` into `#lastScanMtimeMs`,
+   * so a subsequent {@link search} / {@link list} does not see "the dir
+   * changed since last scan" and trigger a wasteful rescan that would
+   * re-read what we just wrote.
+   *
+   * Wraps `statSync` in a single try/catch instead of the
+   * `existsSync` + `statSync` pattern so the ENOENT TOCTOU window (dir
+   * removed between the two calls) is closed: any ENOENT from the stat is
+   * treated as "no dir, no baseline to refresh" and swallowed. Other
+   * errors (EACCES, EIO, ...) propagate.
+   *
+   * Used by {@link save}, {@link delete}, {@link linkEdge}, and
+   * {@link unlinkEdge}.
+   */
+  #refreshMtimeBaseline(): void {
+    try {
+      this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
+    } catch (err) {
+      // Dir was removed between the write and this stat. Nothing to
+      // baseline against -- the next scan will start from scratch.
+      // Other errors (EACCES, EIO, ...) propagate.
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'code' in err &&
+        err.code === 'ENOENT'
+      ) {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  /**
    * Glob `<dir>/*.md`, decide for each one whether the matching
    * `<name>.embedding` is reusable, embed (and rewrite the sidecar) when not,
    * and populate the in-memory entry array with the result.
@@ -472,9 +506,7 @@ export class MemoryStore {
       // does not see "the dir changed since last scan" and re-scan from
       // disk (which would be both wasteful and could re-read what we just
       // wrote, embedder-dependent).
-      if (existsSync(this.#dir)) {
-        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
-      }
+      this.#refreshMtimeBaseline();
     } finally {
       // Release on every path -- success and any thrown error -- so the
       // next save() / delete() on the same name can proceed (DAR-923
@@ -560,9 +592,7 @@ export class MemoryStore {
       }
       if (existsSync(mdPath)) unlinkSync(mdPath);
       if (existsSync(sidecarPath)) unlinkSync(sidecarPath);
-      if (existsSync(this.#dir)) {
-        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
-      }
+      this.#refreshMtimeBaseline();
     } finally {
       try {
         await release();
@@ -667,9 +697,7 @@ export class MemoryStore {
       // Refresh the mtime baseline so a search()/list() right after this
       // does not see the dir mtime advancing past lastScanMtimeMs and trigger
       // a wasteful rescan.
-      if (existsSync(this.#dir)) {
-        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
-      }
+      this.#refreshMtimeBaseline();
     } finally {
       try {
         await release();
@@ -796,9 +824,7 @@ export class MemoryStore {
         }
       }
 
-      if (existsSync(this.#dir)) {
-        this.#lastScanMtimeMs = statSync(this.#dir).mtimeMs;
-      }
+      this.#refreshMtimeBaseline();
     } finally {
       try {
         await release();

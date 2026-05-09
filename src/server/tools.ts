@@ -103,13 +103,16 @@ export interface CreateDefaultHandlersOptions {
    */
   store?: MemoryStore;
   /**
-   * Optional in-memory graph (DAR-926) used by the DAR-928 link/unlink
-   * handlers for incremental graph updates. When omitted (and a `store`
-   * IS supplied), the link/unlink handlers fall back to mutating only the
-   * store's in-memory entries and the on-disk frontmatter; the running
-   * graph (if the store has one) still gets updated through the store's
-   * own incremental APIs. Passing the same graph instance here that was
-   * passed to the `MemoryStore` constructor is the supported wiring.
+   * Optional in-memory graph (DAR-926). The graph is owned by the
+   * {@link MemoryStore} (passed to `new MemoryStore({ dir, embedder, graph })`)
+   * which keeps it in sync via scan/save/delete/linkEdge/unlinkEdge. The
+   * link/unlink handlers themselves do not need a graph reference -- they
+   * dispatch through the store, which owns the single graph instance.
+   *
+   * This option is accepted (and the bin passes it) to make the wiring
+   * intent explicit at the call site -- "this server has a graph, and it is
+   * threaded through both the store and the handler layer" -- per DAR-928
+   * ac-5. It is otherwise unused.
    */
   graph?: MemoryGraph;
 }
@@ -121,11 +124,14 @@ export interface CreateDefaultHandlersOptions {
  * to the not-implemented stub -- preserving the DAR-909 baseline for
  * callers that haven't wired a store yet (e.g. early-boot smoke tests).
  *
- * The optional `graph` argument is forwarded to the link/unlink handlers
- * for incremental graph updates without a full rescan (DAR-928 ac-4).
+ * The optional `graph` argument exists for explicit ac-5 wiring symmetry;
+ * it is owned by the {@link MemoryStore} and not forwarded to the
+ * link/unlink handler factories (the store already updates it
+ * incrementally on linkEdge/unlinkEdge).
  */
 export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}): ToolHandlerMap {
-  const { store, graph } = options;
+  const { store } = options;
+  // `options.graph` is intentionally unused here -- see CreateDefaultHandlersOptions.
   if (store === undefined) {
     return {
       memory_search: notImplemented,
@@ -141,8 +147,8 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     memory_save: createMemorySaveHandler({ store }),
     memory_list: createMemoryListHandler({ store }),
     memory_delete: createMemoryDeleteHandler({ store }),
-    memory_link: createMemoryLinkHandler({ store, graph }),
-    memory_unlink: createMemoryUnlinkHandler({ store, graph }),
+    memory_link: createMemoryLinkHandler({ store }),
+    memory_unlink: createMemoryUnlinkHandler({ store }),
   };
 }
 

@@ -205,13 +205,13 @@ describe('ac-2: atomic writes via the DAR-923 helper', () => {
   });
 
   it("memory_link routes the source memory's .md rewrite through atomicWrite (write-temp + fsync + rename) -- verified by spying/mocking atomicWrite and asserting it is invoked with the source .md path", async () => {
-    const { store, graph } = await setupHarness();
+    const { store } = await setupHarness();
     // Reset capture buffers AFTER setup -- the seeded saves go through
     // atomicWrite too and we want to observe only the link's writes.
     openedForWrite = [];
     renamed = [];
 
-    const handler = createMemoryLinkHandler({ store, graph });
+    const handler = createMemoryLinkHandler({ store });
     await handler({ from: 'alpha', to: 'beta' });
 
     const sourceMd = join(store.dir, 'alpha.md');
@@ -224,14 +224,14 @@ describe('ac-2: atomic writes via the DAR-923 helper', () => {
   });
 
   it("memory_unlink routes the source memory's .md rewrite through atomicWrite -- verified by spying/mocking atomicWrite and asserting it is invoked with the source .md path", async () => {
-    const { store, graph } = await setupHarness();
+    const { store } = await setupHarness();
     // First link, then unlink -- only the unlink's writes are observed.
-    const link = createMemoryLinkHandler({ store, graph });
+    const link = createMemoryLinkHandler({ store });
     await link({ from: 'alpha', to: 'beta' });
     openedForWrite = [];
     renamed = [];
 
-    const handler = createMemoryUnlinkHandler({ store, graph });
+    const handler = createMemoryUnlinkHandler({ store });
     await handler({ from: 'alpha', to: 'beta' });
 
     const sourceMd = join(store.dir, 'alpha.md');
@@ -258,7 +258,7 @@ describe('ac-4: graph updated incrementally', () => {
     const beforeSnap = graph.snapshot();
     expect(beforeSnap.outbound['alpha']).toBeUndefined();
 
-    const handler = createMemoryLinkHandler({ store, graph });
+    const handler = createMemoryLinkHandler({ store });
     await handler({ from: 'alpha', to: 'beta' });
 
     expect(scanSpy).not.toHaveBeenCalled();
@@ -272,14 +272,14 @@ describe('ac-4: graph updated incrementally', () => {
   it('memory_unlink incrementally removes the edge from the graph (graph.outbound(from) no longer contains the matching edge) without calling store.scan() or graph.rebuild()', async () => {
     const { store, graph } = await setupHarness();
     // Set up the edge first.
-    const link = createMemoryLinkHandler({ store, graph });
+    const link = createMemoryLinkHandler({ store });
     await link({ from: 'alpha', to: 'beta' });
     expect(graph.outbound('alpha')).toHaveLength(1);
 
     const scanSpy = vi.spyOn(store, 'scan');
     const rebuildSpy = vi.spyOn(graph, 'rebuild');
 
-    const handler = createMemoryUnlinkHandler({ store, graph });
+    const handler = createMemoryUnlinkHandler({ store });
     await handler({ from: 'alpha', to: 'beta' });
 
     expect(scanSpy).not.toHaveBeenCalled();
@@ -290,7 +290,7 @@ describe('ac-4: graph updated incrementally', () => {
 
   it('after memory_link, graph.outbound(from) includes an Edge with {from, to, type} matching the requested link', async () => {
     const { store, graph } = await setupHarness();
-    const handler = createMemoryLinkHandler({ store, graph });
+    const handler = createMemoryLinkHandler({ store });
     await handler({ from: 'alpha', to: 'beta', type: 'builds-on' });
 
     const edges = graph.outbound('alpha');
@@ -307,8 +307,8 @@ describe('ac-4: graph updated incrementally', () => {
 
 describe('ac-7: memory_link behaviours', () => {
   it("memory_link with default type appends {to, type:'related-to'} to relations[] and returns the updated relations and supersedes lists", async () => {
-    const { store, graph } = await setupHarness();
-    const handler = createMemoryLinkHandler({ store, graph });
+    const { store } = await setupHarness();
+    const handler = createMemoryLinkHandler({ store });
     const result = await handler({ from: 'alpha', to: 'beta' });
 
     if (!isRecord(result)) throw new Error('result is not an object');
@@ -322,8 +322,8 @@ describe('ac-7: memory_link behaviours', () => {
   });
 
   it("memory_link with type='supersedes' appends to supersedes[] (not relations[]) and returns updated lists", async () => {
-    const { store, graph } = await setupHarness();
-    const handler = createMemoryLinkHandler({ store, graph });
+    const { store } = await setupHarness();
+    const handler = createMemoryLinkHandler({ store });
     const result = await handler({ from: 'alpha', to: 'beta', type: 'supersedes' });
 
     if (!isRecord(result)) throw new Error('result is not an object');
@@ -336,7 +336,7 @@ describe('ac-7: memory_link behaviours', () => {
   });
 
   it('memory_link rejects with an error when from === to (self-edge), without writing to disk', async () => {
-    const { store, graph } = await setupHarness();
+    const { store } = await setupHarness();
 
     // Snapshot atomic-write activity around the failed call.
     const realFs = __atomicWriteHooks.fs;
@@ -349,7 +349,7 @@ describe('ac-7: memory_link behaviours', () => {
       },
     } as typeof realFs;
     try {
-      const handler = createMemoryLinkHandler({ store, graph });
+      const handler = createMemoryLinkHandler({ store });
       await expect(handler({ from: 'alpha', to: 'alpha' })).rejects.toThrow(/self-edge|alpha/);
       expect(writeCount).toBe(0);
     } finally {
@@ -358,7 +358,7 @@ describe('ac-7: memory_link behaviours', () => {
   });
 
   it('memory_link rejects with an error when the target memory (`to`) does not exist in the store, without writing to disk', async () => {
-    const { store, graph } = await setupHarness();
+    const { store } = await setupHarness();
 
     const realFs = __atomicWriteHooks.fs;
     let writeCount = 0;
@@ -370,7 +370,7 @@ describe('ac-7: memory_link behaviours', () => {
       },
     } as typeof realFs;
     try {
-      const handler = createMemoryLinkHandler({ store, graph });
+      const handler = createMemoryLinkHandler({ store });
       await expect(handler({ from: 'alpha', to: 'ghost' })).rejects.toThrow(/ghost/);
       expect(writeCount).toBe(0);
     } finally {
@@ -379,8 +379,8 @@ describe('ac-7: memory_link behaviours', () => {
   });
 
   it('memory_link rejects with an error when an edge with the same {to, type} already exists on the source, without writing to disk', async () => {
-    const { store, graph } = await setupHarness();
-    const handler = createMemoryLinkHandler({ store, graph });
+    const { store } = await setupHarness();
+    const handler = createMemoryLinkHandler({ store });
     await handler({ from: 'alpha', to: 'beta' });
 
     const realFs = __atomicWriteHooks.fs;
@@ -403,12 +403,12 @@ describe('ac-7: memory_link behaviours', () => {
 
 describe('ac-7: memory_unlink behaviours', () => {
   it('memory_unlink removes the matching edge and returns the updated relations and supersedes lists', async () => {
-    const { store, graph } = await setupHarness();
-    const link = createMemoryLinkHandler({ store, graph });
+    const { store } = await setupHarness();
+    const link = createMemoryLinkHandler({ store });
     await link({ from: 'alpha', to: 'beta', type: 'builds-on' });
     await link({ from: 'alpha', to: 'beta', type: 'related-to' });
 
-    const unlink = createMemoryUnlinkHandler({ store, graph });
+    const unlink = createMemoryUnlinkHandler({ store });
     const result = await unlink({ from: 'alpha', to: 'beta', type: 'builds-on' });
     if (!isRecord(result)) throw new Error('result is not an object');
     expect(result.relations).toEqual([{ to: 'beta', type: 'related-to' }]);
@@ -419,13 +419,13 @@ describe('ac-7: memory_unlink behaviours', () => {
   });
 
   it('memory_unlink with type omitted removes ALL edges from->to regardless of type and returns the updated lists', async () => {
-    const { store, graph } = await setupHarness();
-    const link = createMemoryLinkHandler({ store, graph });
+    const { store } = await setupHarness();
+    const link = createMemoryLinkHandler({ store });
     await link({ from: 'alpha', to: 'beta', type: 'builds-on' });
     await link({ from: 'alpha', to: 'beta', type: 'related-to' });
     await link({ from: 'alpha', to: 'beta', type: 'supersedes' });
 
-    const unlink = createMemoryUnlinkHandler({ store, graph });
+    const unlink = createMemoryUnlinkHandler({ store });
     const result = await unlink({ from: 'alpha', to: 'beta' });
     if (!isRecord(result)) throw new Error('result is not an object');
     expect(result.relations).toEqual([]);
@@ -437,7 +437,7 @@ describe('ac-7: memory_unlink behaviours', () => {
   });
 
   it('memory_unlink is a no-op when the requested edge does not exist -- returns ok with a note and does not call atomicWrite', async () => {
-    const { store, graph } = await setupHarness();
+    const { store } = await setupHarness();
 
     const realFs = __atomicWriteHooks.fs;
     let writeCount = 0;
@@ -449,7 +449,7 @@ describe('ac-7: memory_unlink behaviours', () => {
       },
     } as typeof realFs;
     try {
-      const unlink = createMemoryUnlinkHandler({ store, graph });
+      const unlink = createMemoryUnlinkHandler({ store });
       const result = await unlink({ from: 'alpha', to: 'beta' });
       if (!isRecord(result)) throw new Error('result is not an object');
       expect(result.relations).toEqual([]);
