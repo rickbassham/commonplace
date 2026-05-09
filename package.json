@@ -7,14 +7,15 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "commonplace": "dist/index.js"
+    "commonplace": "dist/index.js",
+    "commonplace-mcp": "dist/bin/commonplace-mcp.js"
   },
   "engines": {
     "node": ">=20"
   },
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"import('node:fs').then(fs => fs.chmodSync('dist/bin/commonplace-mcp.js', 0o755))\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
