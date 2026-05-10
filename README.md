@@ -1,24 +1,182 @@
 # commonplace
 
-Local-first commonplace book with embedding-backed semantic search via MCP.
+Commonplace is a commonplace book for your agent: a local-first store of
+markdown notes, each paired with a sidecar embeddings file, served to
+Claude Code (or any MCP client) over stdio. There is no database --
+notes live as `.md` files on disk, embeddings live next to them as
+`.embedding` sidecars, and search is in-memory cosine similarity over
+those sidecars.
+
+A commonplace book, historically, is a curated personal collection of
+quotes, rules, and observations -- a notebook organised by topic so that
+the keeper can return to what they have learned. John Locke wrote a
+treatise on the practice (his 1706 essay "A New Method of Making
+Common-Place-Books") describing an indexing scheme that let him locate
+any earlier entry in seconds. This project applies the same idea to an
+agent's working memory: short, named, typed entries that the agent can
+write once and recall later by meaning rather than keyword.
+
+## Install
+
+```sh
+npm i -g commonplace-mcp
+```
+
+```sh
+claude mcp add commonplace commonplace-mcp
+```
+
+The first command installs the `commonplace-mcp` binary globally. The
+second registers it with Claude Code as an MCP server named
+`commonplace`. After both commands complete, restart any running Claude
+Code sessions and the four memory tools become available.
+
+## Memory types
+
+Memories carry a `type` field selected from the four-element taxonomy
+`user | feedback | project | reference`:
+
+- `user` -- personal rules, preferences, and identity facts about the
+  human operating the agent.
+- `feedback` -- corrections and lessons learned from prior agent
+  behaviour; persistent course-corrections.
+- `project` -- per-project context like architecture notes, repo
+  conventions, and decisions that bind only to one codebase.
+- `reference` -- durable, neutral knowledge: API shapes, formulas,
+  citations, anything you want to look up by meaning later.
+
+The same four types are accepted by every tool's `type` argument and
+filter.
+
+## Tool reference
+
+All four tools accept an optional `scope: 'user' | 'project'` argument
+that selects which store to read from or write to. When `scope` is
+omitted, reads merge across both stores and writes default to `user`.
+
+### memory_save
+
+Save a memory as a markdown file with YAML frontmatter and a derived
+embedding sidecar. Refuses to overwrite an existing entry; the contract
+is delete + save.
+
+Input schema:
+
+| Argument      | Type                                    | Required | Description                                                                                                |
+| ------------- | --------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `name`        | string                                  | required | Memory name. Must match `^[a-z0-9_]+$`. Becomes the filename stem.                                         |
+| `type`        | `user`/`feedback`/`project`/`reference` | required | One of the four memory types described above.                                                              |
+| `description` | string                                  | required | Short human description carried in frontmatter.                                                            |
+| `body`        | string                                  | required | Markdown body content.                                                                                     |
+| `scope`       | `user` or `project`                     | optional | Which store to write to. Defaults to `user`. `project` requires that a project store was detected at boot. |
+
+Example call:
+
+```jsonc
+// memory_save
+{
+  "name": "feedback_scope",
+  "type": "feedback",
+  "description": "Don't shrink scope unilaterally",
+  "body": "When in doubt about scope, surface it before narrowing.",
+  "scope": "user",
+}
+```
+
+### memory_search
+
+Semantic search over saved memories across both the user and project
+stores (when both are present). Returns the top-k matches by cosine
+similarity, merged across stores by descending score; each match carries
+a `scope` tag identifying which store produced it. By default,
+superseded memories are excluded.
+
+Input schema:
+
+| Argument            | Type                                    | Required | Description                                                                                                                    |
+| ------------------- | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `query`             | string                                  | required | Natural-language search query.                                                                                                 |
+| `limit`             | integer                                 | optional | Maximum number of results after merging across stores. Defaults to `5` (override via the env-var documented below).            |
+| `type`              | `user`/`feedback`/`project`/`reference` | optional | Restrict results to memories of this type.                                                                                     |
+| `threshold`         | number                                  | optional | Minimum cosine similarity for an entry to appear. Cosine range is `[-1, 1]`.                                                   |
+| `includeSuperseded` | boolean                                 | optional | When `true`, include memories that have been superseded. Superseded matches carry a `supersededBy` field. Defaults to `false`. |
+| `scope`             | `user` or `project`                     | optional | Restrict the search to a single store. Default: search both stores when the project store is present.                          |
+
+Example call:
+
+```jsonc
+// memory_search
+{
+  "query": "scope handshake",
+  "limit": 3,
+  "type": "feedback",
+  "includeSuperseded": false,
+}
+```
+
+### memory_list
+
+Enumerate saved memories from both stores without bodies. Returns
+frontmatter-only entries (`name`, `type`, `description`, `scope`). By
+default, superseded memories are excluded.
+
+Input schema:
+
+| Argument            | Type                                    | Required | Description                                                                                          |
+| ------------------- | --------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `type`              | `user`/`feedback`/`project`/`reference` | optional | Restrict results to memories of this type.                                                           |
+| `includeSuperseded` | boolean                                 | optional | When `true`, include superseded memories. Defaults to `false`.                                       |
+| `scope`             | `user` or `project`                     | optional | Restrict the listing to a single store. Default: list both stores when the project store is present. |
+
+Example call:
+
+```jsonc
+// memory_list
+{
+  "type": "reference",
+  "includeSuperseded": false,
+}
+```
+
+### memory_delete
+
+Remove a saved memory and its sidecar by name. The `scope` argument is
+required to disambiguate when the same name exists in both stores;
+otherwise the lookup auto-resolves to whichever store contains the name.
+
+Input schema:
+
+| Argument | Type                | Required | Description                                                                                   |
+| -------- | ------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `name`   | string              | required | Memory name (filename stem) to delete.                                                        |
+| `scope`  | `user` or `project` | optional | Which store to delete from. Required when the name exists in both stores; optional otherwise. |
+
+Example call:
+
+```jsonc
+// memory_delete
+{
+  "name": "feedback_scope_old",
+  "scope": "user",
+}
+```
 
 ## Memory scopes
 
 Commonplace loads up to two memory stores side by side:
 
 - **User store** -- always loaded. Personal rules, preferences, hard
-  feedback. Located under `COMMONPLACE_USER_DIR` (defaults to
+  feedback. Located under `COMMONPLACE_USER_DIR` (default
   `~/.commonplace/memory`).
 - **Project store** -- loaded only when a project root is detected.
-  Per-project context (architecture notes, repo-specific
-  conventions). Located under `COMMONPLACE_PROJECT_DIR`, or under
+  Per-project context (architecture notes, repo-specific conventions).
+  Located under `COMMONPLACE_PROJECT_DIR`, or under
   `<project-root>/.commonplace/memory` when the root is detected via
   MCP `roots/list` or the current working directory.
 
 Search merges hits across both stores by descending score; each match
 carries a `scope: 'user' | 'project'` tag identifying which store
-produced it. Save / list / delete / link / unlink all accept an optional
-`scope` argument, with sensible defaults documented per tool below.
+produced it.
 
 ### Detection priority
 
@@ -30,36 +188,22 @@ The project store is selected by the first matching step in this list:
 2. MCP `roots/list` response after init -- if the connected client
    advertises the `roots` capability and returns at least one `file://`
    root, the first such root resolves to `<root>/.commonplace/memory`.
-   Non-`file://` roots are skipped. The bin tolerates clients that do
-   not advertise the capability and clients whose `roots/list`
-   response rejects.
 3. `process.cwd()` -- if `<cwd>/.commonplace/memory` already exists on
    disk, that path is used as the project store.
-4. None of the above -- user-only mode. The project store is not
-   constructed; saves with `scope: 'project'` are rejected with a
-   clear error.
+4. None of the above -- user-only mode. Saves with `scope: 'project'`
+   are rejected with a clear error.
 
-### Environment variables
+## Configuration
 
-- `COMMONPLACE_USER_DIR` -- user store directory.
-  Default: `~/.commonplace/memory`.
-- `COMMONPLACE_PROJECT_DIR` -- project store directory. When set, takes
-  priority over `roots/list` and cwd detection.
-- `COMMONPLACE_MEMORY_DIR` -- **deprecated** alias for
-  `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood
-  configs; setting it emits a one-line deprecation warning to stderr
-  and the value is used as the user store directory.
-- `COMMONPLACE_MODEL` -- embedding model id passed to transformers.js.
-  Default: `Xenova/bge-base-en-v1.5`. The model id is not pre-validated
-  at boot; an unknown id surfaces an error from the embedder on the
-  first `memory_search` (or any other call that needs an embedding).
-  The error message names the offending model id.
-- `COMMONPLACE_DEFAULT_LIMIT` -- default top-k for `memory_search` when
-  the caller omits `limit`. Default: `5`. Must be a positive integer
-  when set; any value that is not a positive integer (non-numeric text,
-  zero, negative, fractional, `NaN`, `Infinity`) causes the bin to exit
-  at boot with a stderr message naming the offending value rather than
-  silently coercing.
+All configuration lives in environment variables. The full set:
+
+| Variable                    | Default                   | Effect                                                                                                                                                                   |
+| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMONPLACE_USER_DIR`      | `~/.commonplace/memory`   | User store directory. Always loaded.                                                                                                                                     |
+| `COMMONPLACE_PROJECT_DIR`   | (unset)                   | Project store directory. When set, takes priority over `roots/list` and cwd detection. Created recursively on first project-scope save.                                  |
+| `COMMONPLACE_MEMORY_DIR`    | (unset; deprecated)       | Deprecated alias for `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood configs; setting it emits a one-line deprecation warning to stderr.              |
+| `COMMONPLACE_MODEL`         | `Xenova/bge-base-en-v1.5` | Embedding model id passed to transformers.js. Not pre-validated at boot; an unknown id surfaces an error from the embedder on the first call that needs an embedding.    |
+| `COMMONPLACE_DEFAULT_LIMIT` | `5`                       | Default top-k for `memory_search` when the caller omits `limit`. Must be a positive integer; invalid values cause the bin to exit at boot rather than silently coercing. |
 
 ## Memory format
 
@@ -87,7 +231,8 @@ supersedes: # optional, defaults to []
 `relations[].type` is one of `related-to | builds-on | contradicts |
 child-of`.
 
-For the binary embedding sidecar layout see [docs/sidecar-format.md](docs/sidecar-format.md).
+For the binary embedding sidecar layout, see
+[docs/sidecar-format.md](docs/sidecar-format.md).
 
 ## Supersede semantics
 
@@ -96,141 +241,24 @@ prior memories that this memory replaces. Use it when you rewrite or
 correct an earlier memory and want the older entry to stop showing up
 in search results.
 
-### Default behaviour: superseded memories are hidden
+By default, both `memory_search` and `memory_list` exclude superseded
+memories from their results. A memory is "superseded" iff some other
+loaded memory has its name in its `supersedes:` list. Both tools accept
+an optional `includeSuperseded: true` flag to bring the older entries
+back; in that case `memory_search` matches carry an extra
+`supersededBy: <name>` field naming the superseding memory.
 
-Both `memory_search` and `memory_list` exclude superseded memories from
-their results by default. A memory is "superseded" iff some other loaded
-memory has its name in its `supersedes:` list.
+The original `.md` and `.embedding` files for a superseded memory are
+NOT deleted -- the supersede flag is purely a filter applied at read
+time.
 
-For example, given two memories on disk:
+## License
 
-```yaml
-# memory_a.md
----
-name: memory_a
-description: First take
-type: reference
----
-Original notes.
-```
-
-```yaml
-# memory_b.md
----
-name: memory_b
-description: Revised take
-type: reference
-supersedes:
-  - memory_a
----
-Updated notes that replace memory_a.
-```
-
-A default `memory_search` call returns `memory_b` but NOT `memory_a`.
-The `totalScanned` field on the search response reports `1`, not `2` --
-the effective corpus size after the supersede filter runs. `memory_list`
-behaves the same way: `memory_a` does not appear.
-
-The original `.md` and `.embedding` files for `memory_a` are NOT deleted.
-The supersede flag is purely a filter applied at read time.
-
-### Opt-in: bring superseded memories back
-
-Both tools accept an optional `includeSuperseded: true` flag. When set,
-the superseded memory is included in results, and (for `memory_search`)
-its match payload carries an extra `supersededBy: <name>` field naming
-the superseding memory. Continuing the example above:
-
-```jsonc
-// memory_search { query: "...", includeSuperseded: true }
-{
-  "matches": [
-    { "name": "memory_b", "type": "reference", "...": "...", "relations": [] },
-    {
-      "name": "memory_a",
-      "type": "reference",
-      "...": "...",
-      "relations": [],
-      "supersededBy": "memory_b",
-    },
-  ],
-  "query": "...",
-  "totalScanned": 2,
-}
-```
-
-`supersededBy` is omitted (key absent, not `undefined`) on memories that
-are NOT superseded -- so callers can use `'supersededBy' in match` as the
-predicate.
-
-### Out of scope (v0.1)
-
-- Transitive supersede chains (if C supersedes B and B supersedes A, A
-  is excluded only because B has it in its list -- not because C
-  transitively replaces it).
-- Cycle detection across supersede edges.
-- Surfacing `mentions` edges in `memory_search` results. The four
-  authored relation types (`related-to`, `builds-on`, `contradicts`,
-  `child-of`) are surfaced on each match's `relations` array; body
-  `[[name]]` mentions are tracked in the graph but not exposed via the
-  search response in v0.1.
-
-## Tools
-
-All four core tools accept an optional `scope: 'user' | 'project'`
-argument. Responses include the resolved scope so callers can tell user
-and project entries apart.
-
-- `memory_search` -- semantic search; merges hits across both stores by
-  descending score and slices to `limit`. Returns top-k matches with
-  full bodies, scores, outgoing authored relations, a `scope` tag per
-  match, and (when `includeSuperseded: true`) `supersededBy`. Optional
-  `scope` argument restricts the search to a single store.
-- `memory_save` -- persist a memory and its embedding sidecar. The
-  `scope` argument selects the destination store (default `user`).
-  Saving to `project` requires that a project store was detected at
-  boot; otherwise the call is rejected with an error naming the
-  missing project scope. The project store directory is created
-  recursively on the first project save (`mkdir -p`).
-- `memory_list` -- enumerate memories from both stores without bodies.
-  Each entry carries a `scope` tag. Optional `scope` argument
-  restricts the listing to a single store.
-- `memory_delete` -- remove a memory and its sidecar. When the same
-  name exists in both stores the `scope` argument is required to
-  disambiguate; otherwise it's optional and auto-resolves to whichever
-  store contains the name. Returns the resolved scope alongside
-  `deleted`.
-- `memory_link` / `memory_unlink` -- typed graph edges. Edges are
-  intra-scope (a project memory cannot link to a user memory and vice
-  versa). The `scope` argument disambiguates when the same `from`
-  name lives in both stores.
-
-## Running
-
-After `make build`:
-
-```sh
-node dist/bin/commonplace-mcp.js
-```
-
-Or via Claude Code:
-
-```sh
-claude mcp add commonplace ./dist/bin/commonplace-mcp.js
-```
-
-## Development
-
-- `make test` -- full vitest suite (unit + integration).
-- `make typecheck` -- `tsc --noEmit`.
-- `make lint` -- ESLint over the repo.
-- `make build` -- produces `dist/`.
-- `make format` / `make format-check` -- Prettier.
-
-`pnpm` is the only supported package manager.
+Released under the MIT License. See the [LICENSE](LICENSE) file for the
+full text.
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution workflow,
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow,
 local-development commands, and the merge rules (branch from `main`,
 PRs only, CI must pass, conversations resolved, squash-merge).
