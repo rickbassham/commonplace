@@ -52,7 +52,9 @@
  * {@link MemoryStore.scan}'s use of `atomicWrite`.
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { MemoryGraph, type DanglingEdge } from '../store/graph.js';
@@ -236,6 +238,244 @@ const groupByFrom = (edges: DanglingEdge[]): Map<string, DanglingEdge[]> => {
 };
 
 // -------------------------------------------------------------------------
+// Auto-import from external memory sources (DAR-961)
+// -------------------------------------------------------------------------
+
+/**
+ * The set of known external memory sources that ship a built-in importer
+ * (DAR-961). Importers for sources whose data already lives behind an
+ * MCP server (mem0, Letta, ...) are deliberately omitted -- the
+ * documented MCP-to-MCP pattern (see README) handles those without any
+ * commonplace-side integration code.
+ */
+export const KNOWN_IMPORT_SOURCES = ['claude-code'] as const;
+
+/** Union of supported `--from` values. */
+export type KnownImportSource = (typeof KNOWN_IMPORT_SOURCES)[number];
+
+/** A single candidate file detected at a known source. */
+export interface DetectedFile {
+  /** Memory name (basename of the `.md` minus the extension). */
+  name: string;
+  /** Absolute path to the source `.md`. */
+  path: string;
+}
+
+/** A single detected source -- one project-memory dir, one file count. */
+export interface DetectedSource {
+  /** The known-source identifier (currently always `claude-code`). */
+  source: KnownImportSource;
+  /** Absolute path to the source dir (e.g. `<home>/.claude/projects/<slug>/memory`). */
+  dir: string;
+  /** Files found in this dir (after the `*.md` glob). */
+  files: DetectedFile[];
+  /** Convenience: `files.length`. */
+  fileCount: number;
+}
+
+/** Inputs to {@link detectImportSources}. */
+export interface DetectOptions {
+  /** Home directory used to resolve `~/.claude/projects/*\/memory/`. Tests pass a tmp dir. */
+  home?: string;
+}
+
+/**
+ * Discover candidate import sources without writing anything.
+ *
+ * Today the only known source is Claude Code's per-project auto-memory at
+ * `~/.claude/projects/*\/memory/*.md`. We glob the slug rather than parse
+ * it, so any slug shape (Claude Code's leading-dash convention, or
+ * anything else) resolves the same way.
+ *
+ * Returns one entry per `~/.claude/projects/<slug>/memory/` directory
+ * that exists and contains at least one `.md` file. Empty array means
+ * "no candidates" -- the CLI should report 0 detected sources rather
+ * than complain.
+ */
+export const detectImportSources = (opts: DetectOptions = {}): DetectedSource[] => {
+  const home = opts.home ?? homedir();
+  const projectsRoot = join(home, '.claude', 'projects');
+  if (!existsSync(projectsRoot)) return [];
+  let projectEntries: { name: string; isDir: boolean }[];
+  try {
+    projectEntries = readdirSync(projectsRoot, { withFileTypes: true }).map((d) => ({
+      name: d.name,
+      isDir: d.isDirectory(),
+    }));
+  } catch {
+    // Directory exists but cannot be read (permissions, race, etc.).
+    // Treat as "no candidates" rather than throwing -- detection is
+    // best-effort.
+    return [];
+  }
+  const out: DetectedSource[] = [];
+  for (const ent of projectEntries) {
+    if (!ent.isDir) continue;
+    const memDir = join(projectsRoot, ent.name, 'memory');
+    if (!existsSync(memDir)) continue;
+    let files: { name: string }[];
+    try {
+      files = readdirSync(memDir, { withFileTypes: true })
+        .filter((d) => d.isFile() && d.name.endsWith('.md'))
+        .map((d) => ({ name: d.name }));
+    } catch {
+      continue;
+    }
+    if (files.length === 0) continue;
+    const detected: DetectedFile[] = files.map((f) => ({
+      name: f.name.replace(/\.md$/, ''),
+      path: join(memDir, f.name),
+    }));
+    out.push({
+      source: 'claude-code',
+      dir: memDir,
+      files: detected,
+      fileCount: detected.length,
+    });
+  }
+  return out;
+};
+
+/** A single imported entry in the result of {@link runImportFromClaudeCode}. */
+export interface ImportedEntry {
+  /** Memory name (basename). */
+  name: string;
+  /** Absolute path to the source file. */
+  source: string;
+  /** Absolute path of the destination file in `<user-dir>`. */
+  target: string;
+}
+
+/** A single skipped entry in the result of {@link runImportFromClaudeCode}. */
+export interface SkippedEntry {
+  /** Memory name (basename). */
+  name: string;
+  /** Source path. */
+  source: string;
+  /** Human-readable reason (e.g. `already exists in <user-dir>`). */
+  reason: string;
+}
+
+/** Per-source roll-up returned by {@link runImportFromClaudeCode}. */
+export interface ImportSourceSummary {
+  source: KnownImportSource;
+  dir: string;
+  imported: number;
+  skipped: number;
+}
+
+/** Result of {@link runImportFromClaudeCode}. */
+export interface ImportResult {
+  /** All entries copied (or, in dry-run, that would have been copied). */
+  imported: ImportedEntry[];
+  /** All entries skipped due to a name collision. */
+  skipped: SkippedEntry[];
+  /** Per-source counts so the CLI can render a useful summary. */
+  bySource: ImportSourceSummary[];
+  /** Whether dry-run was active. */
+  dryRun: boolean;
+  /** Result of the post-copy scan/embed pass (null in dry-run). */
+  scan: MigrateResult | null;
+}
+
+/** Inputs to {@link runImportFromClaudeCode}. */
+export interface ImportOptions {
+  /** Home directory used to find Claude Code project-memory dirs. */
+  home?: string;
+  /** Target directory -- always the resolved `COMMONPLACE_USER_DIR`. */
+  userDir: string;
+  /** Embedder used by the post-copy scan/embed pass. */
+  embedder: Embedder;
+  /** When true, report what would happen without writing anything. */
+  dryRun?: boolean;
+}
+
+/**
+ * Import compatible markdown files from Claude Code's per-project
+ * auto-memory directories into the commonplace user store.
+ *
+ * Steps:
+ *   1. Detect candidate `~/.claude/projects/*\/memory/*.md` files.
+ *   2. For each candidate, if the target `<user-dir>/<name>.md` already
+ *      exists, skip it (default-safe, no overwrite). Otherwise copy the
+ *      source bytes verbatim into the target -- preserving frontmatter
+ *      and body untouched.
+ *   3. After all copies, run the existing scan/embed pass on the user
+ *      dir so each newly-imported `.md` gets its `.embedding` sidecar.
+ *
+ * In dry-run, steps 2 and 3 are skipped: the result still reports what
+ * would have been imported and which collisions would have been
+ * skipped, but no bytes are written.
+ *
+ * Always succeeds when input is well-formed -- skips are not failures
+ * (per ac-3 contract). Real errors (e.g. read failure on a source file)
+ * propagate to the caller.
+ */
+export const runImportFromClaudeCode = async (opts: ImportOptions): Promise<ImportResult> => {
+  const dryRun = opts.dryRun === true;
+  const sources = detectImportSources({ home: opts.home });
+
+  // Ensure the user dir exists for live runs so the copy step does not
+  // ENOENT on first-time users. In dry-run we leave the filesystem
+  // untouched.
+  if (!dryRun) {
+    await mkdir(opts.userDir, { recursive: true });
+  }
+
+  const imported: ImportedEntry[] = [];
+  const skipped: SkippedEntry[] = [];
+  const bySource: ImportSourceSummary[] = [];
+
+  for (const src of sources) {
+    let perSourceImported = 0;
+    let perSourceSkipped = 0;
+    for (const file of src.files) {
+      const target = join(opts.userDir, `${file.name}.md`);
+      if (existsSync(target)) {
+        skipped.push({
+          name: file.name,
+          source: file.path,
+          reason: `already exists in ${opts.userDir}`,
+        });
+        perSourceSkipped += 1;
+        continue;
+      }
+      if (!dryRun) {
+        // copyFileSync preserves the source bytes exactly -- frontmatter
+        // and body round-trip without any normalisation. The scan pass
+        // below re-reads the file and computes the sidecar against the
+        // copied bytes.
+        copyFileSync(file.path, target);
+      }
+      imported.push({ name: file.name, source: file.path, target });
+      perSourceImported += 1;
+    }
+    bySource.push({
+      source: src.source,
+      dir: src.dir,
+      imported: perSourceImported,
+      skipped: perSourceSkipped,
+    });
+  }
+
+  // Run the existing scan/embed pass on the user dir. This generates
+  // `.embedding` sidecars for the freshly-copied `.md` files (and any
+  // pre-existing user-dir files that were missing sidecars). Skipped in
+  // dry-run -- the imported entries weren't actually copied, so a scan
+  // would either be a no-op or would mutate pre-existing state.
+  let scan: MigrateResult | null = null;
+  if (!dryRun && imported.length > 0) {
+    scan = await runMigrate({
+      dir: opts.userDir,
+      embedder: opts.embedder,
+      pruneDangling: false,
+    });
+  }
+
+  return { imported, skipped, bySource, dryRun, scan };
+};
+
+// -------------------------------------------------------------------------
 // Argv parsing for the bin
 // -------------------------------------------------------------------------
 
@@ -243,9 +483,21 @@ const groupByFrom = (edges: DanglingEdge[]): Map<string, DanglingEdge[]> => {
 export type ParsedMigrateArgs =
   | {
       kind: 'ok';
+      mode: 'scan';
       dir: string;
       pruneDangling: boolean;
       dryRun: boolean;
+    }
+  | {
+      kind: 'ok';
+      mode: 'detect';
+    }
+  | {
+      kind: 'ok';
+      mode: 'import';
+      from: KnownImportSource;
+      dryRun: boolean;
+      auto: boolean;
     }
   | {
       kind: 'usage_error';
@@ -256,6 +508,14 @@ export type ParsedMigrateArgs =
       message: string;
     };
 
+const USAGE =
+  'Usage: commonplace migrate                       (detect known external memory sources)\n' +
+  '       commonplace migrate --from <source>       (import from a known source; --dry-run / --auto supported)\n' +
+  '       commonplace migrate <dir>                 (rebuild sidecars for an existing memory dir; --dry-run / --prune-dangling supported)';
+
+const isKnownImportSource = (v: string): v is KnownImportSource =>
+  (KNOWN_IMPORT_SOURCES as readonly string[]).includes(v);
+
 /**
  * Parse the argv tail (everything after `node <bin>`) for the migrate
  * subcommand. Returns a discriminated result so the bin can render an
@@ -263,10 +523,14 @@ export type ParsedMigrateArgs =
  * `process.exit` calls through the parser.
  *
  * Recognised forms:
- *   `migrate <dir>`
- *   `migrate <dir> --dry-run`
- *   `migrate <dir> --prune-dangling`
- *   `migrate <dir> --dry-run --prune-dangling`
+ *   `migrate`                                     -- detection-only (DAR-961)
+ *   `migrate --from <source>`                     -- import from a known source (DAR-961)
+ *   `migrate --from <source> --dry-run`           -- ditto, report without writing
+ *   `migrate --from <source> --auto`              -- non-interactive (currently a no-op vs. default)
+ *   `migrate <dir>`                               -- rebuild sidecars for <dir> (DAR-918)
+ *   `migrate <dir> --dry-run`                     -- DAR-918
+ *   `migrate <dir> --prune-dangling`              -- DAR-918
+ *   `migrate <dir> --dry-run --prune-dangling`    -- DAR-918
  *
  * Anything else returns either `usage_error` (right command, wrong args)
  * or `unknown_subcommand` (different first token entirely).
@@ -275,50 +539,95 @@ export const parseMigrateArgs = (argv: readonly string[]): ParsedMigrateArgs => 
   if (argv.length === 0) {
     return {
       kind: 'usage_error',
-      message:
-        'commonplace: missing subcommand. Usage: commonplace migrate <dir> [--dry-run] [--prune-dangling]',
+      message: `commonplace: missing subcommand.\n${USAGE}`,
     };
   }
   const [head, ...rest] = argv;
   if (head !== 'migrate') {
     return {
       kind: 'unknown_subcommand',
-      message: `commonplace: unknown subcommand \`${head}\`. Usage: commonplace migrate <dir> [--dry-run] [--prune-dangling]`,
+      message: `commonplace: unknown subcommand \`${head}\`.\n${USAGE}`,
     };
   }
 
   let dir: string | null = null;
   let pruneDangling = false;
   let dryRun = false;
-  for (const token of rest) {
+  let from: KnownImportSource | null = null;
+  let auto = false;
+  // Use a manual iterator so the `--from` branch can advance past its
+  // value argument without indexing `rest` with a number (which under
+  // `noUncheckedIndexedAccess` would yield `string | undefined` and
+  // require type narrowing on every iteration).
+  const it = rest[Symbol.iterator]();
+  for (let step = it.next(); !step.done; step = it.next()) {
+    const token = step.value;
     if (token === '--dry-run') {
       dryRun = true;
     } else if (token === '--prune-dangling') {
       pruneDangling = true;
+    } else if (token === '--auto') {
+      auto = true;
+    } else if (token === '--from') {
+      const nextStep = it.next();
+      if (nextStep.done) {
+        return {
+          kind: 'usage_error',
+          message: `commonplace migrate: \`--from\` requires a source name (one of: ${KNOWN_IMPORT_SOURCES.join(', ')}).`,
+        };
+      }
+      const nextValue = nextStep.value;
+      if (!isKnownImportSource(nextValue)) {
+        return {
+          kind: 'usage_error',
+          message: `commonplace migrate: unknown --from source \`${nextValue}\`. Supported: ${KNOWN_IMPORT_SOURCES.join(', ')}.`,
+        };
+      }
+      from = nextValue;
     } else if (token.startsWith('--')) {
       return {
         kind: 'usage_error',
-        message: `commonplace migrate: unknown flag \`${token}\`. Supported flags: --dry-run, --prune-dangling`,
+        message: `commonplace migrate: unknown flag \`${token}\`. Supported flags: --dry-run, --prune-dangling, --from <source>, --auto`,
       };
     } else if (dir === null) {
       dir = token;
     } else {
       return {
         kind: 'usage_error',
-        message: `commonplace migrate: unexpected positional argument \`${token}\` (a single <dir> is required, plus optional --dry-run / --prune-dangling)`,
+        message: `commonplace migrate: unexpected positional argument \`${token}\`.\n${USAGE}`,
       };
     }
   }
 
-  if (dir === null) {
-    return {
-      kind: 'usage_error',
-      message:
-        'commonplace migrate: missing required <dir> argument. Usage: commonplace migrate <dir> [--dry-run] [--prune-dangling]',
-    };
+  // Mode resolution: --from selects import mode; bare `migrate` selects
+  // detection mode; a positional <dir> selects scan mode (DAR-918).
+  if (from !== null) {
+    if (dir !== null) {
+      return {
+        kind: 'usage_error',
+        message: `commonplace migrate: \`--from <source>\` does not accept a positional <dir> (target is always COMMONPLACE_USER_DIR).`,
+      };
+    }
+    if (pruneDangling) {
+      return {
+        kind: 'usage_error',
+        message: `commonplace migrate: \`--prune-dangling\` is not supported with \`--from <source>\` (it applies to the legacy \`migrate <dir>\` form).`,
+      };
+    }
+    return { kind: 'ok', mode: 'import', from, dryRun, auto };
   }
 
-  return { kind: 'ok', dir, pruneDangling, dryRun };
+  if (dir === null) {
+    if (pruneDangling || dryRun || auto) {
+      return {
+        kind: 'usage_error',
+        message: `commonplace migrate: detection mode (no args) does not accept flags. Use \`migrate --from <source>\` or \`migrate <dir>\` instead.`,
+      };
+    }
+    return { kind: 'ok', mode: 'detect' };
+  }
+
+  return { kind: 'ok', mode: 'scan', dir, pruneDangling, dryRun };
 };
 
 /** Inputs to {@link migrateMain}. */
@@ -331,6 +640,18 @@ export interface MigrateMainOptions {
   stdout: (chunk: string) => void;
   /** Stderr writer. */
   stderr: (chunk: string) => void;
+  /**
+   * Process environment, used to resolve `COMMONPLACE_USER_DIR` for
+   * import mode. The bin passes `process.env`; tests pass an isolated
+   * snapshot.
+   */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * Home directory used to find Claude Code project-memory dirs in the
+   * detect / import modes. Defaults to `os.homedir()`. Tests pass a tmp
+   * dir to avoid touching the real `~/.claude/`.
+   */
+  home?: string;
 }
 
 /** Result of {@link migrateMain}. */
@@ -340,10 +661,26 @@ export interface MigrateMainResult {
 }
 
 /**
- * End-to-end bin entry: parse argv, validate the directory exists, run
- * the migration, render the human-readable summary. Returns an exit code
- * rather than calling `process.exit` directly so tests can drive the
- * function without spawning a child process.
+ * Resolve the user dir from env, mirroring `src/bin/scope.ts`.
+ *
+ * The migrate CLI uses this only in import mode -- detect mode does not
+ * touch the user dir at all, and scan mode operates on the explicit
+ * `<dir>` positional. Inlined here rather than imported from `scope.ts`
+ * so the migrate CLI does not pull in MCP-server boot dependencies.
+ */
+const resolveUserDir = (env: NodeJS.ProcessEnv): string => {
+  const userDir = env.COMMONPLACE_USER_DIR;
+  if (typeof userDir === 'string' && userDir.length > 0) return userDir;
+  const legacy = env.COMMONPLACE_MEMORY_DIR;
+  if (typeof legacy === 'string' && legacy.length > 0) return legacy;
+  return join(homedir(), '.commonplace', 'memory');
+};
+
+/**
+ * End-to-end bin entry: parse argv, dispatch to the correct mode, render
+ * the human-readable summary. Returns an exit code rather than calling
+ * `process.exit` directly so tests can drive the function without
+ * spawning a child process.
  */
 export const migrateMain = async (opts: MigrateMainOptions): Promise<MigrateMainResult> => {
   const parsed = parseMigrateArgs(opts.argv);
@@ -352,6 +689,115 @@ export const migrateMain = async (opts: MigrateMainOptions): Promise<MigrateMain
     return { exitCode: 2 };
   }
 
+  if (parsed.mode === 'detect') {
+    return migrateDetect(parsed, opts);
+  }
+  if (parsed.mode === 'import') {
+    return migrateImport(parsed, opts);
+  }
+  return migrateScan(parsed, opts);
+};
+
+/** Detection mode (DAR-961): report what we would import, write nothing. */
+const migrateDetect = (
+  _parsed: { kind: 'ok'; mode: 'detect' },
+  opts: MigrateMainOptions,
+): MigrateMainResult => {
+  const home = opts.home;
+  const sources = detectImportSources(home === undefined ? {} : { home });
+
+  if (sources.length === 0) {
+    opts.stdout(
+      'commonplace migrate: no external memory sources detected.\n' +
+        '  Looked for: ~/.claude/projects/*/memory/*.md (Claude Code project memory)\n' +
+        '  No action needed.\n',
+    );
+    return { exitCode: 0 };
+  }
+
+  const total = sources.reduce((acc, s) => acc + s.fileCount, 0);
+  const lines: string[] = [
+    `commonplace migrate: detected ${sources.length} candidate source${sources.length === 1 ? '' : 's'} (${total} file${total === 1 ? '' : 's'} total).`,
+  ];
+  for (const src of sources) {
+    lines.push(
+      `  [${src.source}] ${src.dir} -> ${src.fileCount} file${src.fileCount === 1 ? '' : 's'}`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    'Run `commonplace migrate --from claude-code` to import. Add `--dry-run` to preview without writing, or `--auto` for scripted runs.',
+  );
+  opts.stdout(`${lines.join('\n')}\n`);
+  return { exitCode: 0 };
+};
+
+/** Import mode (DAR-961): copy compatible files into COMMONPLACE_USER_DIR + scan/embed. */
+const migrateImport = async (
+  parsed: { kind: 'ok'; mode: 'import'; from: KnownImportSource; dryRun: boolean; auto: boolean },
+  opts: MigrateMainOptions,
+): Promise<MigrateMainResult> => {
+  // `--auto` is currently a no-op compared to the default flow because
+  // we don't gate on an interactive prompt today; it remains in the
+  // argv surface so scripts can write `--auto` and not have to change
+  // when interactive prompting is added later (per the issue body's
+  // own framing). Reading the flag silences the unused-binding warning
+  // and keeps the field on the discriminated result.
+  void parsed.auto;
+  const env = opts.env ?? process.env;
+  const userDir = resolveUserDir(env);
+
+  let result: ImportResult;
+  try {
+    const home = opts.home;
+    result = await runImportFromClaudeCode({
+      ...(home === undefined ? {} : { home }),
+      userDir,
+      embedder: opts.embedderFactory(),
+      dryRun: parsed.dryRun,
+    });
+  } catch (err) {
+    opts.stderr(
+      `commonplace migrate --from ${parsed.from}: failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
+    );
+    return { exitCode: 1 };
+  }
+
+  const dryRunBanner = parsed.dryRun ? ' (dry-run)' : '';
+  const importedCount = result.imported.length;
+  const skippedCount = result.skipped.length;
+  const lines: string[] = [
+    `commonplace migrate --from ${parsed.from}${dryRunBanner}`,
+    `  target:       ${userDir}`,
+    `  imported:     ${importedCount} file${importedCount === 1 ? '' : 's'}${parsed.dryRun ? ' (would be imported)' : ''}`,
+    `  skipped:      ${skippedCount} file${skippedCount === 1 ? '' : 's'}${skippedCount === 0 ? '' : ' (already exists in target)'}`,
+  ];
+  if (result.bySource.length > 0) {
+    lines.push('  per-source:');
+    for (const s of result.bySource) {
+      lines.push(`    [${s.source}] ${s.dir}: imported=${s.imported}, skipped=${s.skipped}`);
+    }
+  }
+  if (skippedCount > 0) {
+    lines.push('  collisions:');
+    for (const sk of result.skipped) {
+      lines.push(`    skipped: ${sk.name} (${sk.reason})`);
+    }
+  }
+  if (result.scan !== null) {
+    lines.push(
+      `  embeddings:   ${result.scan.embedded} new sidecar${result.scan.embedded === 1 ? '' : 's'} written by post-copy scan`,
+    );
+  }
+  opts.stdout(`${lines.join('\n')}\n`);
+  return { exitCode: 0 };
+};
+
+/** Legacy scan mode (DAR-918): rebuild sidecars for an existing dir. */
+const migrateScan = async (
+  parsed: { kind: 'ok'; mode: 'scan'; dir: string; pruneDangling: boolean; dryRun: boolean },
+  opts: MigrateMainOptions,
+): Promise<MigrateMainResult> => {
   if (!existsSync(parsed.dir)) {
     opts.stderr(
       `commonplace migrate: directory \`${parsed.dir}\` does not exist. Pass an existing memory directory.\n`,
@@ -383,13 +829,6 @@ export const migrateMain = async (opts: MigrateMainOptions): Promise<MigrateMain
   // asserts the exact strings 'loaded', 'embedded', 're-embedded', and
   // 'orphaned' appear in the output.
   const dryRunBanner = parsed.dryRun ? ' (dry-run)' : '';
-  // `fresh` is "memories whose existing sidecar was reused -- no embed work
-  // was done for them this run" (see ScanResult.fresh). Surfaced directly by
-  // scan() so the user-visible "loaded: N unchanged" line has identical
-  // semantics in live and dry-run modes; previously we computed it via
-  // `loaded - embedded - reembedded`, which collapses to zero or goes
-  // negative in dry-run because dry-run's `loaded` counts only the entries
-  // actually placed in the in-memory array.
   const lines: string[] = [
     `commonplace migrate ${parsed.dir}${dryRunBanner}`,
     `  loaded:       ${result.fresh} unchanged`,

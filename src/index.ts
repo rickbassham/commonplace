@@ -62,6 +62,7 @@ async function main(): Promise<number> {
     embedderFactory: () => new Embedder(resolveModelId(process.env)),
     stdout: (chunk: string) => process.stdout.write(chunk),
     stderr: (chunk: string) => process.stderr.write(chunk),
+    env: process.env,
   });
   return result.exitCode;
 }

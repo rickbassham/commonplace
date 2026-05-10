@@ -21,7 +21,7 @@
 
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -112,14 +112,56 @@ describe('DAR-918 ac-7: spawned `commonplace migrate` bin', () => {
     expect(res.stdout).toMatch(/embedded:\s+2/);
   }, 180_000);
 
-  it('spawning the bin with `migrate` and no positional argument prints a usage message to stderr and exits with a non-zero code', () => {
+  it('spawning the bin with `migrate --from claude-code` against a fixture HOME imports two compatible files and writes both `.md` and `.embedding` files into COMMONPLACE_USER_DIR (DAR-961 ac-2 integration)', () => {
+    // Lay down ~/.claude/projects/<slug>/memory/{alpha,bravo}.md inside
+    // the fixture HOME.
+    const fixtureHome = mkdtempSync(join(tmpdir(), 'dar961-bin-home-'));
+    const fixtureUserDir = mkdtempSync(join(tmpdir(), 'dar961-bin-user-'));
+    try {
+      const memDir = join(fixtureHome, '.claude', 'projects', '-test-slug', 'memory');
+      mkdirSync(memDir, { recursive: true });
+      writeMemory(join(memDir, 'alpha.md'), makeMemory('alpha'));
+      writeMemory(join(memDir, 'bravo.md'), makeMemory('bravo'));
+
+      const res = spawnSync('node', [binPath, 'migrate', '--from', 'claude-code'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        timeout: 120_000,
+        env: {
+          ...process.env,
+          HOME: fixtureHome,
+          COMMONPLACE_USER_DIR: fixtureUserDir,
+        },
+      });
+
+      expect(res.status, res.stderr || res.stdout).toBe(0);
+      expect(existsSync(join(fixtureUserDir, 'alpha.md'))).toBe(true);
+      expect(existsSync(join(fixtureUserDir, 'bravo.md'))).toBe(true);
+      expect(existsSync(join(fixtureUserDir, 'alpha.embedding'))).toBe(true);
+      expect(existsSync(join(fixtureUserDir, 'bravo.embedding'))).toBe(true);
+      expect(res.stdout).toContain('imported:');
+    } finally {
+      rmSync(fixtureHome, { recursive: true, force: true });
+      rmSync(fixtureUserDir, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it('spawning the bin with `migrate` and no positional argument runs detection mode (DAR-961) and exits 0 with a stdout summary', () => {
+    // Point HOME at an empty tmp dir so detection finds zero sources --
+    // this asserts the detect-mode path works end-to-end through the
+    // built bin without depending on the user's real `~/.claude/`.
     const res = spawnSync('node', [binPath, 'migrate'], {
       cwd: repoRoot,
       encoding: 'utf8',
       timeout: 30_000,
+      env: { ...process.env, HOME: tmp },
     });
-    expect(res.status).not.toBe(0);
-    expect(res.stderr).toContain('commonplace migrate');
-    expect(res.stderr.toLowerCase()).toContain('dir');
+    expect(res.status, res.stderr || res.stdout).toBe(0);
+    expect(res.stdout).toContain('commonplace migrate');
+    // Either "no external memory sources detected" (empty HOME) or a
+    // detected-sources summary header.
+    expect(
+      res.stdout.includes('detected') || res.stdout.includes('no external memory sources'),
+    ).toBe(true);
   }, 60_000);
 });
