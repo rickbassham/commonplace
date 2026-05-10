@@ -96,8 +96,12 @@ jobs:
         env:
           PKG_VERSION: ${{ steps.tag_version.outputs.version }}
         run: |
-          SERVER_VERSION="$(grep -E "^export const SERVER_VERSION = '" src/server/server.ts \
-            | sed -E "s/^export const SERVER_VERSION = '([^']+)';.*/\1/")"
+          # Accept either single or double quotes so a future formatter
+          # change (e.g. Prettier toggling quote style) doesn't silently
+          # break the drift guard. The empty-string check below stays as
+          # a loud failure if the constant ever moves or is renamed.
+          SERVER_VERSION="$(grep -E "^export const SERVER_VERSION = ['\"]" src/server/server.ts \
+            | sed -E "s/^export const SERVER_VERSION = ['\"]([^'\"]+)['\"];.*/\1/")"
           echo "SERVER_VERSION:  $SERVER_VERSION"
           echo "package version: $PKG_VERSION"
           if [ -z "$SERVER_VERSION" ]; then
@@ -164,6 +168,11 @@ jobs:
           DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          # --no-git-checks: required because actions/checkout produces a
+          # detached HEAD with no upstream branch, which pnpm would
+          # otherwise reject. The publish gate above (typecheck/lint/
+          # build/test + drift guards) is what protects this step; the
+          # flag does not weaken that gate.
           pnpm publish --access public --no-git-checks --tag "$DIST_TAG"
 
       - name: Create GitHub Release
