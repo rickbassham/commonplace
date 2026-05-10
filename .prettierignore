@@ -2,3 +2,9 @@ node_modules/
 dist/
 pnpm-lock.yaml
 *.embedding
+
+# CHANGELOG.md is hand-authored Keep-a-Changelog markdown. Prettier rewraps
+# bullet continuation lines (dropping their 2-space indent), which breaks
+# strict CommonMark rendering of the bullet. Keep it formatter-free so
+# historical sections stay byte-stable across releases.
+CHANGELOG.md

@@ -89,6 +89,6 @@ offline via `transformers.js` + `bge-base-en-v1.5`.
 ### Notes
 
 - This is a pre-release on the `canary` dist-tag. `npm install
-commonplace-mcp` continues to track `latest` (which currently
+  commonplace-mcp` continues to track `latest` (which currently
   points at `0.0.1-canary.0` from the manual claim publish; the
   pointer moves to `v0.1.0` once that ships).
