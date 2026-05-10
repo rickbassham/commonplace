@@ -35,7 +35,7 @@ export const SERVER_NAME = 'commonplace';
  * sync with the package version manually for now -- there is no need to
  * resolve `package.json` at runtime.
  */
-export const SERVER_VERSION = '0.0.1-canary.1';
+export const SERVER_VERSION = '0.0.1-canary.2';
 
 export interface CreateServerOptions {
   /**
