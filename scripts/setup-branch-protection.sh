@@ -9,8 +9,8 @@
 # Required:
 #   - `gh` CLI authenticated as a user with admin on the repo.
 #   - The CI workflow `.github/workflows/ci.yml` defines a matrix on
-#     `node-version: [20, 22]` and a single job named `ci`. The
-#     status-check contexts below ("ci (20)" / "ci (22)") must match
+#     `node-version: [22, 24]` and a single job named `ci`. The
+#     status-check contexts below ("ci (22)" / "ci (24)") must match
 #     the rendered matrix-leg job names. Drift between this script and
 #     ci.yml is checked by the DAR-914 contract tests.
 #
@@ -40,8 +40,8 @@ gh api \
   "required_status_checks": {
     "strict": true,
     "contexts": [
-      "ci (20)",
-      "ci (22)"
+      "ci (22)",
+      "ci (24)"
     ]
   },
   "enforce_admins": false,

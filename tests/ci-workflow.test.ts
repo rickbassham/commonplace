@@ -280,8 +280,24 @@ describe('ac-11: make audit (non-blocking)', () => {
   });
 });
 
-describe('ac-12: matrix on Node 20 and 22', () => {
-  it('ci.yml job declares a strategy matrix containing Node `20` and `22`', () => {
+describe('ac-12: matrix on supported Node majors', () => {
+  // Node majors the CI matrix must exercise. Node 22 is the prior LTS;
+  // Node 24 is the active LTS and the version the release workflow uses
+  // (because trusted-publishing OIDC requires npm >= 11, which only
+  // ships with Node 24+). Node 20 is end-of-life as of April 2026 and
+  // intentionally not in the matrix.
+  const REQUIRED_MATRIX_VERSIONS = ['22', '24'] as const;
+
+  const matrixIncludes = (matrix: Record<string, unknown>, want: readonly string[]): boolean => {
+    for (const v of Object.values(matrix)) {
+      if (!Array.isArray(v)) continue;
+      const versions = v.map((x) => String(x));
+      if (want.every((w) => versions.includes(w))) return true;
+    }
+    return false;
+  };
+
+  it(`ci.yml job declares a strategy matrix containing Node ${REQUIRED_MATRIX_VERSIONS.join(' and ')}`, () => {
     const ci = loadCi();
     const jobs = ci.jobs;
     expect(isObject(jobs)).toBe(true);
@@ -294,17 +310,12 @@ describe('ac-12: matrix on Node 20 and 22', () => {
       if (!isObject(strategy)) continue;
       const matrix = strategy.matrix;
       if (!isObject(matrix)) continue;
-      // Find a matrix axis whose values include both 20 and 22 (numbers
-      // or strings).
-      for (const v of Object.values(matrix)) {
-        if (!Array.isArray(v)) continue;
-        const versions = v.map((x) => String(x));
-        if (versions.includes('20') && versions.includes('22')) {
-          foundMatrix = true;
-        }
-      }
+      if (matrixIncludes(matrix, REQUIRED_MATRIX_VERSIONS)) foundMatrix = true;
     }
-    expect(foundMatrix, 'expected matrix axis with values [20, 22]').toBe(true);
+    expect(
+      foundMatrix,
+      `expected matrix axis with values [${REQUIRED_MATRIX_VERSIONS.join(', ')}]`,
+    ).toBe(true);
   });
 
   it('matrix Node version is consumed by the setup-node step (so each leg actually runs on its declared version)', () => {
@@ -328,7 +339,7 @@ describe('ac-12: matrix on Node 20 and 22', () => {
       for (const [k, v] of Object.entries(matrix)) {
         if (!Array.isArray(v)) continue;
         const versions = v.map((x) => String(x));
-        if (versions.includes('20') && versions.includes('22')) {
+        if (REQUIRED_MATRIX_VERSIONS.every((w) => versions.includes(w))) {
           nodeAxis = k;
           break;
         }
@@ -466,7 +477,7 @@ describe('ac-14..ac-22: branch-protection script payload settings', () => {
   });
 
   it("branch-protection script's `required_status_checks.contexts` (or `checks`) lists each Node-matrix leg by name (one entry per Node version in the CI matrix)", () => {
-    // The CI matrix declares Nodes 20 and 22 -> 2 status-check contexts.
+    // The CI matrix declares Nodes 22 and 24 -> 2 status-check contexts.
     const b = body();
     // Pull the contexts/checks array regardless of which key was used.
     // We accept either a JSON `"contexts": [...]` or `"checks": [{...}]`.
@@ -512,16 +523,18 @@ describe('ac-14..ac-22: branch-protection script payload settings', () => {
       const matrix = strategy.matrix;
       if (!isObject(matrix)) continue;
 
+      // Pick the first array-valued matrix axis; the matrix in ci.yml
+      // has only one axis (node-version), so this is unambiguous. Any
+      // axis name and any set of values are accepted -- the consistency
+      // check below is between ci.yml and the branch-protection script,
+      // not against a hardcoded list of Node majors.
       let nodeAxis: string | undefined;
       let versions: string[] = [];
       for (const [k, v] of Object.entries(matrix)) {
         if (!Array.isArray(v)) continue;
-        const vs = v.map((x) => String(x));
-        if (vs.includes('20') && vs.includes('22')) {
-          nodeAxis = k;
-          versions = vs;
-          break;
-        }
+        nodeAxis = k;
+        versions = v.map((x) => String(x));
+        break;
       }
       if (!nodeAxis) continue;
       const baseName = typeof job.name === 'string' ? job.name : jobId;
