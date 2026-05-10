@@ -1,0 +1,25 @@
+{
+  "bumpFiles": [
+    { "filename": "package.json", "type": "json" },
+    {
+      "filename": "src/server/server.ts",
+      "updater": "scripts/server-version-updater.cjs"
+    }
+  ],
+  "header": "# Changelog\n\nAll notable changes to `commonplace-mcp` are documented in this file.\n\nThe format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/).\n",
+  "types": [
+    { "type": "feat", "section": "Added" },
+    { "type": "fix", "section": "Fixed" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Changed" },
+    { "type": "revert", "section": "Reverted" },
+    { "type": "chore", "hidden": true },
+    { "type": "test", "hidden": true },
+    { "type": "docs", "hidden": true },
+    { "type": "ci", "hidden": true },
+    { "type": "build", "hidden": true },
+    { "type": "style", "hidden": true }
+  ],
+  "tagPrefix": "v",
+  "commitAll": true
+}

@@ -22,10 +22,25 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.{js,cjs,mjs}'],
+    files: ['**/*.{js,mjs}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
+    },
+  },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: {
+        module: 'readonly',
+        require: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        exports: 'writable',
+        process: 'readonly',
+      },
     },
   },
 );
