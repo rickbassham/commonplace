@@ -1,7 +1,6 @@
 {
-  "name": "commonplace",
+  "name": "commonplace-mcp",
   "version": "0.0.0",
-  "private": true,
   "description": "Local-first commonplace book with embedding-backed semantic search via MCP",
   "license": "MIT",
   "type": "module",
@@ -10,6 +9,29 @@
     "commonplace": "dist/index.js",
     "commonplace-mcp": "dist/bin/commonplace-mcp.js"
   },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rickbassham/commonplace.git"
+  },
+  "homepage": "https://github.com/rickbassham/commonplace#readme",
+  "bugs": {
+    "url": "https://github.com/rickbassham/commonplace/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "memory",
+    "embeddings",
+    "semantic-search",
+    "claude",
+    "ai-agent"
+  ],
   "engines": {
     "node": ">=20"
   },
