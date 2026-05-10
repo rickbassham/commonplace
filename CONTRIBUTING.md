@@ -94,46 +94,89 @@ fail at the publish step.
 
 ### Per-release flow
 
-For each release (`X.Y.Z` for stable, `X.Y.Z-<pre>.<n>` for a
-pre-release like `beta.1` / `rc.0` / `alpha` / `next.5`):
+Releases are produced by `commit-and-tag-version`, which reads the
+[conventional commits](https://www.conventionalcommits.org) since the
+last `v*` tag, picks the next version, bumps `package.json` and
+`SERVER_VERSION` together, writes a new section to `CHANGELOG.md`,
+commits, and creates an annotated tag. The release workflow
+(`.github/workflows/release.yml`) does the actual `pnpm publish` when
+the tag is pushed.
 
-1. **Open a version-bump PR** with all three of these in a single
-   commit so they cannot drift:
-   - **Write a new CHANGELOG.md section** for `X.Y.Z` describing the
-     user-visible changes since the last release. Use the
-     `## [X.Y.Z] - YYYY-MM-DD` heading style; the release workflow
-     extracts this section verbatim into the GitHub Release body.
-   - **Bump `package.json` `version`** to the target version (no
-     leading `v`).
-   - **Bump `SERVER_VERSION`** in `src/server/server.ts` to the same
-     value. The release workflow's drift guard fails the publish if
-     these disagree -- catch the mistake locally rather than at the
-     gate.
-2. **Get the PR reviewed and merge it to `main`.** The version-bump PR
-   is merged _before_ the tag is pushed. Do not push the tag against a
-   branch -- tags must point at the merge commit on `main`.
-3. **Push the `v<version>` tag.** From a clean checkout of `main` at
-   the merge commit:
+For each release (`X.Y.Z` stable, or `X.Y.Z-<pre>.<n>` pre-release):
+
+1. **Make sure your commits since the last tag are well-formed.**
+   `feat:` produces a minor bump and an "Added" CHANGELOG entry; `fix:`
+   produces a patch bump and a "Fixed" entry; `refactor:` /
+   `perf:` / `revert:` produce visible entries; `chore:` / `docs:` /
+   `test:` / `ci:` / `build:` / `style:` are intentionally hidden from
+   the CHANGELOG (`.versionrc.json` `types`). A footer of
+   `BREAKING CHANGE:` (or a `!` after the type, e.g. `feat!:`) marks
+   a major bump.
+2. **Preview the bump** from a clean `main` checkout:
    ```sh
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
+   make release-dry
    ```
-   The `Release` workflow triggers on the tag push.
-4. **Watch the workflow run** under the repo's GitHub Actions tab.
-   The job runs the same gate as CI (`make install` / `typecheck` /
-   `lint` / `build` / `test`), enforces the version drift guards,
-   derives the npm dist-tag from the tag name (stable -> `latest`,
-   `v0.1.0-beta.1` -> `beta`, etc.), runs `pnpm publish --access
-public --tag <derived>`, and finally creates a GitHub Release with
-   the matching CHANGELOG section. Pre-release tags are marked as such
-   on the GitHub Release.
+   This shows what version `commit-and-tag-version` would pick and the
+   CHANGELOG entry it would write. Nothing is written.
+3. **Cut the release**:
+   ```sh
+   make release
+   ```
+   This bumps `package.json` `version`, bumps `SERVER_VERSION` in
+   `src/server/server.ts` via `scripts/server-version-updater.cjs`,
+   prepends a new section to `CHANGELOG.md`, commits all three changes
+   as `chore(release): X.Y.Z`, and creates an annotated tag `vX.Y.Z`.
+4. **Inspect the local bump.** Read the diff (`git show HEAD`) and the
+   tag (`git tag -v vX.Y.Z` or `git cat-file -p vX.Y.Z`). If anything
+   is wrong, undo:
+   ```sh
+   git reset --hard HEAD~1
+   git tag -d vX.Y.Z
+   ```
+   Then re-run with an explicit `--release-as` or `--prerelease`, e.g.
+   `pnpm exec commit-and-tag-version --release-as minor` for a forced
+   minor bump or `--prerelease beta` for `X.Y.Z-beta.0`. (Pre-1.0
+   convention: breaking changes still bump minor, not major.)
+5. **Push**:
+   ```sh
+   git push --follow-tags
+   ```
+   The `Release` workflow fires on the tag push. It re-runs the same
+   gate as CI (`make install` / `typecheck` / `lint` / `build` /
+   `test`), enforces the `package.json` / tag / `SERVER_VERSION`
+   drift guards, derives the npm dist-tag from the tag name (stable ->
+   `latest`, `v0.1.0-beta.1` -> `beta`, etc.), runs
+   `pnpm publish --access public --provenance --tag <derived>` via
+   the Trusted Publisher (OIDC), and creates a GitHub Release whose
+   body is the matching `## [X.Y.Z]` CHANGELOG section. Pre-release
+   tags are marked as pre-releases on the GitHub Release.
 
 If the workflow fails before publish, fix the underlying problem in a
 follow-up PR, delete the failed tag (`git push origin :refs/tags/vX.Y.Z`
-plus a local `git tag -d vX.Y.Z`), and start the per-release flow over
-once the fix is merged. If the workflow fails _after_ `pnpm publish`
-succeeded, the version is already published to npm -- bump to the
-next patch and release that.
+plus a local `git tag -d vX.Y.Z`), and re-run `make release` once the
+fix is merged. If the workflow fails _after_ `pnpm publish` succeeded,
+the version is already on npm -- bump to the next patch and release
+that.
+
+### `commit-and-tag-version` config
+
+The release tool's behaviour is defined entirely by `.versionrc.json`
+at the repo root:
+
+- `bumpFiles`: tells the tool to bump both `package.json` (built-in
+  `json` updater) and `src/server/server.ts` (custom updater at
+  `scripts/server-version-updater.cjs`, which scopes the rewrite to
+  the `SERVER_VERSION` declaration). The `tests/version-sync.test.ts`
+  invariant catches drift if the two ever fall out of sync.
+- `header`: the CHANGELOG preamble; the tool preserves it verbatim
+  on every run.
+- `types`: maps conventional-commit prefixes to CHANGELOG sections.
+  Hidden types do not appear in the CHANGELOG but still count toward
+  the bump (e.g. a `feat:` commit alongside several `chore:` commits
+  still produces a minor bump and an "Added" section).
+- `tagPrefix: "v"`: the tag format the release workflow expects.
+- `commitAll: true`: every bumped file is included in the release
+  commit, so there are no orphaned dirty changes after `make release`.
 
 ## Diagnostic scripts
 

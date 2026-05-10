@@ -578,16 +578,21 @@ describe('ac-9: contributor docs - release process', () => {
     expect(body).toMatch(/SERVER_VERSION/);
   });
 
-  it('the release docs state the version-bump PR is merged before the tag is pushed (PR-then-tag ordering)', () => {
+  it('the release docs describe a single bump-and-tag step that produces both the version bump and the annotated tag together', () => {
     const { body } = loadReleaseDoc();
-    // Must mention merging the PR first, then pushing the tag.
-    expect(body).toMatch(/merge.*\bPR\b|PR\s+(is\s+)?merged/i);
-    expect(body).toMatch(/(push|tag).*tag|tag.*push/i);
+    // The new commit-and-tag-version flow produces the release commit
+    // AND the annotated tag in one local step; the docs must describe
+    // that single step (rather than splitting bump and tag across two
+    // separate, error-prone manual operations).
+    expect(body).toMatch(/commit-and-tag-version|make\s+release/i);
+    expect(body).toMatch(/tag/i);
   });
 
-  it('the release docs instruct contributors to push a `v<version>` tag and watch the workflow run', () => {
+  it('the release docs instruct contributors to push the `v<version>` tag and watch the workflow run', () => {
     const { body } = loadReleaseDoc();
-    expect(body).toMatch(/git\s+tag\s+v|push\s+(--tags|the\s+`?v|tag\s+v)/i);
+    expect(body).toMatch(
+      /git\s+push\s+--follow-tags|git\s+tag\s+v|push\s+(--tags|the\s+`?v|tag\s+v)/i,
+    );
     expect(body).toMatch(/workflow|actions/i);
   });
 
