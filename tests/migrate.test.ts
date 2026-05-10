@@ -352,7 +352,7 @@ describe('ac-4: --dry-run', () => {
   it('the migrate bin accepts a `--dry-run` argv flag and forwards dryRun=true to runMigrate', () => {
     const parsed = parseMigrateArgs(['migrate', '/some/dir', '--dry-run']);
     expect(parsed.kind).toBe('ok');
-    if (parsed.kind === 'ok') {
+    if (parsed.kind === 'ok' && parsed.mode === 'scan') {
       expect(parsed.dir).toBe('/some/dir');
       expect(parsed.dryRun).toBe(true);
       expect(parsed.pruneDangling).toBe(false);
@@ -468,7 +468,7 @@ describe('ac-7: argv parsing', () => {
   it('parseMigrateArgs returns ok with dir + flags when given a migrate command with a positional dir', () => {
     const parsed = parseMigrateArgs(['migrate', '/tmp/foo']);
     expect(parsed.kind).toBe('ok');
-    if (parsed.kind === 'ok') {
+    if (parsed.kind === 'ok' && parsed.mode === 'scan') {
       expect(parsed.dir).toBe('/tmp/foo');
       expect(parsed.dryRun).toBe(false);
       expect(parsed.pruneDangling).toBe(false);
@@ -478,14 +478,17 @@ describe('ac-7: argv parsing', () => {
   it('parseMigrateArgs returns ok with pruneDangling=true when --prune-dangling is present', () => {
     const parsed = parseMigrateArgs(['migrate', '/tmp/foo', '--prune-dangling']);
     expect(parsed.kind).toBe('ok');
-    if (parsed.kind === 'ok') {
+    if (parsed.kind === 'ok' && parsed.mode === 'scan') {
       expect(parsed.pruneDangling).toBe(true);
     }
   });
 
-  it('parseMigrateArgs returns usage_error when the migrate subcommand is missing its positional dir', () => {
+  it('parseMigrateArgs accepts `migrate` with no args as detection mode (DAR-961: bare `migrate` reports detected sources without writing)', () => {
     const parsed = parseMigrateArgs(['migrate']);
-    expect(parsed.kind).toBe('usage_error');
+    expect(parsed.kind).toBe('ok');
+    if (parsed.kind === 'ok') {
+      expect(parsed.mode).toBe('detect');
+    }
   });
 });
 

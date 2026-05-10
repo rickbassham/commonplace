@@ -252,6 +252,64 @@ The original `.md` and `.embedding` files for a superseded memory are
 NOT deleted -- the supersede flag is purely a filter applied at read
 time.
 
+## Migration
+
+The `commonplace` CLI ships a `migrate` subcommand that detects and
+imports memory from external sources into `COMMONPLACE_USER_DIR`.
+
+```sh
+commonplace migrate                      # detect known sources, write nothing
+commonplace migrate --from claude-code   # import from Claude Code project memory
+commonplace migrate --from claude-code --dry-run  # preview the import, write nothing
+commonplace migrate --from claude-code --auto     # non-interactive (forward-compat no-op today; see below)
+commonplace migrate <dir>                # rebuild sidecars for an existing dir
+```
+
+Bare `commonplace migrate` reports candidate sources (currently Claude
+Code's per-project auto-memory at `~/.claude/projects/*/memory/*.md`)
+and exits without writing. Pass `--from claude-code` to copy each
+compatible `.md` into `COMMONPLACE_USER_DIR` and regenerate the
+`.embedding` sidecars. The import target is always
+`COMMONPLACE_USER_DIR`; project-scope import is intentionally not
+supported in v0.1.
+
+### Conflict policy
+
+The conflict policy is **skip and report** by default: if a name in the
+source already exists in `COMMONPLACE_USER_DIR`, the source file is
+skipped, the existing target file is left byte-identical, and the skip
+is reported in the summary. There is no automatic overwrite; delete
+the existing entry first if you want to replace it.
+
+`--dry-run` reports what would be imported without writing any `.md`
+or `.embedding` files, and preserves any existing colliding target
+file byte-for-byte.
+
+`--auto` is a **forward-compat no-op**: today the import path runs
+non-interactively whether or not `--auto` is passed, so the flag's
+presence and absence are indistinguishable. It is reserved as the
+opt-in for scripted runs once interactive prompting (e.g. per-file
+confirmation) is added behind a separate flag. Passing `--auto` in a
+script today is safe and recommended -- it pins the non-interactive
+contract without depending on the future default.
+
+### Migrating from mem0 / Letta / other MCP-exposed memory tools
+
+There is **no commonplace-side integration code** for mem0, Letta, or
+any other memory tool that already exposes its memory through an MCP
+server. The pattern: register both servers in your AI client, then ask
+your agent in natural language to bridge them. For example, with both
+`commonplace` and `mem0` registered as MCP servers, an agent can
+respond to "search mem0 for memories tagged architecture and save
+each one into commonplace as a project memory" by calling the mem0
+search tool, then `memory_save` once per result. The same pattern
+works for any future MCP-exposed memory tool.
+
+This is strictly better than a one-shot CLI importer: there is zero
+integration code to maintain, no API drift risk if the upstream tool
+changes its protocol, and the user picks what to migrate via natural
+language rather than a bulk flag.
+
 ## License
 
 Released under the MIT License. See the [LICENSE](LICENSE) file for the

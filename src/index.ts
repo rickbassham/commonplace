@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 /**
- * Bin entry: the `commonplace` CLI dispatcher (DAR-918).
+ * Bin entry: the `commonplace` CLI dispatcher (DAR-918, extended by DAR-961).
  *
- * Currently exposes a single subcommand:
+ * Subcommand surface (single source of truth: `USAGE` in
+ * `src/cli/migrate.ts`):
  *
- *   `commonplace migrate <dir> [--dry-run] [--prune-dangling]`
+ *   `commonplace migrate`                      (detect known external memory sources)
+ *   `commonplace migrate --from <source>`      (import from a known source; --dry-run / --auto supported)
+ *   `commonplace migrate <dir>`                (rebuild sidecars for an existing memory dir;
+ *                                              --dry-run / --prune-dangling supported)
  *
- * Scans an existing memory directory of `.md` files and (re)builds embedding
- * sidecars, cleans up orphaned `.embedding` files, and optionally prunes
- * dangling graph edges. Useful for bootstrapping from existing markdown
- * memory without forcing a server restart, and for one-shot rescue runs
- * when the on-disk index has drifted from the source `.md` files.
+ * The legacy DAR-918 path (rebuild sidecars for an existing dir) and the
+ * DAR-961 detection / import paths share this dispatcher; the bare-bin
+ * usage message and the parser usage_error message are rendered from the
+ * same exported `USAGE` constant so the two cannot drift.
  *
  * # Bin convention
  *
@@ -32,15 +35,16 @@
  */
 
 import { Embedder } from './embedder/index.js';
-import { migrateMain, parseMigrateArgs } from './cli/migrate.js';
+import { migrateMain, parseMigrateArgs, USAGE } from './cli/migrate.js';
 import { resolveModelId } from './bin/env.js';
 
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   if (argv.length === 0) {
-    process.stderr.write(
-      'commonplace: missing subcommand. Usage: commonplace migrate <dir> [--dry-run] [--prune-dangling]\n',
-    );
+    // Use the same canonical USAGE constant the parser renders on
+    // usage_error, so the bare-bin first impression matches the
+    // parser-error message verbatim (DAR-961 review f-1).
+    process.stderr.write(`commonplace: missing subcommand.\n${USAGE}\n`);
     return 2;
   }
 
@@ -62,6 +66,7 @@ async function main(): Promise<number> {
     embedderFactory: () => new Embedder(resolveModelId(process.env)),
     stdout: (chunk: string) => process.stdout.write(chunk),
     stderr: (chunk: string) => process.stderr.write(chunk),
+    env: process.env,
   });
   return result.exitCode;
 }
