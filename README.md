@@ -62,13 +62,13 @@ is delete + save.
 
 Input schema:
 
-| Argument      | Type                                    | Required | Description                                                                                                |
-| ------------- | --------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `name`        | string                                  | required | Memory name. Must match `^[a-z0-9_]+$`. Becomes the filename stem.                                         |
-| `type`        | `user`/`feedback`/`project`/`reference` | required | One of the four memory types described above.                                                              |
-| `description` | string                                  | required | Short human description carried in frontmatter.                                                            |
-| `body`        | string                                  | required | Markdown body content.                                                                                     |
-| `scope`       | `user` or `project`                     | optional | Which store to write to. Defaults to `user`. `project` requires that a project store was detected at boot. |
+| Argument      | Type                                       | Required | Description                                                                                                |
+| ------------- | ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `name`        | string                                     | required | Memory name. Must match `^[a-z0-9_]+$`. Becomes the filename stem.                                         |
+| `type`        | `user \| feedback \| project \| reference` | required | One of the four memory types described above.                                                              |
+| `description` | string                                     | required | Short human description carried in frontmatter.                                                            |
+| `body`        | string                                     | required | Markdown body content.                                                                                     |
+| `scope`       | `user` or `project`                        | optional | Which store to write to. Defaults to `user`. `project` requires that a project store was detected at boot. |
 
 Example call:
 
@@ -93,14 +93,14 @@ superseded memories are excluded.
 
 Input schema:
 
-| Argument            | Type                                    | Required | Description                                                                                                                    |
-| ------------------- | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `query`             | string                                  | required | Natural-language search query.                                                                                                 |
-| `limit`             | integer                                 | optional | Maximum number of results after merging across stores. Defaults to `5` (override via the env-var documented below).            |
-| `type`              | `user`/`feedback`/`project`/`reference` | optional | Restrict results to memories of this type.                                                                                     |
-| `threshold`         | number                                  | optional | Minimum cosine similarity for an entry to appear. Cosine range is `[-1, 1]`.                                                   |
-| `includeSuperseded` | boolean                                 | optional | When `true`, include memories that have been superseded. Superseded matches carry a `supersededBy` field. Defaults to `false`. |
-| `scope`             | `user` or `project`                     | optional | Restrict the search to a single store. Default: search both stores when the project store is present.                          |
+| Argument            | Type                                       | Required | Description                                                                                                                                                    |
+| ------------------- | ------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`             | string                                     | required | Natural-language search query.                                                                                                                                 |
+| `limit`             | integer                                    | optional | Maximum number of results after merging across stores. The default is configurable via the `COMMONPLACE_DEFAULT_LIMIT` env var documented below (default `5`). |
+| `type`              | `user \| feedback \| project \| reference` | optional | Restrict results to memories of this type.                                                                                                                     |
+| `threshold`         | number                                     | optional | Minimum cosine similarity for an entry to appear. Cosine range is `[-1, 1]`.                                                                                   |
+| `includeSuperseded` | boolean                                    | optional | When `true`, include memories that have been superseded. Superseded matches carry a `supersededBy` field. Defaults to `false`.                                 |
+| `scope`             | `user` or `project`                        | optional | Restrict the search to a single store. Default: search both stores when the project store is present.                                                          |
 
 Example call:
 
@@ -122,11 +122,11 @@ default, superseded memories are excluded.
 
 Input schema:
 
-| Argument            | Type                                    | Required | Description                                                                                          |
-| ------------------- | --------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `type`              | `user`/`feedback`/`project`/`reference` | optional | Restrict results to memories of this type.                                                           |
-| `includeSuperseded` | boolean                                 | optional | When `true`, include superseded memories. Defaults to `false`.                                       |
-| `scope`             | `user` or `project`                     | optional | Restrict the listing to a single store. Default: list both stores when the project store is present. |
+| Argument            | Type                                       | Required | Description                                                                                          |
+| ------------------- | ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------- |
+| `type`              | `user \| feedback \| project \| reference` | optional | Restrict results to memories of this type.                                                           |
+| `includeSuperseded` | boolean                                    | optional | When `true`, include superseded memories. Defaults to `false`.                                       |
+| `scope`             | `user` or `project`                        | optional | Restrict the listing to a single store. Default: list both stores when the project store is present. |
 
 Example call:
 
