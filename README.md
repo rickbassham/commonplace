@@ -228,3 +228,9 @@ claude mcp add commonplace ./dist/bin/commonplace-mcp.js
 - `make format` / `make format-check` -- Prettier.
 
 `pnpm` is the only supported package manager.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution workflow,
+local-development commands, and the merge rules (branch from `main`,
+PRs only, CI must pass, conversations resolved, squash-merge).

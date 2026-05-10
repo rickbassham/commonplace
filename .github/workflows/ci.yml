@@ -1,0 +1,62 @@
+# DAR-914: PR-gating CI for commonplace.
+#
+# All build/test logic is delegated to Makefile targets so CI uses the
+# same entrypoints as local devs and the dev-workflow plugin.
+# `make audit` is intentionally non-blocking for v0.1; revisit before
+# v1.0 (DAR-914 acceptance criteria).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 20
+          - 22
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        # Reads the pnpm version from package.json `packageManager` --
+        # do NOT pin a `version:` here.
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          # Matrix-driven so each leg actually runs on its declared
+          # Node version. The .nvmrc default is the local-dev version;
+          # CI exercises both supported majors.
+          node-version: ${{ matrix.node-version }}
+          # `cache: pnpm` keys the pnpm store on `**/pnpm-lock.yaml`
+          # automatically, satisfying the lockfile-keyed cache contract.
+          cache: pnpm
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Typecheck
+        run: make typecheck
+
+      - name: Lint
+        run: make lint
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+      - name: Audit (non-blocking for v0.1)
+        run: make audit
+        continue-on-error: true
