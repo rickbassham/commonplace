@@ -61,11 +61,36 @@ human-reviewed tag push.
 
 ### One-time setup
 
-The `NPM_TOKEN` secret must be configured in the GitHub repo settings
-before the first tag is pushed. Use a publish-only token with
-package-scoped permissions (Settings -> Secrets and variables ->
-Actions -> New repository secret, name `NPM_TOKEN`). This step is
-out-of-band -- the release workflow cannot create the secret for you.
+A **Trusted Publisher** must be configured for `commonplace-mcp` on
+npmjs.com before the first tag is pushed. This replaces the older
+NPM_TOKEN-secret approach: there is no long-lived token to manage,
+and the release workflow attaches a provenance attestation to every
+publish so consumers can verify the package came from this repo via
+`npm audit signatures`.
+
+Setup (out-of-band -- the release workflow cannot do this for you):
+
+1. Sign in to npmjs.com as an account with publish rights to
+   `commonplace-mcp`. For the first publish of a brand-new name, sign
+   in to any account that you want to own the package.
+2. Navigate to **Account → Trusted Publishers → Add Trusted Publisher**
+   (or, after the package exists, **Package → Settings → Trusted
+   Publishers**).
+3. Choose **GitHub Actions** and fill in:
+   - Repository owner: `rickbassham`
+   - Repository name: `commonplace`
+   - Workflow filename: `release.yml`
+   - Environment: leave blank (the workflow does not use a GitHub
+     Environment gate yet; if one is added later, set its name here).
+4. Save. The release workflow will succeed on the next tag push.
+
+Reference: <https://docs.npmjs.com/trusted-publishers>.
+
+If the package does not yet exist on npm (true for the first publish
+of a new name), npm will create it on the first successful publish
+under the Trusted Publisher config. Make sure the publisher is
+configured _before_ pushing the first tag, otherwise the workflow will
+fail at the publish step.
 
 ### Per-release flow
 

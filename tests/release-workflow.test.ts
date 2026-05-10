@@ -428,34 +428,46 @@ describe('ac-7: pnpm publish step', () => {
     }
   });
 
-  it('the `pnpm publish` step sets `NODE_AUTH_TOKEN` from `${{ secrets.NPM_TOKEN }}` in its `env:` block', () => {
+  it('the `pnpm publish` step authenticates via OIDC (Trusted Publishers): no `NODE_AUTH_TOKEN`, no `secrets.NPM_TOKEN`, the `--provenance` flag is present', () => {
     const wf = loadRelease();
     const publish = allSteps(wf).find((s) => /\bpnpm\s+publish\b/.test(stepRuns(s)));
     expect(publish).toBeDefined();
     if (!publish) return;
-    const env = publish.env;
-    expect(isObject(env), 'publish step must have env block').toBe(true);
-    if (!isObject(env)) return;
-    const tok = env.NODE_AUTH_TOKEN;
-    expect(typeof tok).toBe('string');
-    expect(String(tok)).toMatch(/\$\{\{\s*secrets\.NPM_TOKEN\s*\}\}/);
+    const run = stepRuns(publish);
+    expect(run, 'publish must use --provenance for OIDC attestation').toMatch(/--provenance\b/);
+    const env = publish.env ?? {};
+    if (isObject(env)) {
+      expect(env.NODE_AUTH_TOKEN, 'OIDC publish must not set NODE_AUTH_TOKEN').toBeUndefined();
+      expect(env.NPM_TOKEN, 'OIDC publish must not set NPM_TOKEN').toBeUndefined();
+    }
+    expect(run, 'publish must not reference secrets.NPM_TOKEN').not.toMatch(/secrets\.NPM_TOKEN/);
   });
 
-  it('no other step in release.yml exposes `NPM_TOKEN`/`NODE_AUTH_TOKEN` (token scope is limited to the publish step only)', () => {
+  it('the release job grants `id-token: write` so the runner can mint OIDC tokens for Trusted Publishers', () => {
+    const wf = loadRelease();
+    const jobs = isObject(wf) && isObject(wf.jobs) ? wf.jobs : {};
+    const release = isObject(jobs.release) ? jobs.release : null;
+    expect(release, 'release job must exist').not.toBeNull();
+    if (!release) return;
+    const perms = release.permissions;
+    expect(isObject(perms), 'release job must declare permissions').toBe(true);
+    if (!isObject(perms)) return;
+    expect(perms['id-token']).toBe('write');
+  });
+
+  it('no step in release.yml references `NPM_TOKEN` or `NODE_AUTH_TOKEN` anywhere (Trusted Publishers means no token at all)', () => {
     const wf = loadRelease();
     const steps = allSteps(wf);
-    const publishIdx = publishStepIndex(steps);
     for (let i = 0; i < steps.length; i++) {
-      if (i === publishIdx) continue;
       const s = steps[i];
       if (!s) continue;
       const env = s.env;
       if (isObject(env)) {
-        expect(env.NODE_AUTH_TOKEN, `step ${i} must not expose NODE_AUTH_TOKEN`).toBeUndefined();
-        expect(env.NPM_TOKEN, `step ${i} must not expose NPM_TOKEN`).toBeUndefined();
+        expect(env.NODE_AUTH_TOKEN, `step ${i} must not set NODE_AUTH_TOKEN`).toBeUndefined();
+        expect(env.NPM_TOKEN, `step ${i} must not set NPM_TOKEN`).toBeUndefined();
       }
       const run = stepRuns(s);
-      expect(run, `step ${i} run must not reference secrets.NPM_TOKEN`).not.toMatch(
+      expect(run, `step ${i} must not reference secrets.NPM_TOKEN`).not.toMatch(
         /secrets\.NPM_TOKEN/,
       );
     }
@@ -579,10 +591,13 @@ describe('ac-9: contributor docs - release process', () => {
     expect(body).toMatch(/workflow|actions/i);
   });
 
-  it('the release docs document that `NPM_TOKEN` must be configured in repo secrets (out-of-band) before the first tag push', () => {
+  it('the release docs document the Trusted Publisher one-time setup (out-of-band, on npmjs.com) before the first tag push', () => {
     const { body } = loadReleaseDoc();
-    expect(body).toMatch(/NPM_TOKEN/);
-    expect(body).toMatch(/secret/i);
+    expect(body).toMatch(/Trusted\s+Publisher/i);
+    expect(body).toMatch(/npmjs\.com/i);
+    // The docs must explicitly point at the GitHub Actions provider so a
+    // contributor knows where to click in the npmjs.com UI.
+    expect(body).toMatch(/GitHub\s+Actions/i);
   });
 });
 
@@ -650,21 +665,23 @@ describe('ac-11: workflow YAML structure assertions (mirroring DAR-914)', () => 
     expect(idx).toBeLessThan(publishIdx);
   });
 
-  it("the publish step's secret name is `NPM_TOKEN` mapped to `NODE_AUTH_TOKEN` (no other secret name accepted)", () => {
+  it('the publish step uses Trusted Publishers via `--provenance` (no env-based secret token)', () => {
     const wf = loadRelease();
     const publish = allSteps(wf).find((s) => /\bpnpm\s+publish\b/.test(stepRuns(s)));
     expect(publish).toBeDefined();
     if (!publish) return;
+    const run = stepRuns(publish);
+    expect(run, 'publish must include --provenance').toMatch(/--provenance\b/);
     const env = publish.env;
     expect(isObject(env)).toBe(true);
     if (!isObject(env)) return;
-    expect(typeof env.NODE_AUTH_TOKEN).toBe('string');
-    expect(String(env.NODE_AUTH_TOKEN)).toMatch(/\$\{\{\s*secrets\.NPM_TOKEN\s*\}\}/);
-    // Must not pull from any other secret name.
+    expect(env.NODE_AUTH_TOKEN, 'must not set NODE_AUTH_TOKEN under OIDC').toBeUndefined();
+    expect(env.NPM_TOKEN, 'must not set NPM_TOKEN under OIDC').toBeUndefined();
+    // No secrets at all in the publish step's env under Trusted
+    // Publishers -- everything authenticates via OIDC.
     for (const v of Object.values(env)) {
       if (typeof v !== 'string') continue;
-      const m = v.match(/secrets\.([A-Z0-9_]+)/);
-      if (m) expect(m[1]).toBe('NPM_TOKEN');
+      expect(v, 'no secrets.* references in OIDC publish env').not.toMatch(/secrets\./);
     }
   });
 

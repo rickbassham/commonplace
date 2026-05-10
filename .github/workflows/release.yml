@@ -11,8 +11,18 @@
 # from the matching `## [X.Y.Z]` section of `CHANGELOG.md`, marked as
 # pre-release when the version contains a pre-release identifier.
 #
-# Required out-of-band: `NPM_TOKEN` repo secret with publish access.
-# Documented in CONTRIBUTING.md.
+# Authentication uses npm's Trusted Publishers (OIDC) -- no long-lived
+# `NPM_TOKEN` secret is involved. The workflow requests a short-lived
+# OIDC token from GitHub via `permissions: id-token: write`; npm
+# verifies the token's claims (repo + workflow filename) against the
+# Trusted Publisher configuration on npmjs.com, then accepts the
+# publish. `--provenance` attaches a build attestation that consumers
+# can verify with `npm audit signatures`.
+# Trusted Publishers reference: https://docs.npmjs.com/trusted-publishers
+#
+# Required out-of-band: configure a Trusted Publisher for
+# `commonplace-mcp` on npmjs.com pointing at this repo + this workflow
+# filename. Documented in CONTRIBUTING.md.
 #
 # Security note: workflow inputs flow through env vars rather than
 # inline `${{ ... }}` interpolation in `run:` blocks. Tag names are
@@ -31,10 +41,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       # `contents: write` is required for the GitHub Release creation
-      # step to push the release payload back to the repo. The publish
-      # step gets npm credentials from `secrets.NPM_TOKEN`, not from
-      # the GITHUB_TOKEN, so the default token only needs Releases write.
+      # step to push the release payload back to the repo.
       contents: write
+      # `id-token: write` lets the runner mint a short-lived OIDC token
+      # that npm exchanges for a publish credential against the Trusted
+      # Publisher configuration on npmjs.com. No long-lived NPM_TOKEN
+      # secret is involved; this is the only authentication mechanism
+      # for the publish step.
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,8 +65,10 @@ jobs:
           # `cache: pnpm` keys the pnpm store on `**/pnpm-lock.yaml`
           # automatically, satisfying the lockfile-keyed cache contract.
           cache: pnpm
-          # Configure npm registry auth so `pnpm publish` picks up
-          # NODE_AUTH_TOKEN from the publish step's env block.
+          # `registry-url` configures the .npmrc that pnpm's publish
+          # honors. With Trusted Publishers (OIDC), no token is written
+          # to .npmrc -- the registry just needs to be set explicitly so
+          # pnpm doesn't fall through to the default.
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -159,21 +175,26 @@ jobs:
           fi
           echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm
+      - name: Publish to npm via Trusted Publisher (OIDC)
         # Gates and drift guards above must all pass before this step
-        # runs. NPM_TOKEN is exposed only here -- no other step pulls
-        # it from secrets. `--access public` is required for the first
-        # publish of a scoped package; harmless for unscoped names.
+        # runs. Authentication is via the OIDC token GitHub minted for
+        # this job (see `permissions: id-token: write`); npm verifies
+        # the token's claims against the Trusted Publisher config and
+        # issues a short-lived publish credential. No NPM_TOKEN.
+        # `--provenance` attaches a build attestation tying the
+        # tarball to this commit + workflow run; consumers can verify
+        # with `npm audit signatures`.
+        # `--access public` is required for the first publish of a
+        # scoped package; harmless for unscoped names.
         env:
           DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # --no-git-checks: required because actions/checkout produces a
           # detached HEAD with no upstream branch, which pnpm would
           # otherwise reject. The publish gate above (typecheck/lint/
           # build/test + drift guards) is what protects this step; the
           # flag does not weaken that gate.
-          pnpm publish --access public --no-git-checks --tag "$DIST_TAG"
+          pnpm publish --access public --provenance --no-git-checks --tag "$DIST_TAG"
 
       - name: Create GitHub Release
         # Runs only if `pnpm publish` succeeded -- step ordering alone
