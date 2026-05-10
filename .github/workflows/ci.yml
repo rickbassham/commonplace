@@ -20,8 +20,14 @@ jobs:
       fail-fast: false
       matrix:
         node-version:
-          - 20
+          # Node 22 is the prior LTS; commonplace's package.json engines
+          # field still admits >=20, but Node 20 is end-of-life as of
+          # April 2026 and the GitHub Actions runner is deprecating its
+          # Node-20 actions. Node 24 is the active LTS and the version
+          # the release workflow uses (because trusted-publishing OIDC
+          # requires npm >=11, which only ships with Node 24+).
           - 22
+          - 24
     steps:
       - name: Checkout
         uses: actions/checkout@v4
