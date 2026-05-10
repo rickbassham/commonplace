@@ -52,6 +52,64 @@ Use `pnpm` -- never `npm` or `yarn`. The `packageManager` field in
 - No skipped tests in committed changes.
 - Errors are handled explicitly.
 
+## Releasing
+
+Releases of `commonplace-mcp` to npm are driven entirely by tag pushes
+against `main`. There is no auto-publish on merge, no auto-beta, and
+no version-bump automation -- every published version is an explicit,
+human-reviewed tag push.
+
+### One-time setup
+
+The `NPM_TOKEN` secret must be configured in the GitHub repo settings
+before the first tag is pushed. Use a publish-only token with
+package-scoped permissions (Settings -> Secrets and variables ->
+Actions -> New repository secret, name `NPM_TOKEN`). This step is
+out-of-band -- the release workflow cannot create the secret for you.
+
+### Per-release flow
+
+For each release (`X.Y.Z` for stable, `X.Y.Z-<pre>.<n>` for a
+pre-release like `beta.1` / `rc.0` / `alpha` / `next.5`):
+
+1. **Open a version-bump PR** with all three of these in a single
+   commit so they cannot drift:
+   - **Write a new CHANGELOG.md section** for `X.Y.Z` describing the
+     user-visible changes since the last release. Use the
+     `## [X.Y.Z] - YYYY-MM-DD` heading style; the release workflow
+     extracts this section verbatim into the GitHub Release body.
+   - **Bump `package.json` `version`** to the target version (no
+     leading `v`).
+   - **Bump `SERVER_VERSION`** in `src/server/server.ts` to the same
+     value. The release workflow's drift guard fails the publish if
+     these disagree -- catch the mistake locally rather than at the
+     gate.
+2. **Get the PR reviewed and merge it to `main`.** The version-bump PR
+   is merged _before_ the tag is pushed. Do not push the tag against a
+   branch -- tags must point at the merge commit on `main`.
+3. **Push the `v<version>` tag.** From a clean checkout of `main` at
+   the merge commit:
+   ```sh
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+   The `Release` workflow triggers on the tag push.
+4. **Watch the workflow run** under the repo's GitHub Actions tab.
+   The job runs the same gate as CI (`make install` / `typecheck` /
+   `lint` / `build` / `test`), enforces the version drift guards,
+   derives the npm dist-tag from the tag name (stable -> `latest`,
+   `v0.1.0-beta.1` -> `beta`, etc.), runs `pnpm publish --access
+public --tag <derived>`, and finally creates a GitHub Release with
+   the matching CHANGELOG section. Pre-release tags are marked as such
+   on the GitHub Release.
+
+If the workflow fails before publish, fix the underlying problem in a
+follow-up PR, delete the failed tag (`git push origin :refs/tags/vX.Y.Z`
+plus a local `git tag -d vX.Y.Z`), and start the per-release flow over
+once the fix is merged. If the workflow fails _after_ `pnpm publish`
+succeeded, the version is already published to npm -- bump to the
+next patch and release that.
+
 ## Reporting issues
 
 Open a GitHub issue with a clear repro and the Node + pnpm versions
