@@ -273,6 +273,31 @@ export interface DetectedSource {
   fileCount: number;
 }
 
+/**
+ * A non-fatal warning emitted during detection -- e.g. the
+ * `~/.claude/projects/` dir exists but cannot be enumerated due to a
+ * permission error. Detection still returns a (possibly empty) sources
+ * array; the warning gives the caller something to render so the failure
+ * mode is debuggable rather than silent (DAR-961 review f-4).
+ */
+export interface DetectionWarning {
+  /** Absolute path that could not be read. */
+  path: string;
+  /** Human-readable error message (the caught exception's `.message`). */
+  message: string;
+}
+
+/** Result of {@link detectImportSources}. */
+export interface DetectionResult {
+  /** Detected import sources -- one entry per project-memory dir with files. */
+  sources: DetectedSource[];
+  /**
+   * Non-fatal issues encountered during detection. Empty on the happy
+   * path. Populated when a directory exists but cannot be enumerated.
+   */
+  warnings: DetectionWarning[];
+}
+
 /** Inputs to {@link detectImportSources}. */
 export interface DetectOptions {
   /** Home directory used to resolve `~/.claude/projects/*\/memory/`. Tests pass a tmp dir. */
@@ -291,22 +316,43 @@ export interface DetectOptions {
  * that exists and contains at least one `.md` file. Empty array means
  * "no candidates" -- the CLI should report 0 detected sources rather
  * than complain.
+ *
+ * For the warnings-aware variant (which captures readdir failures so
+ * permission issues don't silently look like an empty home), see
+ * {@link detectImportSourcesDetailed}.
  */
-export const detectImportSources = (opts: DetectOptions = {}): DetectedSource[] => {
+export const detectImportSources = (opts: DetectOptions = {}): DetectedSource[] =>
+  detectImportSourcesDetailed(opts).sources;
+
+/**
+ * Same as {@link detectImportSources} but additionally returns any
+ * non-fatal warnings encountered during the walk (e.g. `~/.claude/projects/`
+ * exists but cannot be enumerated). Detection is still best-effort -- a
+ * warning never causes a throw -- but surfacing the message lets the CLI
+ * render a debuggable signal instead of an indistinguishable
+ * "no external memory sources detected" (DAR-961 review f-4).
+ */
+export const detectImportSourcesDetailed = (opts: DetectOptions = {}): DetectionResult => {
   const home = opts.home ?? homedir();
   const projectsRoot = join(home, '.claude', 'projects');
-  if (!existsSync(projectsRoot)) return [];
+  const warnings: DetectionWarning[] = [];
+  if (!existsSync(projectsRoot)) return { sources: [], warnings };
   let projectEntries: { name: string; isDir: boolean }[];
   try {
     projectEntries = readdirSync(projectsRoot, { withFileTypes: true }).map((d) => ({
       name: d.name,
       isDir: d.isDirectory(),
     }));
-  } catch {
+  } catch (err) {
     // Directory exists but cannot be read (permissions, race, etc.).
     // Treat as "no candidates" rather than throwing -- detection is
-    // best-effort.
-    return [];
+    // best-effort -- but capture the error so the CLI can render a
+    // warning instead of a silent zero.
+    warnings.push({
+      path: projectsRoot,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return { sources: [], warnings };
   }
   const out: DetectedSource[] = [];
   for (const ent of projectEntries) {
@@ -318,7 +364,11 @@ export const detectImportSources = (opts: DetectOptions = {}): DetectedSource[] 
       files = readdirSync(memDir, { withFileTypes: true })
         .filter((d) => d.isFile() && d.name.endsWith('.md'))
         .map((d) => ({ name: d.name }));
-    } catch {
+    } catch (err) {
+      warnings.push({
+        path: memDir,
+        message: err instanceof Error ? err.message : String(err),
+      });
       continue;
     }
     if (files.length === 0) continue;
@@ -333,7 +383,7 @@ export const detectImportSources = (opts: DetectOptions = {}): DetectedSource[] 
       fileCount: detected.length,
     });
   }
-  return out;
+  return { sources: out, warnings };
 };
 
 /** A single imported entry in the result of {@link runImportFromClaudeCode}. */
@@ -426,11 +476,34 @@ export const runImportFromClaudeCode = async (opts: ImportOptions): Promise<Impo
   const skipped: SkippedEntry[] = [];
   const bySource: ImportSourceSummary[] = [];
 
+  // Track the source dir each name was imported from in this run so a
+  // later collision on the same name (from a sibling project's memory
+  // dir) is reported with a distinct, accurate reason rather than the
+  // misleading "already exists in <userDir>" -- which implies a
+  // pre-existing user-dir entry, not a within-run collision between two
+  // sibling Claude Code projects (DAR-961 review f-2).
+  const importedFromThisRun = new Map<string, string>();
+
   for (const src of sources) {
     let perSourceImported = 0;
     let perSourceSkipped = 0;
     for (const file of src.files) {
       const target = join(opts.userDir, `${file.name}.md`);
+      // Cross-project collision: the same basename was already imported
+      // earlier in this run from another known-source dir. The first
+      // version "won" (per ac-3 skip semantics extended consistently
+      // here); we report the second skip so the user can see both
+      // sources had a same-named memory and the second was dropped.
+      const earlierDir = importedFromThisRun.get(file.name);
+      if (earlierDir !== undefined) {
+        skipped.push({
+          name: file.name,
+          source: file.path,
+          reason: `same-name source already imported from ${earlierDir}`,
+        });
+        perSourceSkipped += 1;
+        continue;
+      }
       if (existsSync(target)) {
         skipped.push({
           name: file.name,
@@ -449,6 +522,7 @@ export const runImportFromClaudeCode = async (opts: ImportOptions): Promise<Impo
       }
       imported.push({ name: file.name, source: file.path, target });
       perSourceImported += 1;
+      importedFromThisRun.set(file.name, src.dir);
     }
     bySource.push({
       source: src.source,
@@ -508,9 +582,22 @@ export type ParsedMigrateArgs =
       message: string;
     };
 
-const USAGE =
+/**
+ * Canonical usage string for the `commonplace migrate` surface. Exported so
+ * the bare-bin entry (`src/index.ts`) can render the same multi-line message
+ * a parser usage_error renders -- one source of truth for "how do I invoke
+ * commonplace" rather than two strings that drift over time (DAR-961
+ * review f-1).
+ *
+ * `--auto` is documented inline as a forward-compat no-op so a user who
+ * sees it in `--help` knows it does not change today's behaviour and won't
+ * be surprised when interactive prompting later sits behind a different
+ * flag (DAR-961 review f-3).
+ */
+export const USAGE =
   'Usage: commonplace migrate                       (detect known external memory sources)\n' +
   '       commonplace migrate --from <source>       (import from a known source; --dry-run / --auto supported)\n' +
+  '                                                 (--auto is a forward-compat no-op today; reserved for future interactive prompting)\n' +
   '       commonplace migrate <dir>                 (rebuild sidecars for an existing memory dir; --dry-run / --prune-dangling supported)';
 
 const isKnownImportSource = (v: string): v is KnownImportSource =>
@@ -704,7 +791,22 @@ const migrateDetect = (
   opts: MigrateMainOptions,
 ): MigrateMainResult => {
   const home = opts.home;
-  const sources = detectImportSources(home === undefined ? {} : { home });
+  // Use the warnings-aware variant so a permission failure on
+  // `~/.claude/projects/` produces a debuggable signal on stderr instead
+  // of being indistinguishable from a genuinely empty home (DAR-961
+  // review f-4).
+  const { sources, warnings } = detectImportSourcesDetailed(home === undefined ? {} : { home });
+
+  // Warnings go to stderr so the stdout summary stays parseable. Each
+  // warning carries the path and the OS error message verbatim.
+  if (warnings.length > 0) {
+    opts.stderr(
+      `commonplace migrate: detection completed with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}:\n`,
+    );
+    for (const w of warnings) {
+      opts.stderr(`  warning: could not read ${w.path}: ${w.message}\n`);
+    }
+  }
 
   if (sources.length === 0) {
     opts.stdout(

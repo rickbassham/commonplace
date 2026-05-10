@@ -15,12 +15,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   detectImportSources,
+  detectImportSourcesDetailed,
   parseMigrateArgs,
   runImportFromClaudeCode,
 } from '../src/cli/migrate.js';
@@ -110,6 +111,48 @@ describe('ac-1: detection (`commonplace migrate` with no args)', () => {
     // user dir is untouched
     expect(existsSync(join(userDir, 'alpha.md'))).toBe(false);
     expect(existsSync(join(userDir, 'alpha.embedding'))).toBe(false);
+  });
+
+  it('detectImportSourcesDetailed returns an empty warnings list on the happy path', () => {
+    writeClaudeCodeProject('-Users-rick-Projects-foo', [makeMemory('alpha')]);
+    const detail = detectImportSourcesDetailed({ home });
+    expect(detail.sources.length).toBe(1);
+    expect(detail.warnings).toEqual([]);
+  });
+
+  it('detectImportSourcesDetailed surfaces a warning when a project-memory dir cannot be enumerated, and detection still returns the readable sources (DAR-961 review f-4)', () => {
+    if (process.platform === 'win32') return; // POSIX-mode test
+    if (process.getuid?.() === 0) return; // root bypasses chmod
+
+    // Two project dirs; one has its memory dir made unreadable, the
+    // other is a normal happy-path source.
+    const readableDir = writeClaudeCodeProject('-readable', [makeMemory('alpha')]);
+    const blockedDir = writeClaudeCodeProject('-blocked', [makeMemory('bravo')]);
+    // Strip read perms on the blocked memory dir so readdirSync throws.
+    chmodSync(blockedDir, 0o000);
+
+    try {
+      const detail = detectImportSourcesDetailed({ home });
+
+      // The readable source still shows up.
+      const readableHit = detail.sources.find((s) => s.dir === readableDir);
+      expect(readableHit).toBeDefined();
+
+      // The blocked source produced a warning, not a throw, and is
+      // absent from sources.
+      const blockedHit = detail.sources.find((s) => s.dir === blockedDir);
+      expect(blockedHit).toBeUndefined();
+      expect(detail.warnings.length).toBeGreaterThanOrEqual(1);
+      expect(detail.warnings.some((w) => w.path === blockedDir)).toBe(true);
+      // Warning message is non-empty -- carries the OS error so the
+      // user can debug the failure.
+      for (const w of detail.warnings) {
+        expect(w.message.length).toBeGreaterThan(0);
+      }
+    } finally {
+      // Restore perms so afterEach can rmSync without EACCES.
+      chmodSync(blockedDir, 0o755);
+    }
   });
 
   it('globs `~/.claude/projects/*/memory/*.md` rather than parsing the project slug, so an arbitrary slug shape still resolves', () => {
@@ -248,6 +291,46 @@ describe('ac-3: conflict policy (skip + report)', () => {
     expect(result.skipped.length).toBe(1);
     expect(result.skipped[0]?.name).toBe('alpha');
     expect(result.skipped[0]?.reason).toMatch(/already exists/i);
+  });
+
+  it('cross-project same-name collision: imports from the first project dir, skips the second with a reason that explicitly identifies the prior source dir (DAR-961 review f-2)', async () => {
+    // Two sibling Claude Code project-memory dirs each ship an
+    // `architecture.md`. The first is imported; the second must be
+    // reported as a within-run cross-project collision -- NOT as an
+    // "already exists in <userDir>" entry, because the user dir was
+    // empty before this run.
+    const firstDir = writeClaudeCodeProject('-Users-rick-Projects-A', [
+      makeMemory('architecture', 'project A architecture'),
+    ]);
+    const secondDir = writeClaudeCodeProject('-Users-rick-Projects-B', [
+      makeMemory('architecture', 'project B architecture'),
+    ]);
+
+    const result = await runImportFromClaudeCode({
+      home,
+      userDir,
+      embedder: makeStubEmbedder(),
+    });
+
+    // First wins: the user dir gets project A's bytes.
+    expect(result.imported.length).toBe(1);
+    expect(result.imported[0]?.name).toBe('architecture');
+    const importedFromDir = result.imported[0]?.source ?? '';
+    expect([firstDir, secondDir]).toContain(
+      importedFromDir.slice(0, importedFromDir.lastIndexOf('/')),
+    );
+
+    // Second is skipped with a distinct reason -- not the
+    // already-exists-in-userDir wording.
+    expect(result.skipped.length).toBe(1);
+    expect(result.skipped[0]?.name).toBe('architecture');
+    expect(result.skipped[0]?.reason).toMatch(/same[-\s]name source already imported/i);
+    expect(result.skipped[0]?.reason).not.toMatch(/already exists in/i);
+    // The reason must point at the OTHER project's source dir so the
+    // user can debug the collision.
+    const reason = result.skipped[0]?.reason ?? '';
+    const importedSourceDir = importedFromDir.slice(0, importedFromDir.lastIndexOf('/'));
+    expect(reason).toContain(importedSourceDir);
   });
 
   it('produces an exit-code-zero result when every source file collides (skips are not failures)', async () => {

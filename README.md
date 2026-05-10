@@ -261,7 +261,7 @@ imports memory from external sources into `COMMONPLACE_USER_DIR`.
 commonplace migrate                      # detect known sources, write nothing
 commonplace migrate --from claude-code   # import from Claude Code project memory
 commonplace migrate --from claude-code --dry-run  # preview the import, write nothing
-commonplace migrate --from claude-code --auto     # non-interactive (for scripts)
+commonplace migrate --from claude-code --auto     # non-interactive (forward-compat no-op today; see below)
 commonplace migrate <dir>                # rebuild sidecars for an existing dir
 ```
 
@@ -284,6 +284,14 @@ the existing entry first if you want to replace it.
 `--dry-run` reports what would be imported without writing any `.md`
 or `.embedding` files, and preserves any existing colliding target
 file byte-for-byte.
+
+`--auto` is a **forward-compat no-op**: today the import path runs
+non-interactively whether or not `--auto` is passed, so the flag's
+presence and absence are indistinguishable. It is reserved as the
+opt-in for scripted runs once interactive prompting (e.g. per-file
+confirmation) is added behind a separate flag. Passing `--auto` in a
+script today is safe and recommended -- it pins the non-interactive
+contract without depending on the future default.
 
 ### Migrating from mem0 / Letta / other MCP-exposed memory tools
 
