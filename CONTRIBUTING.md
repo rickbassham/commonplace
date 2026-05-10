@@ -135,6 +135,22 @@ once the fix is merged. If the workflow fails _after_ `pnpm publish`
 succeeded, the version is already published to npm -- bump to the
 next patch and release that.
 
+## Diagnostic scripts
+
+The `scripts/` directory holds maintainer-only diagnostics that are
+deliberately not part of `make test`:
+
+- `scripts/setup-branch-protection.sh` -- reproducible source of truth
+  for `main`'s branch-protection settings. Re-run after editing.
+- `scripts/derive-dist-tag.sh` -- the npm dist-tag derivation logic
+  the release workflow consumes (also unit-tested in
+  `tests/derive-dist-tag.test.ts`).
+- `scripts/reproduce-cold-start-race.sh` -- destructive
+  reproduction of the DAR-955 transformers.js cold-cache race (clears
+  the model cache and races two concurrent embedder loads; expects at
+  least one to fail). Run only when investigating a regression of the
+  same class. Cost: ~440 MB redownload.
+
 ## Reporting issues
 
 Open a GitHub issue with a clear repro and the Node + pnpm versions
