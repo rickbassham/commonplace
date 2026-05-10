@@ -1,0 +1,207 @@
+# DAR-960: tag-triggered npm publish for commonplace-mcp.
+#
+# This workflow runs when a `v*` tag is pushed. It mirrors the gate in
+# `ci.yml` (DAR-914) so the same Make targets that protect main also
+# protect the publish, then derives an npm dist-tag from the pushed tag
+# (stable -> `latest`, pre-release tags -> their alphabetic prefix --
+# `beta`, `rc`, `alpha`, `next`, ...) via the unit-tested
+# `scripts/derive-dist-tag.sh`. Drift guards reject mismatches between
+# the git tag, `package.json` version, and `SERVER_VERSION` in
+# `src/server/server.ts`. After publish, a GitHub Release is created
+# from the matching `## [X.Y.Z]` section of `CHANGELOG.md`, marked as
+# pre-release when the version contains a pre-release identifier.
+#
+# Authentication uses npm's Trusted Publishers (OIDC) -- no long-lived
+# `NPM_TOKEN` secret is involved. The workflow requests a short-lived
+# OIDC token from GitHub via `permissions: id-token: write`; npm
+# verifies the token's claims (repo + workflow filename) against the
+# Trusted Publisher configuration on npmjs.com, then accepts the
+# publish. `--provenance` attaches a build attestation that consumers
+# can verify with `npm audit signatures`.
+# Trusted Publishers reference: https://docs.npmjs.com/trusted-publishers
+#
+# Required out-of-band: configure a Trusted Publisher for
+# `commonplace-mcp` on npmjs.com pointing at this repo + this workflow
+# filename. Documented in CONTRIBUTING.md.
+#
+# Security note: workflow inputs flow through env vars rather than
+# inline `${{ ... }}` interpolation in `run:` blocks. Tag names are
+# constrained by the `v*` filter, but using env vars keeps us aligned
+# with the GitHub Actions injection-hardening guidance regardless.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    permissions:
+      # `contents: write` is required for the GitHub Release creation
+      # step to push the release payload back to the repo.
+      contents: write
+      # `id-token: write` lets the runner mint a short-lived OIDC token
+      # that npm exchanges for a publish credential against the Trusted
+      # Publisher configuration on npmjs.com. No long-lived NPM_TOKEN
+      # secret is involved; this is the only authentication mechanism
+      # for the publish step.
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        # Reads the pnpm version from package.json `packageManager` --
+        # do NOT pin a `version:` here. Mirrors ci.yml.
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          # `cache: pnpm` keys the pnpm store on `**/pnpm-lock.yaml`
+          # automatically, satisfying the lockfile-keyed cache contract.
+          cache: pnpm
+          # `registry-url` configures the .npmrc that pnpm's publish
+          # honors. With Trusted Publishers (OIDC), no token is written
+          # to .npmrc -- the registry just needs to be set explicitly so
+          # pnpm doesn't fall through to the default.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Typecheck
+        run: make typecheck
+
+      - name: Lint
+        run: make lint
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+      - name: Verify package.json version matches pushed tag
+        # Drift guard #1: catches "tagged but forgot to bump version"
+        # and the inverse. Strips the leading `v` from the git ref and
+        # compares to the package.json version. Exposes both values as
+        # step outputs so later steps can reuse them without re-parsing.
+        id: tag_version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          echo "tag version:     $TAG_VERSION"
+          echo "package version: $PKG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match pushed tag (v$TAG_VERSION)"
+            exit 1
+          fi
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify SERVER_VERSION matches package.json version
+        # Drift guard #2: SERVER_VERSION in src/server/server.ts is
+        # advertised in the MCP initialize handshake. DAR-921 already
+        # flagged this drift mode -- bump package.json but forget the
+        # constant. Extract the literal from the source file and
+        # compare to the package version computed above.
+        env:
+          PKG_VERSION: ${{ steps.tag_version.outputs.version }}
+        run: |
+          # Accept either single or double quotes so a future formatter
+          # change (e.g. Prettier toggling quote style) doesn't silently
+          # break the drift guard. The empty-string check below stays as
+          # a loud failure if the constant ever moves or is renamed.
+          SERVER_VERSION="$(grep -E "^export const SERVER_VERSION = ['\"]" src/server/server.ts \
+            | sed -E "s/^export const SERVER_VERSION = ['\"]([^'\"]+)['\"];.*/\1/")"
+          echo "SERVER_VERSION:  $SERVER_VERSION"
+          echo "package version: $PKG_VERSION"
+          if [ -z "$SERVER_VERSION" ]; then
+            echo "::error::could not extract SERVER_VERSION from src/server/server.ts"
+            exit 1
+          fi
+          if [ "$SERVER_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::SERVER_VERSION ($SERVER_VERSION) does not match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Derive npm dist-tag
+        # Single source of truth for dist-tag derivation -- unit-tested
+        # in `tests/derive-dist-tag.test.ts`. Stable releases -> `latest`,
+        # pre-releases -> alphabetic prefix (beta/rc/alpha/next/...).
+        id: dist_tag
+        env:
+          VERSION: ${{ steps.tag_version.outputs.version }}
+        run: |
+          DIST_TAG="$(scripts/derive-dist-tag.sh "$VERSION")"
+          echo "dist-tag: $DIST_TAG"
+          echo "tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          # `prerelease` for the GitHub Release step: any version with a
+          # pre-release identifier (anything other than `latest` from the
+          # derivation) is marked as a pre-release.
+          if [ "$DIST_TAG" = "latest" ]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        # Pull only the `## [X.Y.Z]` section for this version out of
+        # CHANGELOG.md so the GitHub Release body is scoped to this
+        # release and not the entire history. Missing CHANGELOG.md or
+        # missing section is a hard error -- the release docs require
+        # contributors to write the section before pushing the tag.
+        id: changelog
+        env:
+          VERSION: ${{ steps.tag_version.outputs.version }}
+        run: |
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::CHANGELOG.md is missing; release docs require a CHANGELOG section per release"
+            exit 1
+          fi
+          NOTES_FILE="$(mktemp)"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > "$NOTES_FILE"
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "::error::no CHANGELOG section found for ## [$VERSION]"
+            exit 1
+          fi
+          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm via Trusted Publisher (OIDC)
+        # Gates and drift guards above must all pass before this step
+        # runs. Authentication is via the OIDC token GitHub minted for
+        # this job (see `permissions: id-token: write`); npm verifies
+        # the token's claims against the Trusted Publisher config and
+        # issues a short-lived publish credential. No NPM_TOKEN.
+        # `--provenance` attaches a build attestation tying the
+        # tarball to this commit + workflow run; consumers can verify
+        # with `npm audit signatures`.
+        # `--access public` is required for the first publish of a
+        # scoped package; harmless for unscoped names.
+        env:
+          DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
+        run: |
+          # --no-git-checks: required because actions/checkout produces a
+          # detached HEAD with no upstream branch, which pnpm would
+          # otherwise reject. The publish gate above (typecheck/lint/
+          # build/test + drift guards) is what protects this step; the
+          # flag does not weaken that gate.
+          pnpm publish --access public --provenance --no-git-checks --tag "$DIST_TAG"
+
+      - name: Create GitHub Release
+        # Runs only if `pnpm publish` succeeded -- step ordering alone
+        # gives us this; a failed publish exits the job.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: ${{ steps.changelog.outputs.notes_file }}
+          prerelease: ${{ steps.dist_tag.outputs.prerelease }}
