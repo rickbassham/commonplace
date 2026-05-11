@@ -313,6 +313,19 @@ export class MemoryStore {
   }
 
   /**
+   * The graph instance this store keeps synchronised with disk, or
+   * `undefined` if no graph was wired in at construction time.
+   * Read-only by convention -- the store owns the graph and updates it
+   * incrementally through {@link save}, {@link delete}, {@link link}, and
+   * {@link unlink}. Callers that need to traverse outbound edges (e.g. the
+   * memory_search handler's one-hop expansion) should consult this getter
+   * rather than constructing a parallel graph instance.
+   */
+  public get graph(): MemoryGraph | undefined {
+    return this.#graph;
+  }
+
+  /**
    * If the memory directory's mtime has advanced since the last scan, run
    * a fresh {@link scan}. Cheap (~1ms): we only stat the dir; the scan
    * itself is unconditional only when the mtime check fires.

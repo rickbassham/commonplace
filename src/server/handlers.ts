@@ -82,6 +82,14 @@ export interface HandlerOptions {
    * {@link DEFAULT_SEARCH_LIMIT}. Other handlers ignore this option.
    */
   defaultLimit?: number;
+  /**
+   * One-hop expansion score decay applied by `memory_search` when the
+   * caller passes `expand: 'one-hop'`. Resolved by the bin from
+   * `COMMONPLACE_EXPANSION_DECAY`. When omitted, the search handler falls
+   * back to {@link DEFAULT_EXPANSION_DECAY}. Other handlers ignore this
+   * option.
+   */
+  expansionDecay?: number;
 }
 
 /**
@@ -222,7 +230,87 @@ export interface MemorySearchMatch {
    * on `'supersededBy' in match` as the predicate.
    */
   supersededBy?: string;
+  /**
+   * Present only on entries surfaced by one-hop graph expansion. Names
+   * the direct-hit memory whose outbound edge pulled this entry in and
+   * which edge type was followed. Omitted entirely on direct hits so
+   * callers can rely on `'via' in match` as the predicate.
+   */
+  via?: ExpansionVia;
 }
+
+/**
+ * The `via` annotation on an expansion match. `source` is the direct hit's
+ * memory name (within the same scope -- expansion respects store
+ * boundaries); `edge` is the outbound edge type that was followed.
+ */
+export interface ExpansionVia {
+  source: string;
+  edge: ExpansionEdgeType;
+}
+
+/**
+ * Edge types eligible for one-hop expansion. The four authored
+ * {@link RelationType} values plus `'mentions'` (body tokens) --
+ * `'supersedes'` is excluded by design because supersede semantics are
+ * already surfaced via `supersededBy` and following supersedes edges in
+ * search would conflate "this is the next version" with "this is
+ * topically related."
+ */
+export type ExpansionEdgeType = RelationType | 'mentions';
+
+/**
+ * Expansion mode literal values. `'one-hop'` is the default (see
+ * {@link DEFAULT_EXPAND_MODE}); callers that want strict semantic-only
+ * results pass `'none'`.
+ */
+export const EXPAND_MODES = ['none', 'one-hop'] as const;
+export type ExpandMode = (typeof EXPAND_MODES)[number];
+
+/**
+ * Default `expand` mode applied when the caller omits the argument.
+ * `'one-hop'` because expansion's value proposition is "surface context
+ * the agent did not explicitly ask for but probably wants" -- gating that
+ * behind an opt-in flag would mean most callers never benefit. Decay (0.7
+ * default) + `expandLimit` (2 default) + dedup keep expansion from
+ * crowding direct hits; callers who want strict cosine-only results pass
+ * `expand: 'none'`.
+ */
+export const DEFAULT_EXPAND_MODE: ExpandMode = 'one-hop';
+
+/**
+ * Allowed values for `expandTypes[]`. {@link RELATION_TYPES} plus
+ * `'mentions'`. See {@link ExpansionEdgeType}.
+ */
+export const EXPAND_EDGE_TYPES: readonly ExpansionEdgeType[] = [
+  ...RELATION_TYPES,
+  'mentions',
+] as const;
+
+/**
+ * Default outbound edge types followed by one-hop expansion when the
+ * caller does not pass `expandTypes`. Topically-meaningful authored edges;
+ * `'mentions'` is opt-in (body-mention edges are noisier than authored
+ * relations and would flood expansion results for memories with a lot of
+ * `[[name]]` references).
+ */
+export const DEFAULT_EXPAND_TYPES: readonly ExpansionEdgeType[] = ['builds-on', 'related-to'];
+
+/**
+ * Default cap on neighbours added per direct hit. Two is the sweet spot
+ * the issue calls out: enough to surface the obvious "you probably want
+ * this too" neighbour without letting a hub memory flood the results.
+ */
+export const DEFAULT_EXPAND_LIMIT = 2;
+
+/**
+ * Default score-decay multiplier when the bin does not pass
+ * `expansionDecay`. Mirrors {@link import('../bin/env.js').DEFAULT_EXPANSION_DECAY}.
+ * Duplicated here (rather than imported from `bin/env.ts`) because the
+ * server layer must not depend on the bin layer; the bin is what wires
+ * env-resolved values through.
+ */
+export const DEFAULT_EXPANSION_DECAY = 0.7;
 
 /** Return shape for {@link createMemorySearchHandler}. */
 export interface MemorySearchResult {
@@ -470,6 +558,73 @@ const validateThreshold = (raw: unknown, toolName: string): number | undefined =
 };
 
 /**
+ * Validate the optional `expand` argument. `undefined` returns
+ * {@link DEFAULT_EXPAND_MODE} (`'one-hop'` -- expansion is on by default
+ * because the whole point of the feature is to surface context the agent
+ * did not explicitly ask for; the decay + `expandLimit` + dedup logic
+ * keeps it from flooding results). Anything else must be one of the
+ * {@link EXPAND_MODES} literals.
+ */
+const validateExpandMode = (raw: unknown, toolName: string): ExpandMode => {
+  if (raw === undefined) return DEFAULT_EXPAND_MODE;
+  if (typeof raw !== 'string' || !(EXPAND_MODES as readonly string[]).includes(raw)) {
+    throw new Error(
+      `${toolName}: field \`expand\` must be one of ${EXPAND_MODES.join(', ')}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw as ExpandMode;
+};
+
+/**
+ * Validate the optional `expandTypes` argument. `undefined` returns
+ * `undefined` (the handler then applies {@link DEFAULT_EXPAND_TYPES}).
+ * When present must be a non-empty array of {@link EXPAND_EDGE_TYPES}
+ * literals. The empty-array case throws so callers learn early that
+ * `expandTypes: []` is a contradictory request (one-hop expansion with
+ * zero edge types to follow yields no expansion -- equivalent to
+ * `expand: 'none'`, which is the clearer way to express it).
+ */
+const validateExpandTypes = (raw: unknown, toolName: string): ExpansionEdgeType[] | undefined => {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `${toolName}: field \`expandTypes\` must be an array of edge types; got ${JSON.stringify(raw)}`,
+    );
+  }
+  if (raw.length === 0) {
+    throw new Error(
+      `${toolName}: field \`expandTypes\` must be a non-empty array (use \`expand: 'none'\` to disable expansion)`,
+    );
+  }
+  const out: ExpansionEdgeType[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || !(EXPAND_EDGE_TYPES as readonly string[]).includes(entry)) {
+      throw new Error(
+        `${toolName}: field \`expandTypes\` entries must be one of ${EXPAND_EDGE_TYPES.join(', ')}; got ${JSON.stringify(entry)}`,
+      );
+    }
+    out.push(entry as ExpansionEdgeType);
+  }
+  return out;
+};
+
+/**
+ * Validate the optional `expandLimit` argument. `undefined` returns
+ * `undefined` (the handler then applies {@link DEFAULT_EXPAND_LIMIT}).
+ * When present must be a positive integer. Mirrors {@link validateLimit}
+ * but names a different field so the error message is field-specific.
+ */
+const validateExpandLimit = (raw: unknown, toolName: string): number | undefined => {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || !Number.isInteger(raw) || raw <= 0) {
+    throw new Error(
+      `${toolName}: field \`expandLimit\` must be a positive integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
  * Round a cosine similarity score to 3 decimal places per the documented
  * response shape. We multiply, round, divide rather than using `toFixed` so
  * the return value stays a `number` (toFixed returns a string and the test
@@ -524,10 +679,21 @@ const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
  * wire a graph (and matches the graph's `isSuperseded` semantics: an entry
  * is excluded iff some loaded memory has it in its `supersedes[]`).
  *
- * Out of scope (per the DAR-929 contract envelope): one-hop expansion
- * (DAR-930), connectedness boost (DAR-931), env-var resolution for
- * `COMMONPLACE_DEFAULT_LIMIT` (DAR-913), reranking, snippet generation,
- * and surfacing `mentions` edges in match.relations.
+ * One-hop graph expansion: when callers pass `expand: 'one-hop'`,
+ * each direct hit's outbound graph edges (filtered by `expandTypes`) are
+ * walked via the source store's {@link MemoryGraph}. Neighbour memories are
+ * surfaced as additional matches scored as `direct_hit_score * decay`,
+ * deduplicated against direct hits (and against each other -- the highest
+ * derived score wins when multiple direct hits point at the same
+ * neighbour), capped at `expandLimit` adds per source, and merged into the
+ * result list. The final list is sorted by descending score and sliced to
+ * the overall `limit`. Expanded entries carry a `via: { source, edge }`
+ * field naming the direct hit that pulled them in; direct hits do not.
+ *
+ * Out of scope: connectedness boost, reranking, snippet generation, and
+ * surfacing `mentions` edges in `match.relations` (mentions are surfaced
+ * ONLY via `via.edge` on expansion entries when the caller opts in to
+ * following them).
  */
 export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
   const { userStore, projectStore } = resolveStores(opts, 'memory_search');
@@ -537,6 +703,11 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
   // so this handler still works in test setups that wire the factory
   // directly without an env-var pass.
   const fallbackLimit = opts.defaultLimit ?? DEFAULT_SEARCH_LIMIT;
+  // Same resolve-once pattern for the expansion decay. When the bin
+  // supplies one (from `COMMONPLACE_EXPANSION_DECAY`), it wins; otherwise
+  // fall back to the documented default so the handler works in direct
+  // test wiring without an env pass.
+  const expansionDecay = opts.expansionDecay ?? DEFAULT_EXPANSION_DECAY;
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
     const query = requireString(args, 'query', 'memory_search');
@@ -556,6 +727,9 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     const includeSuperseded =
       validateBoolean(args.includeSuperseded, 'includeSuperseded', 'memory_search') ?? false;
     const scope = validateScope(args.scope, 'memory_search');
+    const expand = validateExpandMode(args.expand, 'memory_search');
+    const callerExpandTypes = validateExpandTypes(args.expandTypes, 'memory_search');
+    const callerExpandLimit = validateExpandLimit(args.expandLimit, 'memory_search');
 
     // Decide which stores to query based on the scope filter. When scope is
     // omitted, query both (when both exist).
@@ -639,41 +813,156 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     const sliceLimit = callerLimit ?? fallbackLimit;
     const limited = allHits.slice(0, sliceLimit);
 
-    const matches: MemorySearchMatch[] = limited.map(({ hit, scope: sc }) => {
-      const projection: MemorySearchMatch = {
-        name: hit.memory.name,
-        type: hit.memory.type,
-        description: hit.memory.description,
-        body: hit.memory.body,
-        score: roundScore(hit.score),
-        relations: hit.memory.relations.map((r) => ({ to: r.to, type: r.type })),
-        scope: sc,
-      };
-      if (includeSuperseded) {
-        // For supersededBy lookups we use the matching store's superseded
-        // map. The map was already built once per target store during the
-        // search loop and cached in `supersededByScope` -- consult it here
-        // (f-1) rather than rebuilding from the per-scope corpus.
-        let supersededMap = supersededByScope.get(sc);
-        if (supersededMap === undefined) {
-          // Defensive: the search loop only populates the map for targets
-          // it queried. When `includeSuperseded` is true the map isn't
-          // strictly needed for filtering -- but we still want
-          // `supersededBy` annotations on matches, so build it lazily here
-          // for any scope we somehow missed (should not happen given the
-          // current targets construction, but the lazy build keeps the
-          // invariant local).
-          const corpus = sc === 'user' ? userStore.all() : projectStore!.all();
-          supersededMap = buildSupersededMap(corpus);
-          supersededByScope.set(sc, supersededMap);
+    // Helper: look up the superseder for a (scope, name) pair. Builds the
+    // per-scope map lazily and caches it (the search loop above already
+    // populates `supersededByScope` for every queried target; this branch
+    // covers the includeSuperseded-on-an-untouched-scope edge case
+    // defensively).
+    const supersederFor = (sc: Scope, name: string): string | undefined => {
+      let supersededMap = supersededByScope.get(sc);
+      if (supersededMap === undefined) {
+        const corpus = sc === 'user' ? userStore.all() : projectStore!.all();
+        supersededMap = buildSupersededMap(corpus);
+        supersededByScope.set(sc, supersededMap);
+      }
+      return supersededMap.get(name);
+    };
+
+    // Carry the unrounded score alongside the projected match so the final
+    // sort (after one-hop expansion) is on full-precision scores; rounding
+    // happens last so two near-equal scores don't collide post-rounding.
+    const directMatches: Array<{ unroundedScore: number; match: MemorySearchMatch }> = limited.map(
+      ({ hit, scope: sc }) => {
+        const projection: MemorySearchMatch = {
+          name: hit.memory.name,
+          type: hit.memory.type,
+          description: hit.memory.description,
+          body: hit.memory.body,
+          score: hit.score,
+          relations: hit.memory.relations.map((r) => ({ to: r.to, type: r.type })),
+          scope: sc,
+        };
+        if (includeSuperseded) {
+          const superseder = supersederFor(sc, hit.memory.name);
+          if (superseder !== undefined) {
+            projection.supersededBy = superseder;
+          }
         }
-        const superseder = supersededMap.get(hit.memory.name);
-        if (superseder !== undefined) {
-          projection.supersededBy = superseder;
+        return { unroundedScore: hit.score, match: projection };
+      },
+    );
+
+    let combined = directMatches;
+
+    if (expand === 'one-hop') {
+      const effectiveExpandTypes = callerExpandTypes ?? DEFAULT_EXPAND_TYPES;
+      const effectiveExpandLimit = callerExpandLimit ?? DEFAULT_EXPAND_LIMIT;
+      // Direct-hit keyset for dedup against expansion. Keyed by
+      // `${scope}:${name}` so the same name in user and project doesn't
+      // collide (scope isolation).
+      const directKeys = new Set(limited.map(({ hit, scope: sc }) => `${sc}:${hit.memory.name}`));
+      // Expansion candidates, keyed the same way. When multiple direct
+      // hits point at the same neighbour, the highest derived score wins
+      // (the via.source is updated to that winning hit).
+      const expansionByKey = new Map<
+        string,
+        { unroundedScore: number; match: MemorySearchMatch }
+      >();
+      // Per-scope name -> entry map for O(1) neighbour lookups. Built
+      // lazily on first use so the (common) `expand: 'none'` path doesn't
+      // pay the build cost.
+      const entryIndexByScope = new Map<Scope, Map<string, MemoryEntry>>();
+      const entryIndexFor = (sc: Scope): Map<string, MemoryEntry> => {
+        const cached = entryIndexByScope.get(sc);
+        if (cached !== undefined) return cached;
+        const corpus = sc === 'user' ? userStore.all() : projectStore!.all();
+        const built = new Map<string, MemoryEntry>();
+        for (const entry of corpus) built.set(entry.name, entry);
+        entryIndexByScope.set(sc, built);
+        return built;
+      };
+
+      for (const { hit: directHit, scope: sc } of limited) {
+        const sourceStore = sc === 'user' ? userStore : projectStore!;
+        const graph = sourceStore.graph;
+        if (graph === undefined) continue;
+
+        const outbound = graph.outbound(directHit.memory.name);
+        const eligibleEdges = outbound.filter((edge) =>
+          (effectiveExpandTypes as readonly string[]).includes(edge.type),
+        );
+
+        let addedFromThisHit = 0;
+        for (const edge of eligibleEdges) {
+          if (addedFromThisHit >= effectiveExpandLimit) break;
+
+          const key = `${sc}:${edge.to}`;
+          // Direct hit dominates: silently skip (does NOT count toward
+          // expandLimit -- this hit's expansion budget is for ADDITIONS,
+          // not edges-considered).
+          if (directKeys.has(key)) continue;
+
+          const neighborEntry = entryIndexFor(sc).get(edge.to);
+          // Dangling edge (target not loaded in this scope). The graph
+          // surfaces dangling edges intentionally; they cannot
+          // be projected as matches because there is no body to return.
+          if (neighborEntry === undefined) continue;
+
+          // Supersede filter mirrors the direct-hit pass. We don't want
+          // expansion to leak superseded entries past a filter the caller
+          // explicitly relies on.
+          if (!includeSuperseded && supersederFor(sc, neighborEntry.name) !== undefined) {
+            continue;
+          }
+
+          const unroundedScore = directHit.score * expansionDecay;
+          const existing = expansionByKey.get(key);
+          if (existing !== undefined && existing.unroundedScore >= unroundedScore) {
+            // Lower-scored path; keep the higher one. Does count toward
+            // this hit's budget: this hit DID contribute a candidate, it
+            // just lost the tie. Otherwise a popular hub neighbour reached
+            // from every direct hit would never let later edges run.
+            addedFromThisHit++;
+            continue;
+          }
+
+          const expansionMatch: MemorySearchMatch = {
+            name: neighborEntry.name,
+            type: neighborEntry.type,
+            description: neighborEntry.description,
+            body: neighborEntry.body,
+            score: unroundedScore,
+            relations: neighborEntry.relations.map((r) => ({ to: r.to, type: r.type })),
+            scope: sc,
+            via: { source: directHit.memory.name, edge: edge.type as ExpansionEdgeType },
+          };
+          if (includeSuperseded) {
+            const superseder = supersederFor(sc, neighborEntry.name);
+            if (superseder !== undefined) {
+              expansionMatch.supersededBy = superseder;
+            }
+          }
+          expansionByKey.set(key, { unroundedScore, match: expansionMatch });
+          addedFromThisHit++;
         }
       }
-      return projection;
-    });
+
+      combined = [...directMatches, ...expansionByKey.values()];
+      // Re-sort the combined list by descending unrounded score. Stable
+      // sort preserves the directMatches-before-expansion insertion order
+      // on exact ties, which means an expanded entry only outranks a
+      // direct hit when its score is strictly higher (which can happen if
+      // the direct hit's underlying score is below `decay * source_score`
+      // for a different hit).
+      combined.sort((a, b) => b.unroundedScore - a.unroundedScore);
+      combined = combined.slice(0, sliceLimit);
+    }
+
+    // Round scores last so the combined sort above runs on full precision.
+    const matches: MemorySearchMatch[] = combined.map(({ unroundedScore, match }) => ({
+      ...match,
+      score: roundScore(unroundedScore),
+    }));
 
     return { matches, query, totalScanned };
   };
