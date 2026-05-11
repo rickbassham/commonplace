@@ -265,3 +265,160 @@ describe('DAR-913 ac-6 bin integration: spawned bin honours COMMONPLACE_DEFAULT_
     expect(parsed.matches.length).toBe(2);
   }, 180_000);
 });
+
+describe('DAR-930 bin integration: spawned bin exercises one-hop expansion through the real graph', () => {
+  const binPath = readBinPath();
+  let memoryDir: string;
+  let client: Client;
+  let transport: StdioClientTransport;
+
+  beforeAll(() => {
+    const res = spawnSync('make', ['build'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 180_000,
+      env: { ...process.env, CI: '1' },
+    });
+    if (res.status !== 0) {
+      throw new Error(`make build failed: ${res.stderr || res.stdout}`);
+    }
+    if (!existsSync(binPath)) {
+      throw new Error(`bin not found after build: ${binPath}`);
+    }
+  }, 200_000);
+
+  beforeEach(async () => {
+    memoryDir = mkdtempSync(join(tmpdir(), 'dar930-bin-int-'));
+    transport = new StdioClientTransport({
+      command: 'node',
+      args: [binPath],
+      env: {
+        ...process.env,
+        COMMONPLACE_USER_DIR: memoryDir,
+      } as Record<string, string>,
+      stderr: 'inherit',
+    });
+    client = new Client({ name: 'dar930-bin-int', version: '0.0.0' });
+    await client.connect(transport);
+  });
+
+  afterEach(async () => {
+    try {
+      await client.close();
+    } catch {
+      // best-effort cleanup
+    }
+    rmSync(memoryDir, { recursive: true, force: true });
+  });
+
+  /**
+   * Seed a hub graph through the spawned bin's tool surface: hub `H` plus
+   * two neighbors `N1`/`N2`, then memory_link N1 and N2 to H with
+   * 'builds-on'. The bodies are engineered so a search for the hub's body
+   * lands H as the top direct hit; the neighbors' bodies use different
+   * topics so a tight threshold can filter them out as direct hits and
+   * force them through expansion.
+   */
+  const seedHub = async (): Promise<void> => {
+    await client.callTool({
+      name: 'memory_save',
+      arguments: {
+        name: 'expand_hub',
+        type: 'reference',
+        description: 'central hub memory about lattice topology',
+        body: 'The lattice topology section describes adjacency invariants for a periodic crystal structure.',
+      },
+    });
+    await client.callTool({
+      name: 'memory_save',
+      arguments: {
+        name: 'expand_neighbor_one',
+        type: 'reference',
+        description: 'unrelated topic about marine biology',
+        body: 'Cephalopod nervous systems use distributed ganglia rather than a centralised brain.',
+      },
+    });
+    await client.callTool({
+      name: 'memory_save',
+      arguments: {
+        name: 'expand_neighbor_two',
+        type: 'reference',
+        description: 'another unrelated topic about culinary chemistry',
+        body: 'The Maillard reaction is responsible for the browning of seared meats and toasted bread.',
+      },
+    });
+    // Wire the graph: N1 and N2 build-on H. Edges live on the SOURCE
+    // memory's frontmatter; we author them on the neighbors so a query
+    // landing on H expands through H's INBOUND edges? -- actually the
+    // expansion contract uses OUTBOUND edges. So we link H -> N1 and
+    // H -> N2 (the hub is the source authoring the edges).
+    await client.callTool({
+      name: 'memory_link',
+      arguments: { from: 'expand_hub', to: 'expand_neighbor_one', type: 'builds-on' },
+    });
+    await client.callTool({
+      name: 'memory_link',
+      arguments: { from: 'expand_hub', to: 'expand_neighbor_two', type: 'builds-on' },
+    });
+  };
+
+  it("spawned-bin test saves three memories (hub H + neighbors N1, N2) via memory_save, links N1 and N2 to H via memory_link with type 'builds-on', then issues a memory_search call with `expand: 'one-hop'` whose query is engineered to land on H -- the response matches array contains H plus N1 and N2, each neighbor carrying a `via.source === 'H'`", async () => {
+    await seedHub();
+
+    // Query strongly aligned with H's body; threshold gates the two
+    // neighbors out of direct hits so they can only reach the response
+    // through one-hop expansion.
+    const search = await client.callTool({
+      name: 'memory_search',
+      arguments: {
+        query: 'lattice topology adjacency invariants for a periodic crystal',
+        expand: 'one-hop',
+        threshold: 0.5,
+        limit: 5,
+      },
+    });
+    expect(search.isError).toBeFalsy();
+    const text = firstTextContent(search.content);
+    const parsed: unknown = JSON.parse(text);
+    if (!isObject(parsed) || !Array.isArray(parsed.matches)) {
+      throw new Error(`memory_search payload missing matches[]: ${text}`);
+    }
+    const matches = parsed.matches as Array<{ name: string; via?: { source: string } }>;
+    const names = matches.map((m) => m.name);
+    expect(names).toContain('expand_hub');
+    expect(names).toContain('expand_neighbor_one');
+    expect(names).toContain('expand_neighbor_two');
+    const n1 = matches.find((m) => m.name === 'expand_neighbor_one');
+    const n2 = matches.find((m) => m.name === 'expand_neighbor_two');
+    expect(n1?.via?.source).toBe('expand_hub');
+    expect(n2?.via?.source).toBe('expand_hub');
+  }, 180_000);
+
+  it("the same spawned-bin scenario with `expand` omitted returns ONLY H in the top matches (no N1/N2), confirming the bin's wired-in MemoryGraph is consulted only on opt-in", async () => {
+    await seedHub();
+
+    const search = await client.callTool({
+      name: 'memory_search',
+      arguments: {
+        query: 'lattice topology adjacency invariants for a periodic crystal',
+        threshold: 0.5,
+        limit: 5,
+      },
+    });
+    expect(search.isError).toBeFalsy();
+    const text = firstTextContent(search.content);
+    const parsed: unknown = JSON.parse(text);
+    if (!isObject(parsed) || !Array.isArray(parsed.matches)) {
+      throw new Error(`memory_search payload missing matches[]: ${text}`);
+    }
+    const matches = parsed.matches as Array<{ name: string; via?: { source: string } }>;
+    const names = matches.map((m) => m.name);
+    expect(names).toContain('expand_hub');
+    expect(names).not.toContain('expand_neighbor_one');
+    expect(names).not.toContain('expand_neighbor_two');
+    // And no entry should carry a `via` field when expand is omitted.
+    for (const m of matches) {
+      expect(m.via).toBeUndefined();
+    }
+  }, 180_000);
+});

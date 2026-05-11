@@ -64,6 +64,7 @@ describe('README/code drift: env vars', () => {
     'COMMONPLACE_MEMORY_DIR',
     'COMMONPLACE_MODEL',
     'COMMONPLACE_DEFAULT_LIMIT',
+    'COMMONPLACE_EXPANSION_DECAY',
   ];
 
   it('every COMMONPLACE_* env var the bin reads appears in README.md', () => {
