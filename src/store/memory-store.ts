@@ -213,6 +213,19 @@ export interface ScanResult {
    * negative numbers).
    */
   fresh: number;
+  /**
+   * DAR-966: `.md` files whose frontmatter could not be parsed (missing or
+   * malformed `---` delimiters, invalid YAML, missing required field, ...).
+   * Each entry records the absolute path and a short reason string. The
+   * scan continues past the offending file so a single bad input does not
+   * brick the whole index. A stderr warning is also emitted per entry so
+   * an operator running the scan sees the failure without having to read
+   * the structured result.
+   *
+   * Always present on the returned summary -- defaults to `[]` when every
+   * file parsed cleanly.
+   */
+  skipped: Array<{ path: string; reason: string }>;
 }
 
 /** Options for {@link MemoryStore.scan} (DAR-918). */
@@ -414,12 +427,29 @@ export class MemoryStore {
     let embedded = 0;
     let staleReembedded = 0;
     let fresh = 0;
+    const skipped: Array<{ path: string; reason: string }> = [];
 
     for (const filename of mdFiles) {
       const mdPath = join(this.#dir, filename);
       const sidecarPath = mdPath.replace(/\.md$/, '.embedding');
 
-      const memory = readMemory(mdPath);
+      // DAR-966: a single malformed file must not crash the whole scan.
+      // readMemory throws when the frontmatter is missing delimiters, not
+      // valid YAML, or missing a required field; we capture the reason,
+      // emit a stderr warning, and move on to the next file. The
+      // malformed file's name stays in `liveNames` so the orphan-cleanup
+      // pass leaves its sidecar (if any) alone -- removing it would
+      // destroy a potentially still-valid embedding whose .md is merely
+      // unparseable today and may be hand-fixed tomorrow.
+      let memory: ReturnType<typeof readMemory>;
+      try {
+        memory = readMemory(mdPath);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        skipped.push({ path: mdPath, reason });
+        process.stderr.write(`MemoryStore.scan: skipping ${mdPath}: ${reason}\n`);
+        continue;
+      }
       const sha = contentSha(memory);
 
       let vector: Float32Array | null = null;
@@ -544,6 +574,7 @@ export class MemoryStore {
       staleReembedded,
       orphaned,
       fresh,
+      skipped,
     };
   }
 

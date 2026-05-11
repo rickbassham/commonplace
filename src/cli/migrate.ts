@@ -52,13 +52,21 @@
  * {@link MemoryStore.scan}'s use of `atomicWrite`.
  */
 
-import { copyFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { MemoryGraph, type DanglingEdge } from '../store/graph.js';
-import { readMemory, writeMemory, type Relation } from '../store/memory.js';
+import {
+  MEMORY_TYPES,
+  readMemory,
+  serializeMemory,
+  writeMemory,
+  type Memory,
+  type MemoryType,
+  type Relation,
+} from '../store/memory.js';
 import { MemoryStore, type Embedder } from '../store/memory-store.js';
 
 /** Inputs to {@link runMigrate}. */
@@ -123,6 +131,15 @@ export interface MigrateResult {
   fresh: number;
   /** One entry per .md that had dangling edges pruned. Empty when nothing to prune. */
   pruned: PrunedFile[];
+  /**
+   * DAR-966: `.md` files whose frontmatter could not be parsed (missing or
+   * malformed `---` delimiters, invalid YAML, missing required field, ...).
+   * Surfaced verbatim from {@link import('../store/memory-store.js').ScanResult.skipped}.
+   * The legacy `migrate <dir>` form uses this to report bad files in its
+   * summary so a re-run after a partial import surfaces remaining issues
+   * instead of crashing on the first.
+   */
+  skipped: Array<{ path: string; reason: string }>;
 }
 
 /**
@@ -197,6 +214,7 @@ export const runMigrate = async (opts: MigrateOptions): Promise<MigrateResult> =
     orphaned: scan.orphaned,
     fresh: scan.fresh,
     pruned,
+    skipped: scan.skipped,
   };
 };
 
@@ -214,12 +232,19 @@ const listMemoriesFromDisk = (
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
     if (!ent.isFile()) continue;
     if (!ent.name.endsWith('.md')) continue;
-    const memory = readMemory(join(dir, ent.name));
-    out.push({
-      name: memory.name,
-      relations: memory.relations,
-      supersedes: memory.supersedes,
-    });
+    // DAR-966: skip unparseable files instead of crashing. The scan pass
+    // already reported them via ScanResult.skipped; the prune pass simply
+    // ignores them (no edges to dangling-check on a file we can't read).
+    try {
+      const memory = readMemory(join(dir, ent.name));
+      out.push({
+        name: memory.name,
+        relations: memory.relations,
+        supersedes: memory.supersedes,
+      });
+    } catch {
+      continue;
+    }
   }
   return out;
 };
@@ -363,6 +388,11 @@ export const detectImportSourcesDetailed = (opts: DetectOptions = {}): Detection
     try {
       files = readdirSync(memDir, { withFileTypes: true })
         .filter((d) => d.isFile() && d.name.endsWith('.md'))
+        // DAR-966: exclude the harness's per-project `MEMORY.md` index
+        // file (case-insensitive). It is markdown with no frontmatter --
+        // a system file, not a memory -- and copying it into the user
+        // store pollutes the index and crashes the post-copy scan.
+        .filter((d) => d.name.toLowerCase() !== 'memory.md')
         .map((d) => ({ name: d.name }));
     } catch (err) {
       warnings.push({
@@ -441,6 +471,108 @@ export interface ImportOptions {
 }
 
 /**
+ * DAR-966: parse a harness-emitted memory file in commonplace-canonical
+ * form, tolerating the harness's permissive YAML quoting.
+ *
+ * The harness writes a flat key/value frontmatter (no nested
+ * mappings, no flow sequences in description) and does NOT auto-quote
+ * values containing colon-space -- so an input like
+ * `description: Project-level constraint: weather-hub firmware ...`
+ * trips the strict YAML reader used by readMemory. This helper
+ * splits frontmatter line-by-line and treats each pair as
+ * a raw string assignment, sidestepping the strict-YAML round-trip
+ * mismatch.
+ *
+ * Returns a Memory-shaped object suitable for re-emission via
+ * serializeMemory. Throws when:
+ *   - the file lacks --- delimiters
+ *   - a required field (name, description, type) is missing
+ *   - type is not one of the four allowed MEMORY_TYPES
+ *
+ * The error message mentions the offending field so the import path
+ * can surface a structured per-file skip reason.
+ *
+ * Out of scope (by design): graph fields. The harness does not emit
+ * relations or supersedes. If a harness file ever did, this helper
+ * would silently drop them. That mirrors the issue body's "only
+ * frontmatter normalisation" framing.
+ */
+const parseHarnessFrontmatter = (path: string): Memory => {
+  const raw = readFileSync(path, 'utf8');
+  // Accept either LF or CRLF around the delimiters. Mirror the regex
+  // used by splitFrontmatter in src/store/memory.ts so behaviour is
+  // consistent with the strict reader on well-formed files.
+  const openMatch = /^---[ \t]*\r?\n/.exec(raw);
+  if (openMatch === null) {
+    throw new Error('memory file is missing opening `---` frontmatter delimiter');
+  }
+  const afterOpen = openMatch[0].length;
+  const rest = raw.slice(afterOpen);
+  const closeMatch = /(^|\r?\n)---[ \t]*(\r?\n|$)/.exec(rest);
+  if (closeMatch === null) {
+    throw new Error('memory file is missing closing `---` frontmatter delimiter');
+  }
+  const closeStart = closeMatch.index + (closeMatch[1] ?? '').length;
+  const closeEnd = closeMatch.index + closeMatch[0].length;
+  const frontmatter = rest.slice(0, closeStart);
+  const body = rest.slice(closeEnd);
+
+  // Flat key/value line-by-line parse. The first colon delimits the
+  // key; everything after the colon (and any single leading space) is
+  // the raw value. Lines that don't match are skipped silently -- we
+  // only care about the required fields.
+  const fields = new Map<string, string>();
+  for (const line of frontmatter.split(/\r?\n/)) {
+    if (line === '') continue;
+    // Tab-indented lines (the "totally non-YAML" case in ac-3) are
+    // rejected by yaml-spec parsers; we reject them here too so the
+    // skip reason mentions YAML/frontmatter rather than silently
+    // dropping the line.
+    if (line.startsWith('\t')) {
+      throw new Error('memory file frontmatter contains tab-indented lines (not valid YAML)');
+    }
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    // Strip a single optional leading space; keep the rest verbatim.
+    let value = line.slice(colonIdx + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    // Trim trailing whitespace only -- preserve internal spaces (a
+    // description like "foo: bar" must round-trip exactly).
+    value = value.replace(/[ \t]+$/, '');
+    // Strip surrounding quotes for already-canonical values
+    // (description: "..."). yaml.stringify auto-quotes ambiguous
+    // values; we want the unquoted string back so re-serialisation
+    // produces the canonical form.
+    if (
+      (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+      (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+    ) {
+      value = value.slice(1, -1);
+    }
+    fields.set(key, value);
+  }
+
+  const name = fields.get('name');
+  const description = fields.get('description');
+  const type = fields.get('type');
+
+  if (typeof name !== 'string' || name === '') {
+    throw new Error('memory frontmatter is missing required field `name` (string)');
+  }
+  if (typeof description !== 'string' || description === '') {
+    throw new Error('memory frontmatter is missing required field `description` (string)');
+  }
+  if (typeof type !== 'string' || !(MEMORY_TYPES as readonly string[]).includes(type)) {
+    throw new Error(
+      `memory frontmatter \`type\` must be one of ${MEMORY_TYPES.join(', ')}; got ${JSON.stringify(type)}`,
+    );
+  }
+
+  return { name, description, type: type as MemoryType, body };
+};
+
+/**
  * Import compatible markdown files from Claude Code's per-project
  * auto-memory directories into the commonplace user store.
  *
@@ -513,12 +645,30 @@ export const runImportFromClaudeCode = async (opts: ImportOptions): Promise<Impo
         perSourceSkipped += 1;
         continue;
       }
+      // DAR-966: read the source through the permissive harness-
+      // frontmatter parser (which tolerates unquoted values containing
+      // colon-space) and re-emit via `serializeMemory` so the imported
+      // file lands in commonplace-canonical YAML regardless of the
+      // harness's quoting habits. Files that cannot be parsed (missing
+      // required field, totally non-YAML frontmatter, ...) are pushed
+      // onto `skipped[]` with a structured reason and a per-file
+      // diagnostic continues to the next file rather than crashing the
+      // whole import.
+      let canonical: string;
+      try {
+        const parsed = parseHarnessFrontmatter(file.path);
+        canonical = serializeMemory(parsed);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        skipped.push({ name: file.name, source: file.path, reason });
+        perSourceSkipped += 1;
+        continue;
+      }
       if (!dryRun) {
-        // copyFileSync preserves the source bytes exactly -- frontmatter
-        // and body round-trip without any normalisation. The scan pass
-        // below re-reads the file and computes the sidecar against the
-        // copied bytes.
-        copyFileSync(file.path, target);
+        // Write the canonicalised bytes. The scan pass below re-reads
+        // the file and computes the sidecar against the normalised
+        // bytes, so the sha matches what's now on disk.
+        writeFileSync(target, canonical, 'utf8');
       }
       imported.push({ name: file.name, source: file.path, target });
       perSourceImported += 1;
@@ -881,9 +1031,15 @@ const migrateImport = async (
     }
   }
   if (skippedCount > 0) {
-    lines.push('  collisions:');
+    // DAR-966: list each skipped file with its name, source dir, and
+    // reason so an operator can see both same-name collisions and
+    // unrecoverable-frontmatter skips in the same section. The reason
+    // string is short and human-readable (e.g. "already exists in ..."
+    // or "memory file frontmatter is not valid YAML: ...").
+    lines.push('  skipped:');
     for (const sk of result.skipped) {
-      lines.push(`    skipped: ${sk.name} (${sk.reason})`);
+      const srcDir = sk.source.slice(0, sk.source.lastIndexOf('/'));
+      lines.push(`    skipped: ${sk.name} (source: ${srcDir}) -- ${sk.reason}`);
     }
   }
   if (result.scan !== null) {
@@ -938,6 +1094,17 @@ const migrateScan = async (
     `  re-embedded:  ${result.reembedded} stale sidecar${result.reembedded === 1 ? '' : 's'}`,
     `  orphaned:     ${result.orphaned} sidecar${result.orphaned === 1 ? '' : 's'} without matching .md${result.orphaned === 0 ? '' : parsed.dryRun ? ' (would be cleaned up)' : ' (cleaned up)'}`,
   ];
+  if (result.skipped.length > 0) {
+    // DAR-966: a `migrate <dir>` re-run after a partial import surfaces
+    // each malformed `.md` here so the operator can hand-fix it instead
+    // of guessing why a previous scan crashed.
+    lines.push(
+      `  skipped:      ${result.skipped.length} file${result.skipped.length === 1 ? '' : 's'} (frontmatter unreadable)`,
+    );
+    for (const sk of result.skipped) {
+      lines.push(`    skipped: ${sk.path} -- ${sk.reason}`);
+    }
+  }
   if (result.pruned.length > 0) {
     const total = result.pruned.reduce((acc, p) => acc + p.edgesPruned, 0);
     lines.push(
