@@ -1,10 +1,11 @@
 /**
  * Environment-variable resolution for the embedder model id and the
- * `memory_search` default limit (DAR-913).
+ * `memory_search` default limit (DAR-913) plus the one-hop expansion decay
+ * (DAR-930).
  *
  * The memory-directory env vars (`COMMONPLACE_USER_DIR`,
  * `COMMONPLACE_PROJECT_DIR`, deprecated `COMMONPLACE_MEMORY_DIR`) are owned
- * by `./scope.ts` (DAR-924). This module covers the two remaining knobs:
+ * by `./scope.ts` (DAR-924). This module covers the remaining knobs:
  *
  *   - `COMMONPLACE_MODEL` -- embedding model id passed to transformers.js.
  *     Default `Xenova/bge-base-en-v1.5`. Empty string is treated as unset.
@@ -13,6 +14,10 @@
  *     unset. Invalid values (non-integer, negative, NaN) throw at boot
  *     rather than silently coercing -- the operator should learn about a
  *     misconfiguration immediately, not see weirdly-truncated results.
+ *   - `COMMONPLACE_EXPANSION_DECAY` (DAR-930) -- multiplicative score
+ *     applied to one-hop graph-expanded neighbors of a direct
+ *     `memory_search` hit. Default `0.7`. Allowed range is `(0, 1]`; values
+ *     outside the range or non-numeric throw at boot.
  *
  * # Out of scope
  *
@@ -36,6 +41,13 @@ export const ENV_MODEL = 'COMMONPLACE_MODEL';
 export const ENV_DEFAULT_LIMIT = 'COMMONPLACE_DEFAULT_LIMIT';
 
 /**
+ * Env var name for the one-hop expansion decay (DAR-930). Defaults to
+ * {@link DEFAULT_EXPANSION_DECAY} when unset or empty. Must be a number in
+ * `(0, 1]` when set; invalid values throw at boot.
+ */
+export const ENV_EXPANSION_DECAY = 'COMMONPLACE_EXPANSION_DECAY';
+
+/**
  * Default embedding model id when `COMMONPLACE_MODEL` is unset or empty.
  * Mirrors the `DEFAULT_MODEL_ID` used by the bin pre-DAR-913.
  */
@@ -46,6 +58,13 @@ export const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
  * or empty. Mirrors `DEFAULT_SEARCH_LIMIT` from the store layer.
  */
 export const DEFAULT_LIMIT = 5;
+
+/**
+ * Default one-hop expansion decay applied to expanded neighbors' scores
+ * when `COMMONPLACE_EXPANSION_DECAY` is unset or empty (DAR-930). An
+ * expanded neighbor's score is `direct_hit_score * decay`.
+ */
+export const DEFAULT_EXPANSION_DECAY = 0.7;
 
 /**
  * Resolve the embedding model id from the environment.
@@ -93,6 +112,40 @@ export function resolveDefaultLimit(env: NodeJS.ProcessEnv): number {
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${ENV_DEFAULT_LIMIT} must be a positive integer; got ${JSON.stringify(raw)}`);
+  }
+  return parsed;
+}
+
+/**
+ * Resolve the one-hop expansion decay from the environment (DAR-930).
+ *
+ * Returns the parsed number when `COMMONPLACE_EXPANSION_DECAY` is set,
+ * otherwise {@link DEFAULT_EXPANSION_DECAY}. Empty strings are treated as
+ * unset.
+ *
+ * Throws when the variable is set to a value that is not a finite number
+ * in the half-open range `(0, 1]`. The thrown error names the offending
+ * env var and value so the operator can recover at boot. We deliberately
+ * do NOT silently coerce -- a typo like `COMMONPLACE_EXPANSION_DECAY=1.5`
+ * (or `-0.5`, or `abc`) should fail loudly rather than silently produce
+ * neighbors scored higher than their sources (or, in the negative-input
+ * case, negative scores that always sort below direct hits but might
+ * still mislead callers).
+ */
+export function resolveExpansionDecay(env: NodeJS.ProcessEnv): number {
+  const raw = env[ENV_EXPANSION_DECAY];
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return DEFAULT_EXPANSION_DECAY;
+  }
+  const parsed = Number(raw);
+  // Reject NaN (non-numeric), +/-Infinity, <=0, and >1. Decay must keep
+  // expanded scores strictly below their source (decay < 1 is the strict
+  // intent; we also accept exactly 1 so callers can disable the penalty
+  // intentionally without coercing it to "no expansion").
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
+    throw new Error(
+      `${ENV_EXPANSION_DECAY} must be a finite number in (0, 1]; got ${JSON.stringify(raw)}`,
+    );
   }
   return parsed;
 }

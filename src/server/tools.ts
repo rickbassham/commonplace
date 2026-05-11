@@ -24,6 +24,8 @@ import { MEMORY_TYPES, RELATION_TYPES } from '../store/memory.js';
 import type { MemoryGraph } from '../store/graph.js';
 import type { MemoryStore } from '../store/memory-store.js';
 import {
+  EXPAND_MODES,
+  EXPAND_TYPES,
   SCOPES,
   createMemoryDeleteHandler,
   createMemoryLinkHandler,
@@ -121,18 +123,32 @@ export interface CreateDefaultHandlersOptions {
    */
   projectStore?: MemoryStore;
   /**
-   * Optional in-memory graph (DAR-926). The graph is owned by the
-   * {@link MemoryStore} (passed to `new MemoryStore({ dir, embedder, graph })`)
-   * which keeps it in sync via scan/save/delete/linkEdge/unlinkEdge. The
-   * link/unlink handlers themselves do not need a graph reference -- they
-   * dispatch through the store, which owns the single graph instance.
+   * Optional in-memory graph (DAR-926) for the user store. The graph is
+   * owned by the {@link MemoryStore} (passed to
+   * `new MemoryStore({ dir, embedder, graph })`) which keeps it in sync
+   * via scan/save/delete/linkEdge/unlinkEdge.
    *
-   * This option is accepted (and the bin passes it) to make the wiring
-   * intent explicit at the call site -- "this server has a graph, and it is
-   * threaded through both the store and the handler layer" -- per DAR-928
-   * ac-5. It is otherwise unused.
+   * Used in two places at handler-wiring time:
+   *
+   *   - As an explicit signal that "this server has a graph" per DAR-928
+   *     ac-5 (the bin passes its `userGraph` here so the wiring intent is
+   *     visible at the call site).
+   *   - As the user-scope graph reference threaded into the
+   *     `memory_search` handler for one-hop expansion (DAR-930). The
+   *     project-scope graph is supplied separately via {@link projectGraph}.
+   *
+   * The link/unlink handlers do not need a graph reference -- they
+   * dispatch through the store, which owns the single graph instance.
    */
   graph?: MemoryGraph;
+  /**
+   * Optional in-memory graph for the project store (DAR-930). Threaded
+   * into the `memory_search` handler so one-hop expansion can walk the
+   * project store's edges. Cross-scope expansion is intentionally not
+   * supported: a user-scope direct hit only walks the user graph, and a
+   * project-scope direct hit only walks the project graph.
+   */
+  projectGraph?: MemoryGraph;
   /**
    * Optional default top-k for `memory_search` when the caller omits
    * `limit`. Resolved by the bin from `COMMONPLACE_DEFAULT_LIMIT`
@@ -141,6 +157,13 @@ export interface CreateDefaultHandlersOptions {
    * (`5`).
    */
   defaultLimit?: number;
+  /**
+   * Optional one-hop expansion decay for `memory_search` (DAR-930).
+   * Resolved by the bin from `COMMONPLACE_EXPANSION_DECAY`; defaults to
+   * `0.7` when omitted. Out-of-range values are validated by the env-var
+   * resolver (`resolveExpansionDecay`), not here.
+   */
+  expansionDecay?: number;
 }
 
 /**
@@ -167,11 +190,18 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     };
   }
   const handlerOpts = { userStore, projectStore };
-  // The search handler is the only consumer of `defaultLimit` today; the
-  // CRUD/link handlers ignore it (they take their own validated args).
-  // Threading the option through here rather than via a separate factory
-  // call keeps the wiring single-shot.
-  const searchOpts = { ...handlerOpts, defaultLimit: options.defaultLimit };
+  // The search handler is the only consumer of `defaultLimit`,
+  // `userGraph`, `projectGraph`, and `expansionDecay` today; the CRUD/link
+  // handlers ignore them (they take their own validated args). Threading
+  // the options through here rather than via a separate factory call
+  // keeps the wiring single-shot.
+  const searchOpts = {
+    ...handlerOpts,
+    defaultLimit: options.defaultLimit,
+    userGraph: options.graph,
+    projectGraph: options.projectGraph,
+    expansionDecay: options.expansionDecay,
+  };
   return {
     memory_search: createMemorySearchHandler(searchOpts),
     memory_save: createMemorySaveHandler(handlerOpts),
@@ -222,6 +252,24 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           enum: [...SCOPES],
           description:
             "Optional filter restricting results to a single store. 'user' searches only the user store; 'project' searches only the project store. Default: search both stores when the project store is present.",
+        },
+        expand: {
+          type: 'string',
+          enum: [...EXPAND_MODES],
+          description:
+            "One-hop graph expansion mode (DAR-930). 'none' (default) returns only direct cosine hits. 'one-hop' augments the response with outbound graph neighbors of each direct hit, each carrying a `via: { source, edge }` field naming the direct hit that pulled it in. Expanded entries are scored at direct_hit_score * decay (default decay 0.7, configurable via COMMONPLACE_EXPANSION_DECAY) and deduplicated against direct hits.",
+        },
+        expandTypes: {
+          type: 'array',
+          items: { type: 'string', enum: [...EXPAND_TYPES] },
+          description:
+            "Edge types to follow during one-hop expansion. Defaults to ['builds-on', 'related-to']. Pass an explicit list to opt into other types ('mentions', 'supersedes', 'contradicts', 'child-of'). Ignored when `expand` is omitted or 'none'.",
+        },
+        expandLimit: {
+          type: 'integer',
+          minimum: 0,
+          description:
+            'Maximum number of neighbors to add per direct hit during one-hop expansion. Defaults to 2. Set to 0 to opt out of neighbor inclusion without disabling expansion validation (useful for callers that want to verify their schema usage without changing the response). Ignored when `expand` is omitted or `none`.',
         },
       },
       required: ['query'],
