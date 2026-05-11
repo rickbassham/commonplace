@@ -39,7 +39,7 @@ import { createServer, installCallToolHandler } from '../server/server.js';
 import { createDefaultHandlers } from '../server/tools.js';
 import { MemoryGraph } from '../store/graph.js';
 import { MemoryStore, type Embedder as EmbedderShape } from '../store/memory-store.js';
-import { resolveDefaultLimit, resolveExpansionDecay, resolveModelId } from './env.js';
+import { resolveDefaultLimit, resolveModelId } from './env.js';
 import { detectScope, type RootEntry, type ScopeDetectionResult } from './scope.js';
 
 /** Inputs to {@link bootServer}. */
@@ -134,7 +134,6 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   // mkdir-ing the user dir so a misconfigured operator gets a clear stderr
   // message without the bin first creating directories on disk.
   const defaultLimit = resolveDefaultLimit(options.env);
-  const expansionDecay = resolveExpansionDecay(options.env);
   const embedder = options.embedder ?? new Embedder(resolveModelId(options.env));
 
   // Step 1+2: resolve user dir, mkdir -p so first-run users get a clean
@@ -171,12 +170,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   // only known after the round-trip completes. `defaultLimit` is the
   // resolved `COMMONPLACE_DEFAULT_LIMIT` value (DAR-913); the search
   // handler uses it when the caller omits `limit`.
-  const handlers = createDefaultHandlers({
-    userStore,
-    graph: userGraph,
-    defaultLimit,
-    expansionDecay,
-  });
+  const handlers = createDefaultHandlers({ userStore, graph: userGraph, defaultLimit });
   const server = createServer({ handlers });
 
   // Step 5: connect first so the transport is ready to issue requests.
@@ -215,7 +209,6 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
       projectStore,
       graph: userGraph,
       defaultLimit,
-      expansionDecay,
     });
     installCallToolHandler(server, handlersWithProject);
   }
