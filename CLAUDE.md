@@ -53,6 +53,30 @@ Required environment variables and defaults are owned by **DAR-913**
 variable with its default and effect; for now refer to DAR-913 for the
 authoritative list.
 
+## Memory: dogfood Commonplace, not the harness
+
+This project builds Commonplace; it dogfoods Commonplace for its own
+memory. When working on this repo:
+
+- **Save memories via** `mcp__commonplace__memory_save`. Pick the
+  right `type` (`user` / `feedback` / `project` / `reference`) and
+  `scope` (`user` for cross-project lessons; `project` for facts
+  specific to this codebase).
+- **Recall memories via** `mcp__commonplace__memory_search` and
+  `mcp__commonplace__memory_list`. Search at the start of non-trivial
+  tasks the way you would consult prior conversations.
+- **Do not write to** `~/.claude/projects/<slug>/memory/` (the
+  harness's built-in auto-memory location) on this project. The
+  system-prompt auto-memory protocol is overridden here in favour of
+  the product we ship.
+- **Do not delete** memories already present at the harness path —
+  they are historical and out-of-scope for this project's tooling.
+
+Cross-project rules (no issue refs in code, no speculative backcompat,
+one PR at a time, never admin-merge without per-PR auth, use the
+`dev-workflow:linear-execute-issue` skill) live as feedback memories in
+Commonplace at `user` scope; search for them when uncertain.
+
 ## Overrides
 
 No project-specific overrides to the universal rules in `~/.claude/CLAUDE.md`
