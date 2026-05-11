@@ -223,11 +223,11 @@ export type ExpandMode = (typeof EXPAND_MODES)[number];
  * here so we don't accidentally widen by adding a never-walked sentinel
  * to the graph's edge enum.
  */
-export const EXPAND_TYPES: readonly EdgeType[] = [
+export const EXPAND_TYPES = [
   ...RELATION_TYPES,
   'supersedes',
   'mentions',
-] as const;
+] as const satisfies readonly EdgeType[];
 
 /**
  * Default `expandTypes` for `memory_search` one-hop expansion when the
@@ -851,7 +851,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       // than at validation time so callers can pass `expandLimit: 0`
       // (which is honoured: zero neighbors per hit) without it being
       // overridden by the default.
-      const effectiveExpandTypes = expandTypes ?? [...DEFAULT_EXPAND_TYPES];
+      const effectiveExpandTypes = expandTypes ?? DEFAULT_EXPAND_TYPES;
       const effectiveExpandLimit = expandLimit ?? DEFAULT_EXPAND_LIMIT;
       const allowedEdgeTypes = new Set<EdgeType>(effectiveExpandTypes);
 
@@ -901,7 +901,17 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
           entriesByScope.set(direct.scope, m);
         }
 
-        const supersededMap = supersededByScope.get(direct.scope) ?? new Map<string, string>();
+        // Invariant: `supersededByScope` is populated for every queried
+        // target scope in the search loop above, and `direct.scope` is always
+        // one of those scopes -- so this lookup cannot miss. Throw loudly
+        // rather than silently fall back to an empty map if that invariant
+        // is ever broken (f-2).
+        const supersededMap = supersededByScope.get(direct.scope);
+        if (supersededMap === undefined) {
+          throw new Error(
+            `internal invariant violated: supersededByScope missing scope '${direct.scope}' during one-hop expansion`,
+          );
+        }
         const directNames = directNamesByScope.get(direct.scope) ?? new Set<string>();
         let expandedNames = expandedNamesByScope.get(direct.scope);
         if (expandedNames === undefined) {
