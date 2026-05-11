@@ -1,5 +1,5 @@
 /**
- * DAR-930 unit tests: one-hop graph expansion in memory_search.
+ * Unit tests for one-hop graph expansion in memory_search.
  *
  * Covers the in-process handler surface: the new `expand`, `expandTypes`,
  * and `expandLimit` arguments, the `via` field on expanded matches, decay
@@ -128,11 +128,11 @@ const assertResult = (out: unknown): MemorySearchResult => {
 };
 
 // --------------------------------------------------------------------------
-// ac: default behaviour unchanged
+// default behaviour: expansion is ON by default
 // --------------------------------------------------------------------------
 
-describe('default behaviour: `expand` omitted preserves v0.1 results', () => {
-  it('when `expand` is omitted, the response contains direct hits only (no `via` field on any match), even when the direct hits have outbound edges in the graph', async () => {
+describe('default behaviour: omitting `expand` runs one-hop expansion', () => {
+  it('when `expand` is omitted, expansion runs and the response includes graph neighbours of the direct hits (tagged with `via`)', async () => {
     const { store } = await setupHarness(
       [{ name: 'alpha' }, { name: 'beta' }, { name: 'gamma' }],
       [
@@ -142,12 +142,15 @@ describe('default behaviour: `expand` omitted preserves v0.1 results', () => {
     );
     vi.spyOn(store, 'search').mockResolvedValueOnce([fakeHit('alpha', 0.9)]);
     const handler = createMemorySearchHandler({ store });
-    const out = assertResult(await handler({ query: 'q' }));
-    expect(out.matches.map((m) => m.name)).toEqual(['alpha']);
-    expect(out.matches.every((m) => !('via' in m))).toBe(true);
+    const out = assertResult(await handler({ query: 'q', limit: 10 }));
+    expect(out.matches.map((m) => m.name).sort()).toEqual(['alpha', 'beta', 'gamma']);
+    const alpha = out.matches.find((m) => m.name === 'alpha');
+    expect(alpha && 'via' in alpha).toBe(false);
+    const expansions = out.matches.filter((m) => 'via' in m);
+    expect(expansions).toHaveLength(2);
   });
 
-  it('explicit `expand: "none"` is equivalent to omitting `expand` and produces no expansion entries', async () => {
+  it('explicit `expand: "none"` opts out of expansion and returns direct hits only', async () => {
     const { store } = await setupHarness(
       [{ name: 'alpha' }, { name: 'beta' }],
       [{ from: 'alpha', to: 'beta', type: 'builds-on' }],
@@ -156,6 +159,7 @@ describe('default behaviour: `expand` omitted preserves v0.1 results', () => {
     const handler = createMemorySearchHandler({ store });
     const out = assertResult(await handler({ query: 'q', expand: 'none' }));
     expect(out.matches.map((m) => m.name)).toEqual(['alpha']);
+    expect(out.matches.every((m) => !('via' in m))).toBe(true);
   });
 });
 
@@ -259,7 +263,7 @@ describe('expandTypes', () => {
       [{ from: 'hub', to: 'n1', type: 'builds-on' }],
     );
     // Plug a synthetic mentions edge directly into the graph -- the
-    // DAR-927 body tokenizer normally produces these but we don't need to
+    // The body tokenizer normally produces these but we don't need to
     // exercise that path here.
     graph.addMentionsEdge({ from: 'hub', to: 'mention_target' });
     vi.spyOn(store, 'search').mockResolvedValueOnce([fakeHit('hub', 0.9)]);

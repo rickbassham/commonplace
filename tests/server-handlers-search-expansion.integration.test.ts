@@ -1,5 +1,5 @@
 /**
- * DAR-930 integration tests: end-to-end one-hop expansion over the MCP
+ * Integration tests for end-to-end one-hop expansion over the MCP
  * transport.
  *
  * Spins up a real `Server` wired with a real `MemoryStore` + `MemoryGraph`
@@ -179,11 +179,13 @@ describe('one-hop expansion: spawned bin / MCP transport round-trip', () => {
       });
       expect(linkB.isError).toBe(false);
 
-      // Without expansion: only the hub passes the cosine threshold.
+      // expand: 'none' returns only the hub (the only entry passing the
+      // cosine threshold). No `via` annotations.
       const baseline = await callJSON(h.client, 'memory_search', {
         query: 'q',
         limit: 10,
         threshold: 0.99,
+        expand: 'none',
       });
       expect(baseline.isError).toBe(false);
       if (!isRecord(baseline.parsed)) throw new Error('baseline parse');
@@ -192,12 +194,12 @@ describe('one-hop expansion: spawned bin / MCP transport round-trip', () => {
       expect(baselineMatches[0]?.name).toBe('hub');
       expect('via' in baselineMatches[0]!).toBe(false);
 
-      // With expansion: hub + 2 neighbours, both carrying via.
+      // Default (`expand` omitted) runs one-hop expansion: hub + 2
+      // neighbours, both carrying via.
       const expanded = await callJSON(h.client, 'memory_search', {
         query: 'q',
         limit: 10,
         threshold: 0.99,
-        expand: 'one-hop',
       });
       expect(expanded.isError).toBe(false);
       if (!isRecord(expanded.parsed)) throw new Error('expanded parse');

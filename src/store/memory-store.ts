@@ -314,7 +314,7 @@ export class MemoryStore {
 
   /**
    * The graph instance this store keeps synchronised with disk, or
-   * `undefined` if no graph was wired in at construction time (DAR-930).
+   * `undefined` if no graph was wired in at construction time.
    * Read-only by convention -- the store owns the graph and updates it
    * incrementally through {@link save}, {@link delete}, {@link link}, and
    * {@link unlink}. Callers that need to traverse outbound edges (e.g. the

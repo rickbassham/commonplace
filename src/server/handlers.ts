@@ -84,7 +84,7 @@ export interface HandlerOptions {
   defaultLimit?: number;
   /**
    * One-hop expansion score decay applied by `memory_search` when the
-   * caller passes `expand: 'one-hop'` (DAR-930). Resolved by the bin from
+   * caller passes `expand: 'one-hop'`. Resolved by the bin from
    * `COMMONPLACE_EXPANSION_DECAY`. When omitted, the search handler falls
    * back to {@link DEFAULT_EXPANSION_DECAY}. Other handlers ignore this
    * option.
@@ -231,9 +231,9 @@ export interface MemorySearchMatch {
    */
   supersededBy?: string;
   /**
-   * Present only on entries surfaced by one-hop graph expansion (DAR-930).
-   * Names the direct-hit memory whose outbound edge pulled this entry in
-   * and which edge type was followed. Omitted entirely on direct hits so
+   * Present only on entries surfaced by one-hop graph expansion. Names
+   * the direct-hit memory whose outbound edge pulled this entry in and
+   * which edge type was followed. Omitted entirely on direct hits so
    * callers can rely on `'via' in match` as the predicate.
    */
   via?: ExpansionVia;
@@ -251,7 +251,7 @@ export interface ExpansionVia {
 
 /**
  * Edge types eligible for one-hop expansion. The four authored
- * {@link RelationType} values plus `'mentions'` (DAR-927 body tokens) --
+ * {@link RelationType} values plus `'mentions'` (body tokens) --
  * `'supersedes'` is excluded by design because supersede semantics are
  * already surfaced via `supersededBy` and following supersedes edges in
  * search would conflate "this is the next version" with "this is
@@ -259,9 +259,24 @@ export interface ExpansionVia {
  */
 export type ExpansionEdgeType = RelationType | 'mentions';
 
-/** Expansion mode literal values. `'none'` preserves v0.1 behaviour. */
+/**
+ * Expansion mode literal values. `'one-hop'` is the default (see
+ * {@link DEFAULT_EXPAND_MODE}); callers that want strict semantic-only
+ * results pass `'none'`.
+ */
 export const EXPAND_MODES = ['none', 'one-hop'] as const;
 export type ExpandMode = (typeof EXPAND_MODES)[number];
+
+/**
+ * Default `expand` mode applied when the caller omits the argument.
+ * `'one-hop'` because expansion's value proposition is "surface context
+ * the agent did not explicitly ask for but probably wants" -- gating that
+ * behind an opt-in flag would mean most callers never benefit. Decay (0.7
+ * default) + `expandLimit` (2 default) + dedup keep expansion from
+ * crowding direct hits; callers who want strict cosine-only results pass
+ * `expand: 'none'`.
+ */
+export const DEFAULT_EXPAND_MODE: ExpandMode = 'one-hop';
 
 /**
  * Allowed values for `expandTypes[]`. {@link RELATION_TYPES} plus
@@ -543,12 +558,15 @@ const validateThreshold = (raw: unknown, toolName: string): number | undefined =
 };
 
 /**
- * Validate the optional `expand` argument. `undefined` returns `'none'`
- * (the default that preserves v0.1 behaviour). Anything else must be one
- * of the {@link EXPAND_MODES} literals.
+ * Validate the optional `expand` argument. `undefined` returns
+ * {@link DEFAULT_EXPAND_MODE} (`'one-hop'` -- expansion is on by default
+ * because the whole point of the feature is to surface context the agent
+ * did not explicitly ask for; the decay + `expandLimit` + dedup logic
+ * keeps it from flooding results). Anything else must be one of the
+ * {@link EXPAND_MODES} literals.
  */
 const validateExpandMode = (raw: unknown, toolName: string): ExpandMode => {
-  if (raw === undefined) return 'none';
+  if (raw === undefined) return DEFAULT_EXPAND_MODE;
   if (typeof raw !== 'string' || !(EXPAND_MODES as readonly string[]).includes(raw)) {
     throw new Error(
       `${toolName}: field \`expand\` must be one of ${EXPAND_MODES.join(', ')}; got ${JSON.stringify(raw)}`,
@@ -661,7 +679,7 @@ const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
  * wire a graph (and matches the graph's `isSuperseded` semantics: an entry
  * is excluded iff some loaded memory has it in its `supersedes[]`).
  *
- * One-hop graph expansion (DAR-930): when callers pass `expand: 'one-hop'`,
+ * One-hop graph expansion: when callers pass `expand: 'one-hop'`,
  * each direct hit's outbound graph edges (filtered by `expandTypes`) are
  * walked via the source store's {@link MemoryGraph}. Neighbour memories are
  * surfaced as additional matches scored as `direct_hit_score * decay`,
@@ -672,10 +690,10 @@ const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
  * the overall `limit`. Expanded entries carry a `via: { source, edge }`
  * field naming the direct hit that pulled them in; direct hits do not.
  *
- * Out of scope (per the DAR-929 contract envelope): connectedness boost
- * (DAR-931), reranking, snippet generation, and surfacing `mentions` edges
- * in `match.relations` (mentions are surfaced ONLY via `via.edge` on
- * expansion entries when the caller opts in to following them).
+ * Out of scope: connectedness boost, reranking, snippet generation, and
+ * surfacing `mentions` edges in `match.relations` (mentions are surfaced
+ * ONLY via `via.edge` on expansion entries when the caller opts in to
+ * following them).
  */
 export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
   const { userStore, projectStore } = resolveStores(opts, 'memory_search');
@@ -685,10 +703,10 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
   // so this handler still works in test setups that wire the factory
   // directly without an env-var pass.
   const fallbackLimit = opts.defaultLimit ?? DEFAULT_SEARCH_LIMIT;
-  // Same resolve-once pattern for the expansion decay (DAR-930). When the
-  // bin supplies one (from `COMMONPLACE_EXPANSION_DECAY`), it wins;
-  // otherwise fall back to the documented default so the handler works in
-  // direct test wiring without an env pass.
+  // Same resolve-once pattern for the expansion decay. When the bin
+  // supplies one (from `COMMONPLACE_EXPANSION_DECAY`), it wins; otherwise
+  // fall back to the documented default so the handler works in direct
+  // test wiring without an env pass.
   const expansionDecay = opts.expansionDecay ?? DEFAULT_EXPANSION_DECAY;
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
@@ -841,7 +859,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       const effectiveExpandLimit = callerExpandLimit ?? DEFAULT_EXPAND_LIMIT;
       // Direct-hit keyset for dedup against expansion. Keyed by
       // `${scope}:${name}` so the same name in user and project doesn't
-      // collide (DAR-924 scope isolation).
+      // collide (scope isolation).
       const directKeys = new Set(limited.map(({ hit, scope: sc }) => `${sc}:${hit.memory.name}`));
       // Expansion candidates, keyed the same way. When multiple direct
       // hits point at the same neighbour, the highest derived score wins
@@ -886,7 +904,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
 
           const neighborEntry = entryIndexFor(sc).get(edge.to);
           // Dangling edge (target not loaded in this scope). The graph
-          // surfaces dangling edges intentionally (DAR-926); they cannot
+          // surfaces dangling edges intentionally; they cannot
           // be projected as matches because there is no body to return.
           if (neighborEntry === undefined) continue;
 
