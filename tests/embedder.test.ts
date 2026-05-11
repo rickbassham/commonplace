@@ -185,6 +185,75 @@ describe('ac-4: pooling cls + normalize true', () => {
 // ac-5: dim populated from known-models map or after first embed
 // -------------------------------------------------------------------------
 
+// -------------------------------------------------------------------------
+// retry on init failure: a rejecting pipeline() load clears the cache so
+// the next embed() retries, instead of replaying the rejection forever.
+// -------------------------------------------------------------------------
+
+describe('retry after pipeline init failure', () => {
+  it('after a rejecting pipeline() load, the next embed() invokes pipeline() again (cache cleared on rejection)', async () => {
+    pipelineMock.mockRejectedValueOnce(new Error('hub down'));
+    pipelineMock.mockResolvedValueOnce(makeFakePipeline(768));
+
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+
+    // First call rejects with the underlying error.
+    await expect(e.embed('first')).rejects.toThrow(/hub down/);
+    expect(pipelineMock).toHaveBeenCalledTimes(1);
+
+    // Second call retries: pipeline() runs again and succeeds.
+    const v = await e.embed('second');
+    expect(v).toBeInstanceOf(Float32Array);
+    expect(pipelineMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('multiple sequential failures each invoke pipeline() exactly once (each rejection clears the cache)', async () => {
+    pipelineMock.mockRejectedValueOnce(new Error('fail-1'));
+    pipelineMock.mockRejectedValueOnce(new Error('fail-2'));
+    pipelineMock.mockRejectedValueOnce(new Error('fail-3'));
+
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+
+    await expect(e.embed('a')).rejects.toThrow(/fail-1/);
+    await expect(e.embed('b')).rejects.toThrow(/fail-2/);
+    await expect(e.embed('c')).rejects.toThrow(/fail-3/);
+
+    expect(pipelineMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('concurrent first-callers all observe the same rejection (the in-flight share invariant is preserved on failure), and a subsequent embed() after that rejection retries with a fresh pipeline() call', async () => {
+    // First load rejects.
+    let rejectFactory!: (err: Error) => void;
+    pipelineMock.mockImplementationOnce(
+      () =>
+        new Promise<unknown>((_resolve, reject) => {
+          rejectFactory = reject;
+        }),
+    );
+    // Second load (after the retry) succeeds.
+    pipelineMock.mockResolvedValueOnce(makeFakePipeline(768));
+
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+    const p1 = e.embed('a');
+    const p2 = e.embed('b');
+
+    // While the rejecting load is still in flight, only one factory call
+    // has been issued -- the in-flight share holds on the failure path too.
+    expect(pipelineMock).toHaveBeenCalledTimes(1);
+
+    rejectFactory(new Error('transient'));
+
+    // Both concurrent callers see the same rejection.
+    await expect(p1).rejects.toThrow(/transient/);
+    await expect(p2).rejects.toThrow(/transient/);
+
+    // A subsequent call retries -- factory runs again and succeeds.
+    const v = await e.embed('c');
+    expect(v).toBeInstanceOf(Float32Array);
+    expect(pipelineMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('ac-5: dim population', () => {
   it('for a known model id (Xenova/bge-base-en-v1.5), Embedder.dim returns 768 before the first embed() call via a static known-models map', () => {
     const e = new Embedder('Xenova/bge-base-en-v1.5');

@@ -171,10 +171,30 @@ export class Embedder {
    * what gives us the AC-3 guarantee: two concurrent `embed()` calls on a
    * fresh Embedder both observe the same in-flight promise, so the
    * underlying `pipeline()` factory is invoked exactly once.
+   *
+   * If the underlying `pipeline()` factory rejects (transient hub failure,
+   * cold-start OOM, etc.), the cache is cleared so the next `embed()` call
+   * retries with a fresh load. Without this, a rejected promise would stay
+   * resident on the instance and replay the same rejection forever -- the
+   * only recovery would be to construct a new Embedder, which is a sharp
+   * edge for downstream callers (the store layer in particular) that hold
+   * an Embedder for the process lifetime.
+   *
+   * The in-flight share holds on the failure path too: every awaiter on a
+   * given in-flight load sees the same rejection. The cache is cleared via
+   * `.catch()` on the cached promise (returned to all callers), with an
+   * identity guard so a concurrent caller that already replaced the field
+   * does not get its newer promise wiped out.
    */
   #getPipeline(): Promise<FeatureExtractionPipeline> {
     if (this.#pipelinePromise === null) {
-      this.#pipelinePromise = pipeline('feature-extraction', this.modelId);
+      const p = pipeline('feature-extraction', this.modelId);
+      this.#pipelinePromise = p;
+      p.catch(() => {
+        if (this.#pipelinePromise === p) {
+          this.#pipelinePromise = null;
+        }
+      });
     }
     return this.#pipelinePromise;
   }
