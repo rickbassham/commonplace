@@ -130,7 +130,9 @@ export interface CreateDefaultHandlersOptions {
    * This option is accepted (and the bin passes it) to make the wiring
    * intent explicit at the call site -- "this server has a graph, and it is
    * threaded through both the store and the handler layer" -- per DAR-928
-   * ac-5. It is otherwise unused.
+   * ac-5. It is otherwise unused. (memory_search reaches each store's graph
+   * via the per-store `store.graph` getter introduced in DAR-930 so the
+   * project store's graph is reachable as well.)
    */
   graph?: MemoryGraph;
   /**
@@ -141,6 +143,15 @@ export interface CreateDefaultHandlersOptions {
    * (`5`).
    */
   defaultLimit?: number;
+  /**
+   * Optional one-hop expansion score decay (DAR-930). Multiplies the
+   * direct-hit score to derive each expanded neighbour's score. Resolved
+   * by the bin from `COMMONPLACE_EXPANSION_DECAY`; when omitted, the
+   * search handler falls back to
+   * {@link import('../bin/env.js').DEFAULT_EXPANSION_DECAY} (`0.7`).
+   * Has no effect when callers do not pass `expand: 'one-hop'`.
+   */
+  expansionDecay?: number;
 }
 
 /**
@@ -167,11 +178,15 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     };
   }
   const handlerOpts = { userStore, projectStore };
-  // The search handler is the only consumer of `defaultLimit` today; the
-  // CRUD/link handlers ignore it (they take their own validated args).
-  // Threading the option through here rather than via a separate factory
-  // call keeps the wiring single-shot.
-  const searchOpts = { ...handlerOpts, defaultLimit: options.defaultLimit };
+  // The search handler is the only consumer of `defaultLimit` and
+  // `expansionDecay` today; the CRUD/link handlers ignore them (they take
+  // their own validated args). Threading the options through here rather
+  // than via separate factory calls keeps the wiring single-shot.
+  const searchOpts = {
+    ...handlerOpts,
+    defaultLimit: options.defaultLimit,
+    expansionDecay: options.expansionDecay,
+  };
   return {
     memory_search: createMemorySearchHandler(searchOpts),
     memory_save: createMemorySaveHandler(handlerOpts),
@@ -191,7 +206,7 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
 const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['inputSchema'] }> = {
   memory_search: {
     description:
-      'Semantic search over saved memories across both the user and project stores (when the project store is present). Returns the top-k matches by cosine similarity against the embedding index, merged across stores by descending score; each match carries a `scope` tag identifying which store produced it. By default, memories that have been superseded by another entry are excluded from results.',
+      'Semantic search over saved memories across both the user and project stores (when the project store is present). Returns the top-k matches by cosine similarity against the embedding index, merged across stores by descending score; each match carries a `scope` tag identifying which store produced it. By default, memories that have been superseded by another entry are excluded from results. When `expand: "one-hop"` is set, each direct hit is augmented with up to `expandLimit` graph neighbours (default 2) reached via the configured edge types (default `["builds-on", "related-to"]`); expanded entries carry a `via` field naming the direct hit they were pulled in from, and score as `direct_hit_score * decay` (decay configured via `COMMONPLACE_EXPANSION_DECAY`, default 0.7). The final result list is sorted by score descending and sliced to `limit`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -199,7 +214,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
         limit: {
           type: 'integer',
           description:
-            'Maximum number of results to return after merging across stores. Defaults to 5.',
+            'Maximum number of results to return after merging across stores AND applying one-hop expansion (when enabled). Defaults to 5.',
           minimum: 1,
         },
         type: {
@@ -222,6 +237,24 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           enum: [...SCOPES],
           description:
             "Optional filter restricting results to a single store. 'user' searches only the user store; 'project' searches only the project store. Default: search both stores when the project store is present.",
+        },
+        expand: {
+          type: 'string',
+          enum: ['none', 'one-hop'],
+          description:
+            "Optional one-hop graph expansion (DAR-930). 'none' (default) returns only direct semantic matches, preserving v0.1 behaviour. 'one-hop' additionally walks outbound graph edges from each direct hit and surfaces their neighbours as additional matches, scored as `direct_hit_score * COMMONPLACE_EXPANSION_DECAY`. Expanded entries are deduplicated against direct hits and against each other, and are tagged with a `via` field naming the source hit and edge type.",
+        },
+        expandTypes: {
+          type: 'array',
+          items: { type: 'string', enum: [...RELATION_TYPES, 'mentions'] },
+          description:
+            "Edge types to follow during one-hop expansion. Defaults to ['builds-on', 'related-to']; pass ['mentions'] to opt into body-mention edges; pass any combination of the four authored relation types plus 'mentions'. Has no effect when `expand` is omitted or set to 'none'. `supersedes` edges are never followed (supersede semantics are surfaced via `supersededBy` instead).",
+        },
+        expandLimit: {
+          type: 'integer',
+          minimum: 1,
+          description:
+            'Maximum neighbours added per direct hit during one-hop expansion. Defaults to 2. Prevents a hub memory from flooding the result set. Has no effect when `expand` is omitted or set to "none".',
         },
       },
       required: ['query'],

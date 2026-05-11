@@ -36,6 +36,14 @@ export const ENV_MODEL = 'COMMONPLACE_MODEL';
 export const ENV_DEFAULT_LIMIT = 'COMMONPLACE_DEFAULT_LIMIT';
 
 /**
+ * Env var name for the one-hop expansion score decay (DAR-930). Multiplies
+ * the direct-hit score to derive the expanded entry's score. Defaults to
+ * {@link DEFAULT_EXPANSION_DECAY} when unset or empty. Must be a finite
+ * number in `[0, 1]` when set; invalid values throw at boot.
+ */
+export const ENV_EXPANSION_DECAY = 'COMMONPLACE_EXPANSION_DECAY';
+
+/**
  * Default embedding model id when `COMMONPLACE_MODEL` is unset or empty.
  * Mirrors the `DEFAULT_MODEL_ID` used by the bin pre-DAR-913.
  */
@@ -46,6 +54,15 @@ export const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
  * or empty. Mirrors `DEFAULT_SEARCH_LIMIT` from the store layer.
  */
 export const DEFAULT_LIMIT = 5;
+
+/**
+ * Default one-hop expansion score decay when `COMMONPLACE_EXPANSION_DECAY`
+ * is unset or empty (DAR-930). Each expanded neighbour's score is
+ * `direct_hit_score * decay`. A value of 1 makes expansion neutral; 0
+ * pins every expanded entry's score to zero (and the final sort sinks
+ * them).
+ */
+export const DEFAULT_EXPANSION_DECAY = 0.7;
 
 /**
  * Resolve the embedding model id from the environment.
@@ -93,6 +110,32 @@ export function resolveDefaultLimit(env: NodeJS.ProcessEnv): number {
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${ENV_DEFAULT_LIMIT} must be a positive integer; got ${JSON.stringify(raw)}`);
+  }
+  return parsed;
+}
+
+/**
+ * Resolve the one-hop expansion score decay from the environment (DAR-930).
+ *
+ * Returns the parsed finite number in `[0, 1]` when
+ * `COMMONPLACE_EXPANSION_DECAY` is set, otherwise
+ * {@link DEFAULT_EXPANSION_DECAY}. Empty strings are treated as unset.
+ *
+ * Throws when the variable is set to a value outside `[0, 1]` or to a
+ * non-numeric / non-finite value. We deliberately do NOT clamp -- a decay
+ * outside the valid range almost always means a typo (e.g. `0.7` typed as
+ * `7`) that should fail at boot rather than silently yield bizarre scores.
+ */
+export function resolveExpansionDecay(env: NodeJS.ProcessEnv): number {
+  const raw = env[ENV_EXPANSION_DECAY];
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return DEFAULT_EXPANSION_DECAY;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(
+      `${ENV_EXPANSION_DECAY} must be a finite number in [0, 1]; got ${JSON.stringify(raw)}`,
+    );
   }
   return parsed;
 }

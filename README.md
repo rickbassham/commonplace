@@ -93,14 +93,17 @@ superseded memories are excluded.
 
 Input schema:
 
-| Argument            | Type                                       | Required | Description                                                                                                                                                    |
-| ------------------- | ------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `query`             | string                                     | required | Natural-language search query.                                                                                                                                 |
-| `limit`             | integer                                    | optional | Maximum number of results after merging across stores. The default is configurable via the `COMMONPLACE_DEFAULT_LIMIT` env var documented below (default `5`). |
-| `type`              | `user \| feedback \| project \| reference` | optional | Restrict results to memories of this type.                                                                                                                     |
-| `threshold`         | number                                     | optional | Minimum cosine similarity for an entry to appear. Cosine range is `[-1, 1]`.                                                                                   |
-| `includeSuperseded` | boolean                                    | optional | When `true`, include memories that have been superseded. Superseded matches carry a `supersededBy` field. Defaults to `false`.                                 |
-| `scope`             | `user` or `project`                        | optional | Restrict the search to a single store. Default: search both stores when the project store is present.                                                          |
+| Argument            | Type                                       | Required | Description                                                                                                                                                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`             | string                                     | required | Natural-language search query.                                                                                                                                                                                                                                                                                               |
+| `limit`             | integer                                    | optional | Maximum number of results after merging across stores AND applying one-hop expansion (when enabled). The default is configurable via the `COMMONPLACE_DEFAULT_LIMIT` env var documented below (default `5`).                                                                                                                 |
+| `type`              | `user \| feedback \| project \| reference` | optional | Restrict results to memories of this type.                                                                                                                                                                                                                                                                                   |
+| `threshold`         | number                                     | optional | Minimum cosine similarity for an entry to appear. Cosine range is `[-1, 1]`.                                                                                                                                                                                                                                                 |
+| `includeSuperseded` | boolean                                    | optional | When `true`, include memories that have been superseded. Superseded matches carry a `supersededBy` field. Defaults to `false`.                                                                                                                                                                                               |
+| `scope`             | `user` or `project`                        | optional | Restrict the search to a single store. Default: search both stores when the project store is present.                                                                                                                                                                                                                        |
+| `expand`            | `none` or `one-hop`                        | optional | One-hop graph expansion. `none` (default) returns only direct semantic matches. `one-hop` additionally walks outbound graph edges from each direct hit and surfaces their neighbours as expansion entries. See "One-hop expansion" below.                                                                                    |
+| `expandTypes`       | array                                      | optional | Edge types to follow during one-hop expansion. Items must be one of `related-to`, `builds-on`, `contradicts`, `child-of`, `mentions`. Default: `["builds-on", "related-to"]`. Has no effect when `expand` is omitted or `none`. `supersedes` edges are never followed (supersede semantics are surfaced via `supersededBy`). |
+| `expandLimit`       | integer                                    | optional | Maximum neighbours added per direct hit during one-hop expansion. Default `2`. Prevents a hub memory from flooding results. Has no effect when `expand` is omitted or `none`.                                                                                                                                                |
 
 Example call:
 
@@ -113,6 +116,35 @@ Example call:
   "includeSuperseded": false,
 }
 ```
+
+#### One-hop expansion
+
+When `expand: "one-hop"` is set, each direct hit is augmented with up to
+`expandLimit` graph neighbours (default `2`) reached via the configured
+edge types (default `["builds-on", "related-to"]`). Expansion entries
+carry a `via` field naming the direct hit they were pulled in from and
+the edge type that was followed:
+
+```jsonc
+{
+  "name": "feedback_scope_handshake",
+  "score": 0.665,
+  // ...other fields...
+  "via": {
+    "source": "feedback_scope_negotiation",
+    "edge": "builds-on",
+  },
+}
+```
+
+Direct hits omit `via` entirely (use `'via' in match` as the
+predicate). The expansion score is `direct_hit_score × decay`, where
+`decay` is configured via the `COMMONPLACE_EXPANSION_DECAY` env var
+(default `0.7`). After expansion, the combined result list is sorted by
+descending score and sliced to the overall `limit`. Expansion respects
+the supersede filter (superseded neighbours are excluded unless
+`includeSuperseded: true`) and the store-scope boundary (edges are
+intra-scope: a user memory cannot expand into a project memory).
 
 ### memory_list
 
@@ -197,13 +229,14 @@ The project store is selected by the first matching step in this list:
 
 All configuration lives in environment variables. The full set:
 
-| Variable                    | Default                   | Effect                                                                                                                                                                   |
-| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `COMMONPLACE_USER_DIR`      | `~/.commonplace/memory`   | User store directory. Always loaded.                                                                                                                                     |
-| `COMMONPLACE_PROJECT_DIR`   | (unset)                   | Project store directory. When set, takes priority over `roots/list` and cwd detection. Created recursively on first project-scope save.                                  |
-| `COMMONPLACE_MEMORY_DIR`    | (unset; deprecated)       | Deprecated alias for `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood configs; setting it emits a one-line deprecation warning to stderr.              |
-| `COMMONPLACE_MODEL`         | `Xenova/bge-base-en-v1.5` | Embedding model id passed to transformers.js. Not pre-validated at boot; an unknown id surfaces an error from the embedder on the first call that needs an embedding.    |
-| `COMMONPLACE_DEFAULT_LIMIT` | `5`                       | Default top-k for `memory_search` when the caller omits `limit`. Must be a positive integer; invalid values cause the bin to exit at boot rather than silently coercing. |
+| Variable                      | Default                   | Effect                                                                                                                                                                                                                                                                   |
+| ----------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMONPLACE_USER_DIR`        | `~/.commonplace/memory`   | User store directory. Always loaded.                                                                                                                                                                                                                                     |
+| `COMMONPLACE_PROJECT_DIR`     | (unset)                   | Project store directory. When set, takes priority over `roots/list` and cwd detection. Created recursively on first project-scope save.                                                                                                                                  |
+| `COMMONPLACE_MEMORY_DIR`      | (unset; deprecated)       | Deprecated alias for `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood configs; setting it emits a one-line deprecation warning to stderr.                                                                                                              |
+| `COMMONPLACE_MODEL`           | `Xenova/bge-base-en-v1.5` | Embedding model id passed to transformers.js. Not pre-validated at boot; an unknown id surfaces an error from the embedder on the first call that needs an embedding.                                                                                                    |
+| `COMMONPLACE_DEFAULT_LIMIT`   | `5`                       | Default top-k for `memory_search` when the caller omits `limit`. Must be a positive integer; invalid values cause the bin to exit at boot rather than silently coercing.                                                                                                 |
+| `COMMONPLACE_EXPANSION_DECAY` | `0.7`                     | Score decay applied to one-hop expansion neighbours in `memory_search` (expansion score = `direct_hit_score × decay`). Must be a finite number in `[0, 1]`; invalid values cause the bin to exit at boot. Has no effect on callers that do not pass `expand: "one-hop"`. |
 
 ## Memory format
 
