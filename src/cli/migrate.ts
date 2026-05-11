@@ -55,7 +55,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { MemoryGraph, type DanglingEdge } from '../store/graph.js';
 import {
@@ -243,6 +243,8 @@ const listMemoriesFromDisk = (
         supersedes: memory.supersedes,
       });
     } catch {
+      // scan already reported via ScanResult.skipped; suppressing here
+      // avoids logging the same file a second time during the prune pass.
       continue;
     }
   }
@@ -1022,7 +1024,7 @@ const migrateImport = async (
     `commonplace migrate --from ${parsed.from}${dryRunBanner}`,
     `  target:       ${userDir}`,
     `  imported:     ${importedCount} file${importedCount === 1 ? '' : 's'}${parsed.dryRun ? ' (would be imported)' : ''}`,
-    `  skipped:      ${skippedCount} file${skippedCount === 1 ? '' : 's'}${skippedCount === 0 ? '' : ' (already exists in target)'}`,
+    `  skipped:      ${skippedCount} file${skippedCount === 1 ? '' : 's'}`,
   ];
   if (result.bySource.length > 0) {
     lines.push('  per-source:');
@@ -1038,7 +1040,7 @@ const migrateImport = async (
     // or "memory file frontmatter is not valid YAML: ...").
     lines.push('  skipped:');
     for (const sk of result.skipped) {
-      const srcDir = sk.source.slice(0, sk.source.lastIndexOf('/'));
+      const srcDir = dirname(sk.source);
       lines.push(`    skipped: ${sk.name} (source: ${srcDir}) -- ${sk.reason}`);
     }
   }
