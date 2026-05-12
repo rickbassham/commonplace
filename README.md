@@ -252,6 +252,65 @@ Example call:
 }
 ```
 
+### memory_graph
+
+Return the local neighborhood of a saved memory by walking the in-memory
+graph BFS-style from a root. The response is a `{ root, nodes, edges }`
+envelope where `nodes` contains the root plus every reachable memory
+within `depth` hops, and `edges` lists the typed connections that pulled
+each neighbor in. Cycles are visited-set safe -- each reachable memory
+appears once.
+
+Input schema:
+
+| Argument    | Type                                                                                    | Required | Description                                                                                                                                                                           |
+| ----------- | --------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`      | string                                                                                  | required | Memory name to use as the root of the neighborhood walk.                                                                                                                              |
+| `depth`     | integer >= 0                                                                            | optional | Maximum number of edges to walk from the root. Defaults to `1`. `0` returns just the root with no edges.                                                                              |
+| `types`     | array of `related-to \| builds-on \| contradicts \| child-of \| supersedes \| mentions` | optional | Edge types to follow during traversal. Defaults to the four authored relation types plus `supersedes` (omits `mentions` unless requested).                                            |
+| `direction` | `out \| in \| both`                                                                     | optional | Which side of the adjacency to walk. `'out'` follows only outbound edges from the root; `'in'` follows only inbound edges to the root; `'both'` (default) follows both directions.    |
+| `scope`     | `user` or `project`                                                                     | optional | Scope of the root memory. Required to disambiguate when the same name exists in both stores; otherwise auto-resolved. Traversal is intra-scope -- edges are not walked across stores. |
+
+Example call:
+
+```jsonc
+// memory_graph
+{
+  "name": "architecture_overview",
+  "depth": 2,
+  "direction": "out",
+}
+```
+
+### memory_path
+
+Return the shortest directed path between two saved memories using BFS
+over the in-memory graph. Returns `{ path: [] }` when `from === to`;
+`{ path: null, reason: 'unreachable' }` when no path exists at all; or
+`{ path: null, reason: 'depth-exceeded' }` when a path exists but its
+shortest length is greater than `maxDepth`.
+
+Input schema:
+
+| Argument   | Type                                                                                    | Required | Description                                                                                                                                                                             |
+| ---------- | --------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`     | string                                                                                  | required | Starting memory name.                                                                                                                                                                   |
+| `to`       | string                                                                                  | required | Destination memory name.                                                                                                                                                                |
+| `maxDepth` | integer >= 1                                                                            | optional | Maximum number of edges the BFS will walk before giving up with `reason: 'depth-exceeded'`. Defaults to `5`.                                                                            |
+| `types`    | array of `related-to \| builds-on \| contradicts \| child-of \| supersedes \| mentions` | optional | Edge types the BFS is allowed to traverse. When omitted, every edge type (including `mentions`) is eligible.                                                                            |
+| `scope`    | `user` or `project`                                                                     | optional | Scope of the `from` memory. Required to disambiguate when the same name exists in both stores; otherwise auto-resolved. Path search is intra-scope -- `to` must live in the same store. |
+
+Example call:
+
+```jsonc
+// memory_path
+{
+  "from": "architecture_overview",
+  "to": "feedback_scope",
+  "maxDepth": 5,
+}
+```
+
 ## Memory scopes
 
 Commonplace loads up to two memory stores side by side:

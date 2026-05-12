@@ -1360,3 +1360,498 @@ const pickStoreForName = (
   if (inProject) return projectStore!;
   return userStore;
 };
+
+// ===========================================================================
+// DAR-932: memory_graph and memory_path
+// ===========================================================================
+
+/**
+ * Edge types `memory_graph` and `memory_path` can traverse (DAR-932). The
+ * union covers the four authored {@link RelationType} values plus
+ * `'supersedes'` and `'mentions'`. The runtime constant is shared with the
+ * tool registry so the inputSchema enum stays in lockstep with the validator.
+ */
+export const GRAPH_EDGE_TYPES = [
+  ...RELATION_TYPES,
+  'supersedes',
+  'mentions',
+] as const satisfies readonly EdgeType[];
+
+/**
+ * The three directions accepted by `memory_graph` (DAR-932).
+ *
+ * - `'out'` -- only outbound edges from the root are walked.
+ * - `'in'` -- only inbound edges to the root are walked.
+ * - `'both'` (default) -- both directions are walked.
+ */
+export const GRAPH_DIRECTIONS = ['out', 'in', 'both'] as const;
+/** Union type of {@link GRAPH_DIRECTIONS}. */
+export type GraphDirection = (typeof GRAPH_DIRECTIONS)[number];
+
+/**
+ * Default `types` filter for `memory_graph` traversal when the caller does
+ * not supply one. Per the issue: "defaults to all authored types (omits
+ * mentions unless requested)". The four authored {@link RelationType}
+ * values plus `'supersedes'` are included; `'mentions'` is opt-in via an
+ * explicit `types` argument.
+ */
+export const DEFAULT_GRAPH_TYPES: readonly EdgeType[] = [
+  ...RELATION_TYPES,
+  'supersedes',
+] as const satisfies readonly EdgeType[];
+
+/** Default depth for `memory_graph` when the caller omits `depth`. */
+const DEFAULT_GRAPH_DEPTH = 1;
+
+/** Default `maxDepth` for `memory_path` when the caller omits `maxDepth`. */
+const DEFAULT_PATH_MAX_DEPTH = 5;
+
+/** A node entry in {@link MemoryGraphResult}. */
+export interface MemoryGraphNode {
+  name: string;
+  type: MemoryType;
+  description: string;
+}
+
+/** An edge entry in {@link MemoryGraphResult} and {@link MemoryPathResult}. */
+export interface MemoryGraphEdge {
+  from: string;
+  to: string;
+  type: EdgeType;
+}
+
+/** Return shape for {@link createMemoryGraphHandler}. */
+export interface MemoryGraphResult {
+  root: MemoryGraphNode;
+  nodes: MemoryGraphNode[];
+  edges: MemoryGraphEdge[];
+}
+
+/**
+ * Return shape for {@link createMemoryPathHandler}. Either the path was
+ * found (possibly empty when `from === to`) and `path` is the ordered edge
+ * sequence; or no path exists within constraints and `path` is `null` plus
+ * a `reason` discriminating "no path at all" from "no path within
+ * `maxDepth`".
+ */
+export type MemoryPathResult =
+  | { path: MemoryGraphEdge[] }
+  | { path: null; reason: 'unreachable' | 'depth-exceeded' };
+
+const isGraphDirection = (v: unknown): v is GraphDirection =>
+  typeof v === 'string' && (GRAPH_DIRECTIONS as readonly string[]).includes(v);
+
+const validateGraphDirection = (raw: unknown, toolName: string): GraphDirection | undefined => {
+  if (raw === undefined) return undefined;
+  if (!isGraphDirection(raw)) {
+    throw new Error(
+      `${toolName}: field \`direction\` must be one of ${GRAPH_DIRECTIONS.join(
+        ', ',
+      )}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+const validateGraphTypes = (raw: unknown, toolName: string): EdgeType[] | undefined => {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `${toolName}: field \`types\` must be an array of edge-type strings (${GRAPH_EDGE_TYPES.join(
+        ', ',
+      )}); got ${JSON.stringify(raw)}`,
+    );
+  }
+  const out: EdgeType[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const entry = raw[i];
+    if (typeof entry !== 'string' || !(GRAPH_EDGE_TYPES as readonly string[]).includes(entry)) {
+      throw new Error(
+        `${toolName}: field \`types[${i}]\` must be one of ${GRAPH_EDGE_TYPES.join(
+          ', ',
+        )}; got ${JSON.stringify(entry)}`,
+      );
+    }
+    out.push(entry as EdgeType);
+  }
+  return out;
+};
+
+const validateNonNegativeInteger = (
+  raw: unknown,
+  field: string,
+  toolName: string,
+): number | undefined => {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    throw new Error(
+      `${toolName}: field \`${field}\` must be a non-negative integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  if (!Number.isInteger(raw) || raw < 0) {
+    throw new Error(
+      `${toolName}: field \`${field}\` must be a non-negative integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+const validatePositiveInteger = (
+  raw: unknown,
+  field: string,
+  toolName: string,
+): number | undefined => {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    throw new Error(
+      `${toolName}: field \`${field}\` must be a positive integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  if (!Number.isInteger(raw) || raw <= 0) {
+    throw new Error(
+      `${toolName}: field \`${field}\` must be a positive integer; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
+ * Pick the per-scope user or project store + graph that owns `name`. Mirrors
+ * {@link pickStoreForName} but also returns the matching graph reference and
+ * scope so the traversal handler can walk the right adjacency.
+ *
+ * Resolution order matches the existing CRUD handlers:
+ *
+ *   - explicit `scope: 'project'` requires a project store
+ *   - explicit `scope: 'user'` routes to the user store
+ *   - implicit: name in both stores is ambiguous; otherwise route to
+ *     whichever store holds it (defaulting to user when missing)
+ *
+ * The traversal handler additionally requires the picked store to actually
+ * contain `name` (a missing-name lookup is a clear error, not a silent
+ * empty traversal). Callers receive the store and graph -- callers that
+ * need only the graph (`memory_path`'s second-pass node lookup) use the
+ * returned store separately to resolve entries by name.
+ */
+const pickStoreAndGraphForName = (
+  name: string,
+  explicitScope: Scope | undefined,
+  userStore: MemoryStore,
+  projectStore: MemoryStore | undefined,
+  userGraph: MemoryGraph | undefined,
+  projectGraph: MemoryGraph | undefined,
+  toolName: string,
+): { store: MemoryStore; graph: MemoryGraph | undefined; scope: Scope } => {
+  const store = pickStoreForName(name, explicitScope, userStore, projectStore, toolName);
+  const scope: Scope = store === userStore ? 'user' : 'project';
+  const graph = scope === 'user' ? userGraph : projectGraph;
+  return { store, graph, scope };
+};
+
+/**
+ * Construct the `memory_graph` handler. Walks the per-scope {@link MemoryGraph}
+ * via BFS from the root, gated by `depth`, `types`, and `direction`. Returns
+ * the root plus every reachable node and the edges that connected them.
+ *
+ * Cycles are handled with a visited set keyed by memory name -- a memory is
+ * enqueued at most once. Self-edges cannot exist (the graph rejects them at
+ * `add` / `addEdge` time) so we do not special-case them.
+ *
+ * Dangling edges are skipped silently: when an edge's `to` does not resolve
+ * to a loaded memory in the store, neither the edge nor a synthetic node is
+ * surfaced. The graph keeps the dangling edge for `detectDangling()`; this
+ * tool intentionally does not.
+ */
+export const createMemoryGraphHandler = (opts: HandlerOptions): ToolHandler => {
+  const { userStore, projectStore } = resolveStores(opts, 'memory_graph');
+  const userGraph = opts.userGraph;
+  const projectGraph = opts.projectGraph;
+  return async (rawArgs: ToolArguments): Promise<MemoryGraphResult> => {
+    const args = requireArgsObject(rawArgs, 'memory_graph');
+    const name = requireString(args, 'name', 'memory_graph');
+    validateMemoryName(name, 'memory_graph');
+    const depth =
+      validateNonNegativeInteger(args.depth, 'depth', 'memory_graph') ?? DEFAULT_GRAPH_DEPTH;
+    const types = validateGraphTypes(args.types, 'memory_graph');
+    const direction = validateGraphDirection(args.direction, 'memory_graph') ?? 'both';
+    const scope = validateScope(args.scope, 'memory_graph');
+
+    const picked = pickStoreAndGraphForName(
+      name,
+      scope,
+      userStore,
+      projectStore,
+      userGraph,
+      projectGraph,
+      'memory_graph',
+    );
+
+    // Build a single name -> entry lookup up front -- the root lookup and
+    // per-neighbor projection both reuse it, so the store is scanned once
+    // per call rather than once for the root and once for the BFS.
+    const entryByName = new Map<string, MemoryEntry>();
+    for (const e of picked.store.all()) entryByName.set(e.name, e);
+
+    const rootEntry = entryByName.get(name);
+    if (rootEntry === undefined) {
+      throw new Error(
+        `memory_graph: memory \`${name}\` does not exist in the ${picked.scope} store`,
+      );
+    }
+
+    const root: MemoryGraphNode = {
+      name: rootEntry.name,
+      type: rootEntry.type,
+      description: rootEntry.description,
+    };
+
+    const nodes: MemoryGraphNode[] = [root];
+    const edges: MemoryGraphEdge[] = [];
+
+    if (picked.graph === undefined) {
+      return { root, nodes, edges };
+    }
+
+    const allowedTypes = new Set<EdgeType>(types ?? DEFAULT_GRAPH_TYPES);
+
+    // BFS layer by layer. `visited` covers the root so we don't re-emit it
+    // as a node if a cycle leads back to it.
+    const visited = new Set<string>([name]);
+    const edgeKeySeen = new Set<string>();
+    let frontier: string[] = [name];
+
+    for (let layer = 0; layer < depth && frontier.length > 0; layer++) {
+      const nextFrontier: string[] = [];
+      for (const current of frontier) {
+        const outgoing: { edge: { from: string; to: string; type: EdgeType }; neighbor: string }[] =
+          [];
+        if (direction === 'out' || direction === 'both') {
+          for (const e of picked.graph.outbound(current)) {
+            outgoing.push({ edge: e, neighbor: e.to });
+          }
+        }
+        if (direction === 'in' || direction === 'both') {
+          for (const e of picked.graph.inbound(current)) {
+            outgoing.push({ edge: e, neighbor: e.from });
+          }
+        }
+        for (const { edge, neighbor } of outgoing) {
+          if (!allowedTypes.has(edge.type)) continue;
+          const neighborEntry = entryByName.get(neighbor);
+          if (neighborEntry === undefined) continue; // skip dangling
+
+          // Deduplicate edges (an undirected pair `both` may surface the
+          // same edge once from each side; same edge between layers is
+          // also possible in cyclic graphs). Key includes from+to+type so
+          // distinct typed edges between the same pair are preserved.
+          // `JSON.stringify` provides an unambiguous structured key so
+          // adjacent string fields cannot collide via concatenation (e.g.
+          // ('a', 'bX', t) vs ('ab', 'X', t)). Today's `validateMemoryName`
+          // forbids the characters that would induce a collision, but the
+          // structured key removes the latent dependency.
+          const edgeKey = JSON.stringify([edge.from, edge.to, edge.type]);
+          if (!edgeKeySeen.has(edgeKey)) {
+            edgeKeySeen.add(edgeKey);
+            edges.push({ from: edge.from, to: edge.to, type: edge.type });
+          }
+
+          if (!visited.has(neighbor)) {
+            visited.add(neighbor);
+            nodes.push({
+              name: neighborEntry.name,
+              type: neighborEntry.type,
+              description: neighborEntry.description,
+            });
+            nextFrontier.push(neighbor);
+          }
+        }
+      }
+      frontier = nextFrontier;
+    }
+
+    return { root, nodes, edges };
+  };
+};
+
+/**
+ * Construct the `memory_path` handler. BFS from `from` to `to` over the
+ * per-scope {@link MemoryGraph}; returns the shortest path or
+ * `{ path: null, reason }` distinguishing unreachable from exceeded depth.
+ *
+ * Direction: outbound only. The issue's response shape lists `from`/`to` on
+ * each edge with the same semantics as `memory_graph` outbound walks --
+ * we only follow outbound edges of the current node so the returned path
+ * is a valid directed sequence.
+ *
+ * Cycles are handled with a visited set on the parent map -- a node enters
+ * the BFS frontier at most once, so an A->B->A->... loop terminates.
+ *
+ * `from === to` returns `{ path: [] }` verbatim (issue: "empty if
+ * from === to").
+ */
+export const createMemoryPathHandler = (opts: HandlerOptions): ToolHandler => {
+  const { userStore, projectStore } = resolveStores(opts, 'memory_path');
+  const userGraph = opts.userGraph;
+  const projectGraph = opts.projectGraph;
+  return async (rawArgs: ToolArguments): Promise<MemoryPathResult> => {
+    const args = requireArgsObject(rawArgs, 'memory_path');
+    const from = requireString(args, 'from', 'memory_path');
+    validateMemoryName(from, 'memory_path');
+    const to = requireString(args, 'to', 'memory_path');
+    validateMemoryName(to, 'memory_path');
+    const maxDepth =
+      validatePositiveInteger(args.maxDepth, 'maxDepth', 'memory_path') ?? DEFAULT_PATH_MAX_DEPTH;
+    const types = validateGraphTypes(args.types, 'memory_path');
+    const scope = validateScope(args.scope, 'memory_path');
+
+    // Self-path short-circuit: when from === to the issue specifies an
+    // empty edge sequence (NOT null). We still validate that the memory
+    // exists so callers learn about typos rather than getting a misleading
+    // empty success.
+    const picked = pickStoreAndGraphForName(
+      from,
+      scope,
+      userStore,
+      projectStore,
+      userGraph,
+      projectGraph,
+      'memory_path',
+    );
+
+    const fromEntry = picked.store.all().find((e) => e.name === from);
+    if (fromEntry === undefined) {
+      throw new Error(
+        `memory_path: memory \`${from}\` does not exist in the ${picked.scope} store`,
+      );
+    }
+
+    if (from === to) {
+      return { path: [] };
+    }
+
+    // Verify `to` exists in the same scope -- edges are intra-scope per the
+    // store contract. If the target lives in a different store, no path
+    // can connect them through this graph.
+    const toEntry = picked.store.all().find((e) => e.name === to);
+    if (toEntry === undefined) {
+      // The destination doesn't exist (or is in a different scope).
+      // Surface as 'unreachable' rather than a hard error -- callers
+      // commonly hit this when exploring a stale name and the documented
+      // response shape supports it.
+      return { path: null, reason: 'unreachable' };
+    }
+
+    if (picked.graph === undefined) {
+      return { path: null, reason: 'unreachable' };
+    }
+
+    // When `types` is omitted, follow every edge type -- BFS will pick the
+    // shortest path regardless of label. When `types` is set, only those
+    // edge labels are walked.
+    const allowedTypes = types === undefined ? null : new Set<EdgeType>(types);
+
+    // BFS. For each visited node we record the edge that reached it
+    // (`parent`) so we can reconstruct the path on success. Depth is
+    // tracked per node so we can terminate cleanly on `depth-exceeded`.
+    interface ParentRef {
+      from: string;
+      edgeType: EdgeType;
+      depth: number;
+    }
+    const parent = new Map<string, ParentRef>();
+    parent.set(from, { from: '', edgeType: 'related-to', depth: 0 }); // sentinel
+    const queue: string[] = [from];
+    let found = false;
+    let depthLimitHit = false;
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentDepth = parent.get(current)!.depth;
+      if (currentDepth >= maxDepth) {
+        // Don't expand past the depth bound. Track that we hit the bound
+        // so we can return 'depth-exceeded' rather than 'unreachable'.
+        depthLimitHit = true;
+        continue;
+      }
+      for (const edge of picked.graph.outbound(current)) {
+        if (allowedTypes !== null && !allowedTypes.has(edge.type)) continue;
+        if (parent.has(edge.to)) continue;
+        parent.set(edge.to, {
+          from: current,
+          edgeType: edge.type,
+          depth: currentDepth + 1,
+        });
+        if (edge.to === to) {
+          found = true;
+          break;
+        }
+        queue.push(edge.to);
+      }
+      if (found) break;
+    }
+
+    if (!found) {
+      // Distinguish unreachable from depth-exceeded. If we hit the depth
+      // cap at any node during the BFS, AND the target was not already
+      // unreachable for other reasons, report 'depth-exceeded'. Otherwise
+      // 'unreachable'.
+      //
+      // The reachability check here re-runs BFS without the depth bound
+      // but still respects the type filter -- it tells us whether a path
+      // exists at all. We keep it scoped: only run when we hit the depth
+      // limit (so the common unreachable case is one BFS, not two).
+      if (depthLimitHit) {
+        const reachable = isReachable(picked.graph, from, to, allowedTypes);
+        if (reachable) {
+          return { path: null, reason: 'depth-exceeded' };
+        }
+      }
+      return { path: null, reason: 'unreachable' };
+    }
+
+    // Reconstruct the path by walking the parent chain backward from `to`.
+    const path: MemoryGraphEdge[] = [];
+    let cursor = to;
+    while (cursor !== from) {
+      const p = parent.get(cursor)!;
+      path.push({ from: p.from, to: cursor, type: p.edgeType });
+      cursor = p.from;
+    }
+    path.reverse();
+    return { path };
+  };
+};
+
+/**
+ * Unbounded-depth reachability check used when the bounded BFS hits the
+ * depth limit without finding the target. Returns `true` iff some path
+ * exists from `from` to `to` under the supplied type filter (or any type
+ * when `allowedTypes` is `null`). Cycle-safe via a visited set.
+ *
+ * This is a separate pass rather than tracking reachability inside the
+ * main BFS because the main BFS terminates early at `maxDepth` -- a node
+ * one hop beyond the cap is never enqueued, so we cannot conclude
+ * "unreachable" from it alone. Running this only when the depth cap was
+ * actually hit keeps the common case (no depth cap encountered) at a
+ * single BFS.
+ */
+const isReachable = (
+  graph: MemoryGraph,
+  from: string,
+  to: string,
+  allowedTypes: Set<EdgeType> | null,
+): boolean => {
+  const visited = new Set<string>([from]);
+  const queue: string[] = [from];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const edge of graph.outbound(current)) {
+      if (allowedTypes !== null && !allowedTypes.has(edge.type)) continue;
+      if (edge.to === to) return true;
+      if (visited.has(edge.to)) continue;
+      visited.add(edge.to);
+      queue.push(edge.to);
+    }
+  }
+  return false;
+};

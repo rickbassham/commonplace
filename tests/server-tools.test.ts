@@ -25,14 +25,16 @@ const EXPECTED_NAMES = [
   'memory_delete',
   'memory_link',
   'memory_unlink',
+  'memory_graph',
+  'memory_path',
 ] as const;
 
 describe('ac-1: tool registration', () => {
-  it('registers exactly six tools whose names are memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink (set equality, no extras, no duplicates)', () => {
+  it('registers exactly eight tools whose names are memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path (set equality, no extras, no duplicates)', () => {
     const defs = buildToolDefinitions();
     const names = defs.map((d) => d.name);
-    expect(names).toHaveLength(6);
-    expect(new Set(names).size).toBe(6); // no duplicates
+    expect(names).toHaveLength(8);
+    expect(new Set(names).size).toBe(8); // no duplicates
     expect(new Set(names)).toEqual(new Set(EXPECTED_NAMES));
   });
 
@@ -40,7 +42,7 @@ describe('ac-1: tool registration', () => {
     // Both the constant and the builder must be importable and typed.
     expect(TOOL_NAMES).toEqual(EXPECTED_NAMES);
     const defs: readonly ToolDefinition[] = buildToolDefinitions();
-    expect(defs).toHaveLength(6);
+    expect(defs).toHaveLength(8);
     // Each entry has the structural fields sibling issues will rely on.
     for (const def of defs) {
       expect(typeof def.name).toBe('string');
@@ -52,9 +54,9 @@ describe('ac-1: tool registration', () => {
 });
 
 describe('ac-2: ListTools schema shape and stub rejection', () => {
-  it('ListTools response contains six entries; each entry has a non-empty name, description, and inputSchema with type === "object"', () => {
+  it('ListTools response contains eight entries; each entry has a non-empty name, description, and inputSchema with type === "object"', () => {
     const result = listTools();
-    expect(result.tools).toHaveLength(6);
+    expect(result.tools).toHaveLength(8);
     for (const tool of result.tools) {
       expect(tool.name.length).toBeGreaterThan(0);
       expect(tool.description?.length ?? 0).toBeGreaterThan(0);
@@ -168,6 +170,8 @@ function makeSpiedHandlers(): {
     memory_delete: make(),
     memory_link: make(),
     memory_unlink: make(),
+    memory_graph: make(),
+    memory_path: make(),
   };
   const handlers: ToolHandlerMap = { ...spies };
   return { handlers, spies };

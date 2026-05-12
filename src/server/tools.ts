@@ -26,10 +26,14 @@ import type { MemoryStore } from '../store/memory-store.js';
 import {
   EXPAND_MODES,
   EXPAND_TYPES,
+  GRAPH_DIRECTIONS,
+  GRAPH_EDGE_TYPES,
   SCOPES,
   createMemoryDeleteHandler,
+  createMemoryGraphHandler,
   createMemoryLinkHandler,
   createMemoryListHandler,
+  createMemoryPathHandler,
   createMemorySaveHandler,
   createMemorySearchHandler,
   createMemoryUnlinkHandler,
@@ -43,6 +47,8 @@ export const TOOL_NAMES = [
   'memory_delete',
   'memory_link',
   'memory_unlink',
+  'memory_graph',
+  'memory_path',
 ] as const;
 
 /** Element type of {@link TOOL_NAMES}. */
@@ -196,9 +202,19 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
       memory_delete: notImplemented,
       memory_link: notImplemented,
       memory_unlink: notImplemented,
+      memory_graph: notImplemented,
+      memory_path: notImplemented,
     };
   }
   const handlerOpts = { userStore, projectStore };
+  // memory_graph and memory_path need per-scope graph references to walk
+  // adjacency; the CRUD/link handlers ignore graphs (they dispatch through
+  // the store). Threading them through here keeps the wiring single-shot.
+  const graphOpts = {
+    ...handlerOpts,
+    userGraph: options.graph,
+    projectGraph: options.projectGraph,
+  };
   // The search handler is the only consumer of `defaultLimit`,
   // `userGraph`, `projectGraph`, and `expansionDecay` today; the CRUD/link
   // handlers ignore them (they take their own validated args). Threading
@@ -219,6 +235,8 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     memory_delete: createMemoryDeleteHandler(handlerOpts),
     memory_link: createMemoryLinkHandler(handlerOpts),
     memory_unlink: createMemoryUnlinkHandler(handlerOpts),
+    memory_graph: createMemoryGraphHandler(graphOpts),
+    memory_path: createMemoryPathHandler(graphOpts),
   };
 }
 
@@ -413,6 +431,80 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           enum: [...SCOPES],
           description:
             'Optional scope of the source memory. Required to disambiguate when the same `from` name exists in both stores; otherwise auto-resolved to whichever store holds `from`.',
+        },
+      },
+      required: ['from', 'to'],
+    },
+  },
+  memory_graph: {
+    description:
+      'Return the local graph neighborhood of a saved memory. Walks the in-memory graph BFS-style from `name` to `depth` hops, gated by `direction` (outbound / inbound / both) and `types` (which edge labels to follow). Cycles are visited-set safe -- each reachable memory appears once in `nodes`. Default `types` covers the four authored relation types plus `supersedes` (omits body `mentions` edges unless requested explicitly). Default `depth` is 1 and default `direction` is `both`.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Memory name to use as the root of the neighborhood walk.',
+        },
+        depth: {
+          type: 'integer',
+          minimum: 0,
+          description:
+            'Maximum number of edges to walk from the root. Defaults to 1. `0` returns just the root with no edges.',
+        },
+        types: {
+          type: 'array',
+          items: { type: 'string', enum: [...GRAPH_EDGE_TYPES] },
+          description:
+            "Edge types to follow during traversal. Defaults to the four authored relation types plus 'supersedes' (omits 'mentions' unless requested). Pass an explicit list to opt into 'mentions' or to narrow the walk to a single edge type.",
+        },
+        direction: {
+          type: 'string',
+          enum: [...GRAPH_DIRECTIONS],
+          description:
+            "Which side of the adjacency to walk. 'out' follows only outbound edges from the root; 'in' follows only inbound edges to the root; 'both' (default) follows both directions.",
+        },
+        scope: {
+          type: 'string',
+          enum: [...SCOPES],
+          description:
+            'Optional scope of the root memory. Required to disambiguate when the same name exists in both stores; otherwise auto-resolved to whichever store holds the name. Traversal is intra-scope -- edges are not walked across stores.',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  memory_path: {
+    description:
+      "Return the shortest directed path between two saved memories using BFS over the in-memory graph. Follows outbound edges from each node. Returns `{ path: [] }` when `from === to` (the empty-edge self-path); `{ path: null, reason: 'unreachable' }` when no path exists; or `{ path: null, reason: 'depth-exceeded' }` when a path exists but its shortest length is greater than `maxDepth`. Default `maxDepth` is 5. Pass `types` to restrict which edge labels the search may traverse (default: all edge types).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Starting memory name.',
+        },
+        to: {
+          type: 'string',
+          description: 'Destination memory name.',
+        },
+        maxDepth: {
+          type: 'integer',
+          minimum: 1,
+          description:
+            'Maximum number of edges the BFS will walk before giving up with `reason: depth-exceeded`. Defaults to 5.',
+        },
+        types: {
+          type: 'array',
+          items: { type: 'string', enum: [...GRAPH_EDGE_TYPES] },
+          description:
+            'Edge types the BFS is allowed to traverse. When omitted, every edge type (including `mentions`) is eligible.',
+        },
+        scope: {
+          type: 'string',
+          enum: [...SCOPES],
+          description:
+            'Optional scope of the `from` memory. Required to disambiguate when the same name exists in both stores; otherwise auto-resolved to whichever store holds `from`. Path search is intra-scope -- `to` must live in the same store as `from`.',
         },
       },
       required: ['from', 'to'],

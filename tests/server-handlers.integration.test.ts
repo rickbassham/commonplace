@@ -123,15 +123,17 @@ describe('ac-1: createServer wires real DAR-919 handlers', () => {
     }
   });
 
-  it('ListTools over the in-memory transport still returns the six expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink) with non-empty descriptions and object inputSchemas after DAR-919 wiring', async () => {
+  it('ListTools over the in-memory transport still returns the eight expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path) with non-empty descriptions and object inputSchemas after DAR-919 wiring', async () => {
     const h = await setupHarness();
     try {
       const result = await h.client.listTools();
       const names = result.tools.map((t) => t.name).sort();
       expect(names).toEqual([
         'memory_delete',
+        'memory_graph',
         'memory_link',
         'memory_list',
+        'memory_path',
         'memory_save',
         'memory_search',
         'memory_unlink',
