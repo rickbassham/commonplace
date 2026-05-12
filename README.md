@@ -189,6 +189,15 @@ is NOT promoted above a high-cosine leaf at the default alpha. The
 boost only meaningfully moves results when two memories already have
 similar cosine scores.
 
+**Note on `score` in the response.** The `score` field on each match
+in the `memory_search` response is the final post-boost value
+(`cosine + alpha * log(1 + inbound)`), not the raw cosine. While raw
+cosine is bounded by `[-1, 1]`, the post-boost `score` returned to
+clients can exceed `1.0` when a memory has both high cosine and many
+inbound authored-relation edges. The `threshold` argument is still
+applied to the raw cosine pre-boost, so its `[-1, 1]` range is
+unchanged. Clients should not assume `matches[].score <= 1.0`.
+
 **Interaction with one-hop expansion.** When `expand: 'one-hop'` is set,
 the decayed scores assigned to expanded neighbors are derived from each
 direct hit's BOOSTED score (not its raw cosine): `expanded_score =
