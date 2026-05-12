@@ -1586,7 +1586,13 @@ export const createMemoryGraphHandler = (opts: HandlerOptions): ToolHandler => {
       'memory_graph',
     );
 
-    const rootEntry = picked.store.all().find((e) => e.name === name);
+    // Build a single name -> entry lookup up front -- the root lookup and
+    // per-neighbor projection both reuse it, so the store is scanned once
+    // per call rather than once for the root and once for the BFS.
+    const entryByName = new Map<string, MemoryEntry>();
+    for (const e of picked.store.all()) entryByName.set(e.name, e);
+
+    const rootEntry = entryByName.get(name);
     if (rootEntry === undefined) {
       throw new Error(
         `memory_graph: memory \`${name}\` does not exist in the ${picked.scope} store`,
@@ -1607,12 +1613,6 @@ export const createMemoryGraphHandler = (opts: HandlerOptions): ToolHandler => {
     }
 
     const allowedTypes = new Set<EdgeType>(types ?? DEFAULT_GRAPH_TYPES);
-
-    // Build a name -> entry lookup once so each reached neighbor can be
-    // projected to its { name, type, description } shape without scanning
-    // `all()` per node.
-    const entryByName = new Map<string, MemoryEntry>();
-    for (const e of picked.store.all()) entryByName.set(e.name, e);
 
     // BFS layer by layer. `visited` covers the root so we don't re-emit it
     // as a node if a cycle leads back to it.
@@ -1644,7 +1644,12 @@ export const createMemoryGraphHandler = (opts: HandlerOptions): ToolHandler => {
           // same edge once from each side; same edge between layers is
           // also possible in cyclic graphs). Key includes from+to+type so
           // distinct typed edges between the same pair are preserved.
-          const edgeKey = `${edge.from}${edge.to}${edge.type}`;
+          // `JSON.stringify` provides an unambiguous structured key so
+          // adjacent string fields cannot collide via concatenation (e.g.
+          // ('a', 'bX', t) vs ('ab', 'X', t)). Today's `validateMemoryName`
+          // forbids the characters that would induce a collision, but the
+          // structured key removes the latent dependency.
+          const edgeKey = JSON.stringify([edge.from, edge.to, edge.type]);
           if (!edgeKeySeen.has(edgeKey)) {
             edgeKeySeen.add(edgeKey);
             edges.push({ from: edge.from, to: edge.to, type: edge.type });
