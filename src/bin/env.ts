@@ -1,7 +1,7 @@
 /**
  * Environment-variable resolution for the embedder model id and the
- * `memory_search` default limit (DAR-913) plus the one-hop expansion decay
- * (DAR-930).
+ * `memory_search` default limit (DAR-913), the one-hop expansion decay
+ * (DAR-930), and the connectedness boost (DAR-931).
  *
  * The memory-directory env vars (`COMMONPLACE_USER_DIR`,
  * `COMMONPLACE_PROJECT_DIR`, deprecated `COMMONPLACE_MEMORY_DIR`) are owned
@@ -18,6 +18,12 @@
  *     applied to one-hop graph-expanded neighbors of a direct
  *     `memory_search` hit. Default `0.7`. Allowed range is `(0, 1]`; values
  *     outside the range or non-numeric throw at boot.
+ *   - `COMMONPLACE_CONNECTEDNESS_BOOST` (DAR-931) -- alpha coefficient for
+ *     the additive `alpha * log(1 + inbound_count)` connectedness boost
+ *     applied to each direct cosine hit's score in `memory_search`.
+ *     Default `0.02`. Must be a finite non-negative number; `0` disables
+ *     the boost entirely (and yields identical results to v0.1 ranking).
+ *     Negative / non-numeric / NaN / Infinity values throw at boot.
  *
  * # Out of scope
  *
@@ -48,6 +54,14 @@ export const ENV_DEFAULT_LIMIT = 'COMMONPLACE_DEFAULT_LIMIT';
 export const ENV_EXPANSION_DECAY = 'COMMONPLACE_EXPANSION_DECAY';
 
 /**
+ * Env var name for the connectedness boost alpha (DAR-931). Defaults to
+ * {@link DEFAULT_CONNECTEDNESS_BOOST} when unset or empty. Must be a finite
+ * non-negative number when set; invalid values throw at boot. Setting it to
+ * `0` disables the boost.
+ */
+export const ENV_CONNECTEDNESS_BOOST = 'COMMONPLACE_CONNECTEDNESS_BOOST';
+
+/**
  * Default embedding model id when `COMMONPLACE_MODEL` is unset or empty.
  * Mirrors the `DEFAULT_MODEL_ID` used by the bin pre-DAR-913.
  */
@@ -65,6 +79,20 @@ export const DEFAULT_LIMIT = 5;
  * expanded neighbor's score is `direct_hit_score * decay`.
  */
 export const DEFAULT_EXPANSION_DECAY = 0.7;
+
+/**
+ * Default connectedness boost alpha applied to each direct cosine hit's
+ * score in `memory_search` when `COMMONPLACE_CONNECTEDNESS_BOOST` is unset
+ * or empty (DAR-931). Final score is
+ * `cosine_score + alpha * log(1 + inbound_count)`.
+ *
+ * The default `0.02` is intentionally small: the maximum boost it produces
+ * on a typical corpus is `0.02 * log(1 + N)` which stays well below the
+ * cosine score range so cosine still dominates ranking between memories
+ * with very different similarity. Tie-breaking between similar-cosine
+ * memories is where the boost actually moves results.
+ */
+export const DEFAULT_CONNECTEDNESS_BOOST = 0.02;
 
 /**
  * Resolve the embedding model id from the environment.
@@ -145,6 +173,43 @@ export function resolveExpansionDecay(env: NodeJS.ProcessEnv): number {
   if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
     throw new Error(
       `${ENV_EXPANSION_DECAY} must be a finite number in (0, 1]; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Resolve the connectedness boost alpha from the environment (DAR-931).
+ *
+ * Returns the parsed number when `COMMONPLACE_CONNECTEDNESS_BOOST` is set,
+ * otherwise {@link DEFAULT_CONNECTEDNESS_BOOST}. Empty strings are treated
+ * as unset.
+ *
+ * Throws when the variable is set to a value that is not a finite
+ * non-negative number. The thrown error names the offending env var and
+ * value so the operator can recover at boot. We deliberately do NOT
+ * silently coerce -- a typo like `COMMONPLACE_CONNECTEDNESS_BOOST=abc`
+ * (or `-0.5`, or `NaN`, or `Infinity`) should fail loudly rather than
+ * silently produce no boost (or negative boosts).
+ *
+ * Zero is accepted as a valid disable value -- yields identical results
+ * to v0.1 / DAR-929 ranking.
+ */
+export function resolveConnectednessBoost(env: NodeJS.ProcessEnv): number {
+  const raw = env[ENV_CONNECTEDNESS_BOOST];
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return DEFAULT_CONNECTEDNESS_BOOST;
+  }
+  const parsed = Number(raw);
+  // Reject NaN (non-numeric), +/-Infinity, and negative values. Zero is
+  // valid (the explicit disable case). We accept arbitrarily large
+  // positive values rather than capping -- the operator is in charge of
+  // alpha, and the boost-magnitude bound test (`alpha * log(1 + N)` for
+  // a 10k-memory corpus) catches "alpha was bumped past the cosine
+  // range" at the test layer.
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(
+      `${ENV_CONNECTEDNESS_BOOST} must be a finite non-negative number (0 disables the boost); got ${JSON.stringify(raw)}`,
     );
   }
   return parsed;

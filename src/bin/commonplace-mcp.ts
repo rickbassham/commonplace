@@ -25,6 +25,14 @@
  *   COMMONPLACE_DEFAULT_LIMIT   default top-k for memory_search when the
  *                               caller omits `limit` (DAR-913); default 5,
  *                               must be a positive integer
+ *   COMMONPLACE_EXPANSION_DECAY multiplicative score for one-hop graph
+ *                               expanded neighbors in memory_search
+ *                               (DAR-930); default 0.7, must be in (0, 1]
+ *   COMMONPLACE_CONNECTEDNESS_BOOST  alpha for the additive
+ *                               `alpha * log(1 + inbound_count)`
+ *                               connectedness boost in memory_search
+ *                               ranking (DAR-931); default 0.02, must be
+ *                               a finite non-negative number (0 disables)
  *
  * # Detection priority for the project store
  *

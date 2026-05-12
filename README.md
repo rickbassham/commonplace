@@ -137,10 +137,14 @@ carries an additional `via` field:
 Direct hits omit the `via` key entirely (it is absent, not `undefined`).
 Expanded entries are scored at `direct_hit_score * decay` where `decay`
 defaults to `0.7` and is configurable via the
-`COMMONPLACE_EXPANSION_DECAY` env var documented below. The merged
-result list is sorted by descending score and sliced to the overall
-`limit` after expansion, so a highly-scored neighbor can displace a
-lower-scored direct hit from the response.
+`COMMONPLACE_EXPANSION_DECAY` env var documented below. The
+`direct_hit_score` here is the BOOSTED direct-hit score (see
+"Connectedness boost" below), so connectedness propagates through
+expansion deterministically: a neighbor of a well-connected hub inherits
+a slice of the hub's boost. The merged result list is sorted by
+descending score and sliced to the overall `limit` after expansion, so a
+highly-scored neighbor can displace a lower-scored direct hit from the
+response.
 
 Dedup rules:
 
@@ -153,6 +157,44 @@ Dedup rules:
 Expansion is intra-scope: a user-scope direct hit only walks the user
 graph, and a project-scope direct hit only walks the project graph.
 Cross-scope expansion is not supported in v0.2.
+
+### Connectedness boost
+
+`memory_search` ranks results by a slightly augmented cosine score that
+rewards memories with many inbound references:
+
+```
+final_score = cosine_score + alpha * log(1 + inbound_count)
+```
+
+Where:
+
+- `alpha` defaults to `0.02` and is configurable via the
+  `COMMONPLACE_CONNECTEDNESS_BOOST` env var documented below. Setting it
+  to `0` disables the boost entirely and yields identical results to
+  v0.1 ranking.
+- `inbound_count` is the number of memories whose authored `relations`
+  point at this memory (`builds-on`, `related-to`, `contradicts`, and
+  `child-of` edges). Body-derived `mentions` edges and structural
+  `supersedes` edges are excluded by default: mentions are noisy (a
+  passing reference is not a vote of importance) and supersedes is a
+  replacement marker, not an endorsement.
+
+**Rationale.** Foundational memories with many inbound edges are
+load-bearing -- a lot of other memories build on them. They should rank
+slightly above similar-scored leaves with no inbound references. The
+default `alpha` is intentionally small so that cosine still dominates
+ranking between dissimilar memories: a low-cosine foundational entry
+is NOT promoted above a high-cosine leaf at the default alpha. The
+boost only meaningfully moves results when two memories already have
+similar cosine scores.
+
+**Interaction with one-hop expansion.** When `expand: 'one-hop'` is set,
+the decayed scores assigned to expanded neighbors are derived from each
+direct hit's BOOSTED score (not its raw cosine): `expanded_score =
+(cosine + alpha * log(1 + inbound)) * decay`. So a neighbor of a
+well-connected hub inherits a slice of the hub's connectedness boost
+through expansion deterministically.
 
 ### memory_list
 
@@ -237,14 +279,15 @@ The project store is selected by the first matching step in this list:
 
 All configuration lives in environment variables. The full set:
 
-| Variable                      | Default                   | Effect                                                                                                                                                                                                             |
-| ----------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `COMMONPLACE_USER_DIR`        | `~/.commonplace/memory`   | User store directory. Always loaded.                                                                                                                                                                               |
-| `COMMONPLACE_PROJECT_DIR`     | (unset)                   | Project store directory. When set, takes priority over `roots/list` and cwd detection. Created recursively on first project-scope save.                                                                            |
-| `COMMONPLACE_MEMORY_DIR`      | (unset; deprecated)       | Deprecated alias for `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood configs; setting it emits a one-line deprecation warning to stderr.                                                        |
-| `COMMONPLACE_MODEL`           | `Xenova/bge-base-en-v1.5` | Embedding model id passed to transformers.js. Not pre-validated at boot; an unknown id surfaces an error from the embedder on the first call that needs an embedding.                                              |
-| `COMMONPLACE_DEFAULT_LIMIT`   | `5`                       | Default top-k for `memory_search` when the caller omits `limit`. Must be a positive integer; invalid values cause the bin to exit at boot rather than silently coercing.                                           |
-| `COMMONPLACE_EXPANSION_DECAY` | `0.7`                     | Multiplicative score applied to one-hop graph-expanded neighbors of a direct `memory_search` hit. Must be a finite number in `(0, 1]`; invalid values cause the bin to exit at boot rather than silently coercing. |
+| Variable                          | Default                   | Effect                                                                                                                                                                                                                                                                                                      |
+| --------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `COMMONPLACE_USER_DIR`            | `~/.commonplace/memory`   | User store directory. Always loaded.                                                                                                                                                                                                                                                                        |
+| `COMMONPLACE_PROJECT_DIR`         | (unset)                   | Project store directory. When set, takes priority over `roots/list` and cwd detection. Created recursively on first project-scope save.                                                                                                                                                                     |
+| `COMMONPLACE_MEMORY_DIR`          | (unset; deprecated)       | Deprecated alias for `COMMONPLACE_USER_DIR`. Honoured for back-compat with v0.1 dogfood configs; setting it emits a one-line deprecation warning to stderr.                                                                                                                                                 |
+| `COMMONPLACE_MODEL`               | `Xenova/bge-base-en-v1.5` | Embedding model id passed to transformers.js. Not pre-validated at boot; an unknown id surfaces an error from the embedder on the first call that needs an embedding.                                                                                                                                       |
+| `COMMONPLACE_DEFAULT_LIMIT`       | `5`                       | Default top-k for `memory_search` when the caller omits `limit`. Must be a positive integer; invalid values cause the bin to exit at boot rather than silently coercing.                                                                                                                                    |
+| `COMMONPLACE_EXPANSION_DECAY`     | `0.7`                     | Multiplicative score applied to one-hop graph-expanded neighbors of a direct `memory_search` hit. Must be a finite number in `(0, 1]`; invalid values cause the bin to exit at boot rather than silently coercing.                                                                                          |
+| `COMMONPLACE_CONNECTEDNESS_BOOST` | `0.02`                    | Alpha for the additive `alpha * log(1 + inbound_count)` connectedness boost applied to `memory_search` ranking. Must be a finite non-negative number; set to `0` to disable the boost and recover v0.1 ranking. Negative or non-numeric values cause the bin to exit at boot rather than silently coercing. |
 
 ## Memory format
 
