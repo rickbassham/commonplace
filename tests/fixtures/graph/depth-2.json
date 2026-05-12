@@ -1,0 +1,16 @@
+{
+  "root": "root",
+  "depth": 2,
+  "memories": [
+    {
+      "name": "root",
+      "relations": [
+        { "to": "alpha", "type": "related-to" },
+        { "to": "beta", "type": "builds-on" }
+      ]
+    },
+    { "name": "alpha", "relations": [{ "to": "gamma", "type": "related-to" }] },
+    { "name": "beta" },
+    { "name": "gamma" }
+  ]
+}

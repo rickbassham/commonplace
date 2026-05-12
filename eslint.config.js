@@ -26,6 +26,11 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Float32Array: 'readonly',
+      },
     },
   },
   {

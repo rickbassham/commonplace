@@ -1,0 +1,8 @@
+digraph commonplace {
+  rankdir=LR;
+  "root" [label="root (reference)"];
+  "alpha" [label="alpha (reference)"];
+  "beta" [label="beta (reference)"];
+  "root" -> "alpha" [label="related-to"];
+  "root" -> "beta" [label="builds-on"];
+}

@@ -750,7 +750,12 @@ export const USAGE =
   'Usage: commonplace migrate                       (detect known external memory sources)\n' +
   '       commonplace migrate --from <source>       (import from a known source; --dry-run / --auto supported)\n' +
   '                                                 (--auto is a forward-compat no-op today; reserved for future interactive prompting)\n' +
-  '       commonplace migrate <dir>                 (rebuild sidecars for an existing memory dir; --dry-run / --prune-dangling supported)';
+  '       commonplace migrate <dir>                 (rebuild sidecars for an existing memory dir; --dry-run / --prune-dangling supported)\n' +
+  // DAR-933: the graph subcommand shares this USAGE so the bare-bin no-arg
+  // error path lists every subcommand the dispatcher knows about. The
+  // graph-specific `--help` body lives in `src/cli/graph.ts` (`GRAPH_HELP`);
+  // this line is the dispatcher-level summary only.
+  "       commonplace graph <name>                  (visualize a memory's local graph neighborhood; --format mermaid|json|dot, --depth, --types, --direction, --scope supported)";
 
 const isKnownImportSource = (v: string): v is KnownImportSource =>
   (KNOWN_IMPORT_SOURCES as readonly string[]).includes(v);

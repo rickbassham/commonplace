@@ -1,0 +1,8 @@
+{
+  "root": "root",
+  "depth": 0,
+  "memories": [
+    { "name": "root", "relations": [{ "to": "alpha", "type": "related-to" }] },
+    { "name": "alpha" }
+  ]
+}
