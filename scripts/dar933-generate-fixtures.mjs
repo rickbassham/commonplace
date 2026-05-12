@@ -5,6 +5,10 @@
  * in the same directory. Run once at fixture-add time; in CI the snapshot
  * tests compare against these committed files.
  *
+ * Imports the live TypeScript sources via `tsx` -- no `make build` is
+ * required before running. (Earlier revisions imported from `dist/`,
+ * which silently broke when the build was stale; see DAR-933 review f-3.)
+ *
  * Usage: pnpm exec tsx scripts/dar933-generate-fixtures.mjs
  */
 
@@ -13,10 +17,10 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MemoryGraph } from '../dist/store/graph.js';
-import { MemoryStore } from '../dist/store/memory-store.js';
-import { createMemoryGraphHandler } from '../dist/server/handlers.js';
-import { renderMermaid, renderDot } from '../dist/cli/graph.js';
+import { MemoryGraph } from '../src/store/graph.ts';
+import { MemoryStore } from '../src/store/memory-store.ts';
+import { createMemoryGraphHandler } from '../src/server/handlers.ts';
+import { renderMermaid, renderDot } from '../src/cli/graph.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = join(__dirname, '..', 'tests', 'fixtures', 'graph');

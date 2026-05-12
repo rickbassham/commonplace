@@ -46,22 +46,21 @@ import {
 import { MemoryGraph } from '../store/graph.js';
 import { MemoryStore, type Embedder } from '../store/memory-store.js';
 import type { EdgeType } from '../store/graph.js';
-import { USAGE } from './migrate.js';
+import { USAGE, USAGE_GRAPH_LINE } from './migrate.js';
 
 // ---------------------------------------------------------------------------
 // Public USAGE additions
 // ---------------------------------------------------------------------------
 
 /**
- * The single `graph` line appended to the dispatcher's USAGE constant.
- * Exported so both the dispatcher (in `migrate.ts`) and the graph parser's
- * usage_error path render the same string verbatim (matches DAR-961
- * review f-1's single-source-of-truth pattern). Tests assert this exact
- * substring is present in the `USAGE` constant rendered to stderr by the
- * bare-bin no-arg error path.
+ * Re-export of {@link USAGE_GRAPH_LINE} so existing graph-CLI consumers
+ * (parser usage_error path, fixture generator, tests) can import it from
+ * the graph module without reaching across into `migrate.ts`. The
+ * canonical declaration lives in `migrate.ts` (where `USAGE` is composed)
+ * to avoid a circular import; this re-export preserves the single source
+ * of truth (DAR-961 review f-1 / DAR-933 review f-1).
  */
-export const USAGE_GRAPH_LINE =
-  "       commonplace graph <name>                  (visualize a memory's local graph neighborhood; --format mermaid|json|dot, --depth, --types, --direction, --scope supported)";
+export { USAGE_GRAPH_LINE };
 
 // ---------------------------------------------------------------------------
 // Output formats
@@ -351,7 +350,13 @@ export const parseGraphArgs = (argv: readonly string[]): ParsedGraphArgs => {
   }
 
   // Map --scope both to undefined; explicit user/project pass through.
-  const scope: Scope | undefined = scopeFlag === 'both' ? undefined : (scopeFlag as Scope);
+  // Explicit narrowing (rather than a `scopeFlag as Scope` assertion)
+  // lets TypeScript flow-analyze `scopeFlag` to `'user' | 'project'` --
+  // which is exactly `Scope` -- so no type coercion is required.
+  let scope: Scope | undefined;
+  if (scopeFlag === 'user' || scopeFlag === 'project') {
+    scope = scopeFlag;
+  }
 
   return {
     kind: 'ok',

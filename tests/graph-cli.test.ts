@@ -267,11 +267,15 @@ describe('ac-3: mermaid validity', () => {
       return;
     }
     for (const c of cases) {
-      const fixturePath = join(fixtureDir, `${c}.mermaid`);
-      const expected = readFileSync(fixturePath, 'utf8');
+      // Pipe the CLI's *live* mermaid output (via the same renderer
+      // graphMain dispatches to) to mmdc, not the committed snapshot.
+      // This gives direct (rather than transitive-through-snapshot)
+      // coverage that renderMermaid's output is mmdc-valid. (DAR-933
+      // review f-4.)
+      const rendered = await loadFixtureAndRender(c, 'mermaid');
       const out = join(tmp, `${c}.svg`);
       const res = spawnSync('mmdc', ['-i', '-', '-o', out], {
-        input: expected,
+        input: rendered,
         encoding: 'utf8',
       });
       expect(res.status, `mmdc on ${c}: ${res.stderr}`).toBe(0);
