@@ -33,6 +33,8 @@
  *   - A config-file fallback. v0.1 is env-vars-only; see DAR-913.
  */
 
+import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from '../server/defaults.js';
+
 /**
  * Env var name for the embedding model id. Defaults to
  * {@link DEFAULT_MODEL_ID} when unset or empty.
@@ -74,25 +76,13 @@ export const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
 export const DEFAULT_LIMIT = 5;
 
 /**
- * Default one-hop expansion decay applied to expanded neighbors' scores
- * when `COMMONPLACE_EXPANSION_DECAY` is unset or empty (DAR-930). An
- * expanded neighbor's score is `direct_hit_score * decay`.
+ * Re-export the default values for the expansion decay (DAR-930) and the
+ * connectedness boost (DAR-931). The canonical definitions live in
+ * `../server/defaults.ts` so the handler factory and the env resolvers
+ * share a single source of truth; bumping a default in either spot would
+ * otherwise silently drift from the other.
  */
-export const DEFAULT_EXPANSION_DECAY = 0.7;
-
-/**
- * Default connectedness boost alpha applied to each direct cosine hit's
- * score in `memory_search` when `COMMONPLACE_CONNECTEDNESS_BOOST` is unset
- * or empty (DAR-931). Final score is
- * `cosine_score + alpha * log(1 + inbound_count)`.
- *
- * The default `0.02` is intentionally small: the maximum boost it produces
- * on a typical corpus is `0.02 * log(1 + N)` which stays well below the
- * cosine score range so cosine still dominates ranking between memories
- * with very different similarity. Tie-breaking between similar-cosine
- * memories is where the boost actually moves results.
- */
-export const DEFAULT_CONNECTEDNESS_BOOST = 0.02;
+export { DEFAULT_EXPANSION_DECAY, DEFAULT_CONNECTEDNESS_BOOST };
 
 /**
  * Resolve the embedding model id from the environment.

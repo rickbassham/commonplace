@@ -32,6 +32,7 @@ import {
 import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchHit, SearchOptions } from '../store/memory-store.js';
 import type { EdgeType, MemoryGraph } from '../store/graph.js';
+import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from './defaults.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /**
@@ -655,14 +656,6 @@ const DEFAULT_EXPAND_LIMIT = 2;
 const BOOST_EXCLUDED_EDGE_TYPES = new Set<EdgeType>(['mentions', 'supersedes']);
 
 /**
- * Default connectedness boost alpha (DAR-931) when the bin does not
- * supply one. Mirrors `DEFAULT_CONNECTEDNESS_BOOST` from `../bin/env.ts`;
- * we duplicate the value here rather than reach across the bin layer so
- * the handler factory stays free of bin-only imports.
- */
-const DEFAULT_BOOST = 0.02;
-
-/**
  * Compute `inbound_count` for the connectedness boost: number of inbound
  * edges to `name` whose type is NOT in {@link BOOST_EXCLUDED_EDGE_TYPES}.
  * Returns `0` when the graph is undefined (the DAR-930 "optional graph"
@@ -752,12 +745,14 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
   // graph (e.g. the DAR-920/DAR-924 tests that predate DAR-928).
   const userGraph = opts.userGraph;
   const projectGraph = opts.projectGraph;
-  const expansionDecay = opts.expansionDecay ?? 0.7;
-  // DAR-931: alpha for the additive connectedness boost. Default mirrors
-  // `DEFAULT_CONNECTEDNESS_BOOST` in `../bin/env.ts`; the bin resolves
-  // `COMMONPLACE_CONNECTEDNESS_BOOST` and passes the result here. When
-  // alpha is 0 the boost short-circuits (see {@link applyBoost}).
-  const connectednessBoost = opts.connectednessBoost ?? DEFAULT_BOOST;
+  const expansionDecay = opts.expansionDecay ?? DEFAULT_EXPANSION_DECAY;
+  // DAR-931: alpha for the additive connectedness boost. Default lives
+  // in `./defaults.ts` so the bin and the handler factory read from a
+  // single source of truth; the bin resolves
+  // `COMMONPLACE_CONNECTEDNESS_BOOST` (re-exporting the same default)
+  // and passes the result here. When alpha is 0 the boost short-circuits
+  // (see {@link applyBoost}).
+  const connectednessBoost = opts.connectednessBoost ?? DEFAULT_CONNECTEDNESS_BOOST;
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
     const query = requireString(args, 'query', 'memory_search');
