@@ -32,6 +32,7 @@ import {
 import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchHit, SearchOptions } from '../store/memory-store.js';
 import type { EdgeType, MemoryGraph } from '../store/graph.js';
+import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from './defaults.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /**
@@ -104,6 +105,21 @@ export interface HandlerOptions {
    * Defaults to `0.7` when omitted.
    */
   expansionDecay?: number;
+  /**
+   * Alpha coefficient for the connectedness boost (DAR-931). Each direct
+   * cosine hit's score is augmented by `alpha * log(1 + inbound_count)`
+   * before the descending-score sort. `inbound_count` reads the per-scope
+   * {@link MemoryGraph}'s inbound edges, filtered to exclude `mentions`
+   * and `supersedes` edge types. Defaults to `0.02` when omitted; setting
+   * to `0` disables the boost (and yields identical results to v0.1
+   * ranking).
+   *
+   * The boost composes with DAR-930 one-hop expansion: expanded
+   * neighbors' decayed scores are computed from the BOOSTED direct-hit
+   * score (not from raw cosine), so connectedness propagates through
+   * expansion deterministically.
+   */
+  connectednessBoost?: number;
 }
 
 /**
@@ -630,6 +646,44 @@ const validateExpandLimit = (raw: unknown, toolName: string): number | undefined
 const DEFAULT_EXPAND_LIMIT = 2;
 
 /**
+ * Edge types that the connectedness boost (DAR-931) IGNORES when counting
+ * a memory's inbound edges. `mentions` is body-tokenizer-derived and
+ * noisy (a passing reference is not necessarily a vote of importance);
+ * `supersedes` is structural (the successor doesn't endorse the
+ * predecessor, it replaces it). The four authored RelationType values
+ * (`builds-on`, `related-to`, `contradicts`, `child-of`) are counted.
+ */
+const BOOST_EXCLUDED_EDGE_TYPES = new Set<EdgeType>(['mentions', 'supersedes']);
+
+/**
+ * Compute `inbound_count` for the connectedness boost: number of inbound
+ * edges to `name` whose type is NOT in {@link BOOST_EXCLUDED_EDGE_TYPES}.
+ * Returns `0` when the graph is undefined (the DAR-930 "optional graph"
+ * contract: the handler keeps working in test setups without a graph).
+ */
+const countBoostInbound = (graph: MemoryGraph | undefined, name: string): number => {
+  if (graph === undefined) return 0;
+  const inbound = graph.inbound(name);
+  let n = 0;
+  for (const edge of inbound) {
+    if (!BOOST_EXCLUDED_EDGE_TYPES.has(edge.type)) n++;
+  }
+  return n;
+};
+
+/**
+ * Apply the connectedness boost to a raw cosine score. Returns
+ * `score + alpha * log(1 + inboundCount)`. When `alpha === 0` this is a
+ * no-op and returns the input score unchanged. Exported as a pure
+ * function rather than inlined so the unit tests can pin the formula at
+ * its single call site.
+ */
+const applyBoost = (score: number, alpha: number, inboundCount: number): number => {
+  if (alpha === 0) return score;
+  return score + alpha * Math.log(1 + inboundCount);
+};
+
+/**
  * Construct the `memory_search` handler bound to a specific store. Validates
  * the `{ query, limit?, type?, threshold?, includeSuperseded? }` argument
  * shape, dispatches to `store.search()`, applies the DAR-929 supersede
@@ -691,7 +745,14 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
   // graph (e.g. the DAR-920/DAR-924 tests that predate DAR-928).
   const userGraph = opts.userGraph;
   const projectGraph = opts.projectGraph;
-  const expansionDecay = opts.expansionDecay ?? 0.7;
+  const expansionDecay = opts.expansionDecay ?? DEFAULT_EXPANSION_DECAY;
+  // DAR-931: alpha for the additive connectedness boost. Default lives
+  // in `./defaults.ts` so the bin and the handler factory read from a
+  // single source of truth; the bin resolves
+  // `COMMONPLACE_CONNECTEDNESS_BOOST` (re-exporting the same default)
+  // and passes the result here. When alpha is 0 the boost short-circuits
+  // (see {@link applyBoost}).
+  const connectednessBoost = opts.connectednessBoost ?? DEFAULT_CONNECTEDNESS_BOOST;
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
     const query = requireString(args, 'query', 'memory_search');
@@ -812,11 +873,34 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       }
     }
 
-    // Merge direct hits: sort by descending score; ties preserve insertion
-    // order (which mirrors the per-store iteration order above -- user
-    // before project when both are queried). `Array.prototype.sort` is
-    // stable in V8 / per spec from ES2019, so this is well-defined.
-    allHits.sort((a, b) => b.hit.score - a.hit.score);
+    // DAR-931: apply the additive connectedness boost to each direct
+    // hit's score BEFORE the descending-score sort. The boost is
+    // `alpha * log(1 + inbound_count)` where `inbound_count` reads the
+    // per-scope MemoryGraph's inbound edges, filtered to exclude
+    // `mentions` and `supersedes` edge types (these are noisy /
+    // structural and shouldn't influence ranking). When alpha is 0 (the
+    // disable case) or the per-scope graph is undefined, the boost is
+    // 0 and the score is unchanged -- preserves the "optional graph"
+    // contract and the "alpha=0 -> pre-boost ranking" contract.
+    //
+    // Sort is on the BOOSTED score: ties on raw cosine but unequal
+    // inbound counts should be broken by the boost, and a low-cosine
+    // hub should NOT be promoted above a high-cosine leaf at any
+    // reasonable alpha (see ac-4 ranking-stability sweep). Sort is
+    // stable so identical boosted scores preserve per-store insertion
+    // order (user before project).
+    interface BoostedHit {
+      hit: SearchHit;
+      scope: Scope;
+      score: number;
+    }
+    const boostedHits: BoostedHit[] = allHits.map(({ hit, scope: sc }) => {
+      const graph = graphByScope.get(sc);
+      const inboundCount = countBoostInbound(graph, hit.memory.name);
+      const boosted = applyBoost(hit.score, connectednessBoost, inboundCount);
+      return { hit, scope: sc, score: boosted };
+    });
+    boostedHits.sort((a, b) => b.score - a.score);
 
     // DAR-930: build the unified candidate list. Direct hits are added
     // first, then expansion (when opted in) appends decayed neighbors
@@ -825,6 +909,11 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // already a direct hit doesn't get a second slot as a neighbor of
     // some other direct hit; we also dedupe across neighbors so two
     // direct hits pointing at the same neighbor don't double-count it.
+    //
+    // The `score` on each direct candidate is the BOOSTED score (DAR-931),
+    // so expansion's `direct.score * expansionDecay` propagates the boost
+    // through to expanded neighbors -- expanded entries decay the boosted
+    // direct-hit score, not raw cosine.
     interface Candidate {
       kind: 'direct' | 'expanded';
       name: string;
@@ -838,11 +927,11 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       via?: { source: string; edge: EdgeType };
     }
 
-    const candidates: Candidate[] = allHits.map(({ hit, scope: sc }) => ({
+    const candidates: Candidate[] = boostedHits.map(({ hit, scope: sc, score }) => ({
       kind: 'direct',
       name: hit.memory.name,
       scope: sc,
-      score: hit.score,
+      score,
       hit,
     }));
 

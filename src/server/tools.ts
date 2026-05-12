@@ -164,6 +164,15 @@ export interface CreateDefaultHandlersOptions {
    * resolver (`resolveExpansionDecay`), not here.
    */
   expansionDecay?: number;
+  /**
+   * Optional alpha coefficient for the connectedness boost (DAR-931).
+   * Resolved by the bin from `COMMONPLACE_CONNECTEDNESS_BOOST`; defaults
+   * to `0.02` when omitted. Setting to `0` disables the boost (and yields
+   * identical results to v0.1 ranking). Negative / non-finite values are
+   * rejected by the env-var resolver (`resolveConnectednessBoost`), not
+   * here.
+   */
+  connectednessBoost?: number;
 }
 
 /**
@@ -201,6 +210,7 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     userGraph: options.graph,
     projectGraph: options.projectGraph,
     expansionDecay: options.expansionDecay,
+    connectednessBoost: options.connectednessBoost,
   };
   return {
     memory_search: createMemorySearchHandler(searchOpts),

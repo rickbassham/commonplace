@@ -39,7 +39,12 @@ import { createServer, installCallToolHandler } from '../server/server.js';
 import { createDefaultHandlers } from '../server/tools.js';
 import { MemoryGraph } from '../store/graph.js';
 import { MemoryStore, type Embedder as EmbedderShape } from '../store/memory-store.js';
-import { resolveDefaultLimit, resolveExpansionDecay, resolveModelId } from './env.js';
+import {
+  resolveConnectednessBoost,
+  resolveDefaultLimit,
+  resolveExpansionDecay,
+  resolveModelId,
+} from './env.js';
 import { detectScope, type RootEntry, type ScopeDetectionResult } from './scope.js';
 
 /** Inputs to {@link bootServer}. */
@@ -135,6 +140,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   // message without the bin first creating directories on disk.
   const defaultLimit = resolveDefaultLimit(options.env);
   const expansionDecay = resolveExpansionDecay(options.env);
+  const connectednessBoost = resolveConnectednessBoost(options.env);
   const embedder = options.embedder ?? new Embedder(resolveModelId(options.env));
 
   // Step 1+2: resolve user dir, mkdir -p so first-run users get a clean
@@ -176,6 +182,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
     graph: userGraph,
     defaultLimit,
     expansionDecay,
+    connectednessBoost,
   });
   const server = createServer({ handlers });
 
@@ -217,6 +224,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
       projectGraph,
       defaultLimit,
       expansionDecay,
+      connectednessBoost,
     });
     installCallToolHandler(server, handlersWithProject);
   }

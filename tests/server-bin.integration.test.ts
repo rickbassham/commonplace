@@ -422,3 +422,115 @@ describe('DAR-930 bin integration: spawned bin exercises one-hop expansion throu
     }
   }, 180_000);
 });
+
+describe('DAR-931 bin integration: spawned bin honours COMMONPLACE_CONNECTEDNESS_BOOST', () => {
+  const binPath = readBinPath();
+  let memoryDir: string;
+  let client: Client;
+  let transport: StdioClientTransport;
+
+  beforeAll(() => {
+    const res = spawnSync('make', ['build'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 180_000,
+      env: { ...process.env, CI: '1' },
+    });
+    if (res.status !== 0) {
+      throw new Error(`make build failed: ${res.stderr || res.stdout}`);
+    }
+    if (!existsSync(binPath)) {
+      throw new Error(`bin not found after build: ${binPath}`);
+    }
+  }, 200_000);
+
+  beforeEach(async () => {
+    memoryDir = mkdtempSync(join(tmpdir(), 'dar931-bin-int-'));
+    transport = new StdioClientTransport({
+      command: 'node',
+      args: [binPath],
+      env: {
+        ...process.env,
+        COMMONPLACE_USER_DIR: memoryDir,
+        // Use a large alpha so the boost is obvious in scores returned
+        // by the spawned bin -- the test asserts the score gap, not just
+        // ordering, so we want it well above rounding noise.
+        COMMONPLACE_CONNECTEDNESS_BOOST: '0.5',
+      } as Record<string, string>,
+      stderr: 'inherit',
+    });
+    client = new Client({ name: 'dar931-bin-int', version: '0.0.0' });
+    await client.connect(transport);
+  });
+
+  afterEach(async () => {
+    try {
+      await client.close();
+    } catch {
+      // best-effort cleanup
+    }
+    rmSync(memoryDir, { recursive: true, force: true });
+  });
+
+  it('spawned commonplace-mcp bin with env.COMMONPLACE_CONNECTEDNESS_BOOST=0.5 returns a boosted score for a memory with inbound edges', async () => {
+    // Save a foundational memory (the target of inbound edges) and three
+    // memories that link to it via builds-on edges. After the links,
+    // searching for the foundational body should return the boosted
+    // score: cosine + 0.5 * log(1 + 3).
+    await client.callTool({
+      name: 'memory_save',
+      arguments: {
+        name: 'dar931_foundational',
+        type: 'reference',
+        description: 'foundational concept about adaptive filtering',
+        body: 'Adaptive filtering selects an output based on signal-to-noise ratio over a sliding window.',
+      },
+    });
+    for (let i = 0; i < 3; i++) {
+      await client.callTool({
+        name: 'memory_save',
+        arguments: {
+          name: `dar931_referrer_${i}`,
+          type: 'reference',
+          description: `referrer ${i}`,
+          body: `Referrer ${i} body about a completely unrelated topic such as soil chemistry.`,
+        },
+      });
+      await client.callTool({
+        name: 'memory_link',
+        arguments: {
+          from: `dar931_referrer_${i}`,
+          to: 'dar931_foundational',
+          type: 'builds-on',
+        },
+      });
+    }
+
+    const search = await client.callTool({
+      name: 'memory_search',
+      arguments: {
+        query: 'adaptive filtering signal-to-noise ratio sliding window',
+        limit: 1,
+      },
+    });
+    expect(search.isError).toBeFalsy();
+    const text = firstTextContent(search.content);
+    const parsed: unknown = JSON.parse(text);
+    if (!isObject(parsed) || !Array.isArray(parsed.matches)) {
+      throw new Error(`memory_search payload missing matches[]: ${text}`);
+    }
+    const matches = parsed.matches as Array<{ name: string; score: number }>;
+    expect(matches.length).toBeGreaterThan(0);
+    const top = matches[0];
+    if (!top) throw new Error('no matches');
+    expect(top.name).toBe('dar931_foundational');
+    // The boost for inbound_count=3 with alpha=0.5 is 0.5 * log(4) =
+    // ~0.693. Without the boost the score would be the raw cosine
+    // (roughly in [0.6, 0.95] for a real embedder match). With the
+    // boost applied, the score must exceed that ceiling by a clear
+    // margin. We assert score > 1.0 -- raw cosine cannot exceed 1.0
+    // for a normalised vector, so any score > 1.0 proves the boost
+    // was applied.
+    expect(top.score).toBeGreaterThan(1.0);
+  }, 180_000);
+});
