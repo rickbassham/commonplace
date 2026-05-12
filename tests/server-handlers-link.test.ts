@@ -92,7 +92,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 // --------------------------------------------------------------------------
 
 describe('ac-1: tool registration', () => {
-  it('TOOL_NAMES contains exactly the six expected tool names in order: memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink', async () => {
+  it('TOOL_NAMES contains exactly the eight expected tool names in order: memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path', async () => {
     // Import inline so this test reads the live module export.
     const { TOOL_NAMES } = await import('../src/server/tools.js');
     expect([...TOOL_NAMES]).toEqual([
@@ -102,6 +102,8 @@ describe('ac-1: tool registration', () => {
       'memory_delete',
       'memory_link',
       'memory_unlink',
+      'memory_graph',
+      'memory_path',
     ]);
   });
 

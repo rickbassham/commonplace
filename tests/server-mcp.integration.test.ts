@@ -20,6 +20,8 @@ const EXPECTED_NAMES = [
   'memory_delete',
   'memory_link',
   'memory_unlink',
+  'memory_graph',
+  'memory_path',
 ] as const;
 
 interface TextContent {
@@ -71,7 +73,7 @@ describe('DAR-909 MCP server integration', () => {
     expect(caps?.tools).toBeDefined();
   });
 
-  it('ac-6: ListTools over the transport returns the six expected tool definitions with non-empty descriptions and object inputSchemas', async () => {
+  it('ac-6: ListTools over the transport returns the eight expected tool definitions with non-empty descriptions and object inputSchemas', async () => {
     const result = await client.listTools();
     const names = result.tools.map((t) => t.name).sort();
     expect(names).toEqual([...EXPECTED_NAMES].sort());

@@ -139,15 +139,17 @@ const callJSON = async (
 // --------------------------------------------------------------------------
 
 describe('ac-1: createServer wires real DAR-920 memory_search handler', () => {
-  it('ListTools over the in-memory MCP transport still returns the six expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink) with non-empty descriptions and an object inputSchema after DAR-920 wiring', async () => {
+  it('ListTools over the in-memory MCP transport still returns the eight expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path) with non-empty descriptions and an object inputSchema after DAR-920 wiring', async () => {
     const h = await setupHarness();
     try {
       const result = await h.client.listTools();
       const names = result.tools.map((t) => t.name).sort();
       expect(names).toEqual([
         'memory_delete',
+        'memory_graph',
         'memory_link',
         'memory_list',
+        'memory_path',
         'memory_save',
         'memory_search',
         'memory_unlink',
