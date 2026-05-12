@@ -36,6 +36,7 @@
 
 import { Embedder } from './embedder/index.js';
 import { migrateMain, parseMigrateArgs, USAGE } from './cli/migrate.js';
+import { graphMain } from './cli/graph.js';
 import { resolveModelId } from './bin/env.js';
 
 async function main(): Promise<number> {
@@ -43,9 +44,25 @@ async function main(): Promise<number> {
   if (argv.length === 0) {
     // Use the same canonical USAGE constant the parser renders on
     // usage_error, so the bare-bin first impression matches the
-    // parser-error message verbatim (DAR-961 review f-1).
+    // parser-error message verbatim (DAR-961 review f-1, extended by
+    // DAR-933 to include the graph subcommand).
     process.stderr.write(`commonplace: missing subcommand.\n${USAGE}\n`);
     return 2;
+  }
+
+  // DAR-933: dispatch the `graph` subcommand to its own main entry. The
+  // dispatch happens BEFORE `parseMigrateArgs` so `graph` is not reported
+  // as an "unknown subcommand" by the migrate parser.
+  if (argv[0] === 'graph') {
+    const result = await graphMain({
+      argv,
+      embedderFactory: () => new Embedder(resolveModelId(process.env)),
+      stdout: (chunk: string) => process.stdout.write(chunk),
+      stderr: (chunk: string) => process.stderr.write(chunk),
+      env: process.env,
+      cwd: process.cwd(),
+    });
+    return result.exitCode;
   }
 
   // Peek at the first token so unknown subcommands are reported with a

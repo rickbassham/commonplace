@@ -1,0 +1,7 @@
+digraph commonplace {
+  rankdir=LR;
+  "a" [label="a (reference)"];
+  "b" [label="b (reference)"];
+  "a" -> "b" [label="related-to"];
+  "b" -> "a" [label="related-to"];
+}

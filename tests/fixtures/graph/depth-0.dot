@@ -1,0 +1,4 @@
+digraph commonplace {
+  rankdir=LR;
+  "root" [label="root (reference)"];
+}
