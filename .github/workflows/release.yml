@@ -52,6 +52,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Need the full history (not the default shallow clone of depth 1)
+          # so the BREAKING CHANGES guard step below can walk
+          # `<previous-tag>..HEAD` via `git describe --tags`.
+          fetch-depth: 0
 
       - name: Setup pnpm
         # Reads the pnpm version from package.json `packageManager` --
@@ -192,10 +197,8 @@ jobs:
         env:
           VERSION: ${{ steps.tag_version.outputs.version }}
         run: |
-          # Need the full history (not the default shallow clone) so the
-          # guard can walk `<previous-tag>..HEAD`. `actions/checkout@v4`
-          # ships with depth 1 by default.
-          git fetch --tags --unshallow 2>/dev/null || git fetch --tags --depth=2147483647
+          # Full history is already fetched by the Checkout step
+          # (fetch-depth: 0) so the guard can walk `<previous-tag>..HEAD`.
           PREV_TAG="$(git describe --tags --abbrev=0 "v${VERSION}^" 2>/dev/null || true)"
           if [ -n "$PREV_TAG" ]; then
             RANGE="${PREV_TAG}..HEAD"

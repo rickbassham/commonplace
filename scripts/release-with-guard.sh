@@ -34,9 +34,13 @@ fi
 
 # Capture the dry-run preview. Stdout contains the next-version line and
 # the CHANGELOG diff; we parse both.
+#
+# Assign both temp paths before registering the EXIT trap. Under `set -u`,
+# a trap that references an unassigned variable would fail on cleanup if
+# the script were interrupted between the trap and the assignment.
 PREVIEW_TMP="$(mktemp)"
-trap 'rm -f "$PREVIEW_TMP" "$CHANGELOG_TMP" 2>/dev/null || true' EXIT
 CHANGELOG_TMP="$(mktemp)"
+trap 'rm -f "$PREVIEW_TMP" "$CHANGELOG_TMP" 2>/dev/null || true' EXIT
 
 if ! pnpm exec commit-and-tag-version --dry-run > "$PREVIEW_TMP" 2>&1; then
   cat "$PREVIEW_TMP" >&2
