@@ -158,6 +158,43 @@ fix is merged. If the workflow fails _after_ `pnpm publish` succeeded,
 the version is already on npm -- bump to the next patch and release
 that.
 
+### BREAKING CHANGES guard
+
+`conventional-commits-parser` (used by `commit-and-tag-version`) matches the
+literal phrase `BREAKING CHANGE` followed by whitespace as a breaking-change
+note -- it does NOT require the colon the spec calls for. A commit body
+containing that phrase as prose is silently classified as a breaking change,
+producing a spurious `### ⚠ BREAKING CHANGES` section in the generated
+CHANGELOG.
+
+The **breaking-changes guard** at `scripts/guard-breaking-changes.sh` catches
+this. It runs automatically:
+
+- as the first step of `make release-dry` and `make release` (via
+  `scripts/release-with-guard.sh`, before any file writes), so a misfire
+  blocks the local release before commit + tag, and
+- in `.github/workflows/release.yml` before `pnpm publish`, so a tag pushed
+  from a checkout that skipped local guards still gets blocked at CI.
+
+When a misfire is detected the guard exits non-zero and stderr names:
+
+- the **offending commit** hash + subject (the commit whose body matched
+  the parser keyword),
+- the **body line** that triggered the parser match, and
+- the guidance string pointing at the bypass env var.
+
+To bypass intentionally (rare -- only for a real `BREAKING CHANGE:` footer
+when the subject was not marked with the `!` breaking marker), set the
+env var:
+
+```sh
+ALLOW_PARSED_BREAKING_CHANGES=1 make release
+```
+
+The standard remedy for a misfire is to amend the offending commit's body
+so the phrase is no longer matched (paraphrase it, or interpolate the
+words), then re-run `make release`.
+
 ### `commit-and-tag-version` config
 
 The release tool's behaviour is defined entirely by `.versionrc.json`
