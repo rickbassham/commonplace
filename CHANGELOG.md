@@ -5,6 +5,16 @@ All notable changes to `commonplace-mcp` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.1](https://github.com/rickbassham/commonplace/compare/v0.2.0...v0.2.1) (2026-05-13)
+
+First published 0.2.x. v0.2.0 was tagged but never reached npm: the release workflow's test gate caught two pre-existing bugs in `tests/version-sync.test.ts` that only surfaced when the version actually moved off `0.1.0`.
+
+### Fixed
+
+* **release pipeline:** `tests/version-sync.test.ts` now derives the expected version from `package.json` instead of pinning to a literal, and the CHANGELOG-heading regex accepts both the legacy hand-authored Keep-a-Changelog format and the auto-generated `commit-and-tag-version` format. No user-visible behaviour change vs the v0.2.0 tag — same MCP surface, same tools, same on-disk format.
+
+The v0.2.0 entry below documents the full v0.2 feature set (graph-aware retrieval) that this release ships.
+
 ## [0.2.0](https://github.com/rickbassham/commonplace/compare/v0.1.0...v0.2.0) (2026-05-13)
 
 ### Added
