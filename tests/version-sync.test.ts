@@ -1,23 +1,24 @@
 /**
- * DAR-921 contract tests: version sync invariants for the v0.1.0 release.
- *
- * The v0.1.0 release ships with three pieces of metadata that MUST agree on
- * the version string:
+ * Version-sync invariants. Three pieces of metadata must agree on the
+ * version string:
  *
  *   1. `package.json` `version` field
  *   2. `SERVER_VERSION` constant exported from `src/server/server.ts`
  *      (reported back to every MCP client via the `initialize` handshake)
- *   3. The most recent `## [X.Y.Z] - YYYY-MM-DD` heading in `CHANGELOG.md`
+ *   3. The most recent `## [X.Y.Z]` heading in `CHANGELOG.md` (matching
+ *      either the hand-authored Keep-a-Changelog format used pre-DAR-963
+ *      or the auto-generated commit-and-tag-version format used since)
  *
- * The DAR-960 release workflow enforces (1) <-> (2) at publish time via a
- * dedicated drift-guard step, and enforces (1) <-> git tag via another. These
- * unit tests enforce the same invariants on the prep PR itself so a missed
- * bump fails CI before the tag is ever pushed.
+ * The release workflow enforces (1) <-> (2) at publish time and
+ * (1) <-> git tag at publish time. These unit tests run on every CI
+ * build so a missed bump fails fast.
  *
- * For v0.1.0 these are the contract values; future releases bump them
- * together. If a later release intentionally moves the version, update all
- * four places in lockstep (package.json, SERVER_VERSION, CHANGELOG section,
- * and the EXPECTED_VERSION constant below).
+ * Reference value: `package.json`'s `version` field is the source of
+ * truth. `commit-and-tag-version` bumps it atomically alongside
+ * `SERVER_VERSION` and the CHANGELOG (commitAll: true), so the
+ * invariants below all reduce to "did the bump touch every place it
+ * was supposed to?" A missed bump in any single place fails CI before
+ * the tag is pushed.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -27,7 +28,6 @@ import { join } from 'node:path';
 import { SERVER_VERSION } from '../src/server/server.js';
 
 const repoRoot = join(__dirname, '..');
-const EXPECTED_VERSION = '0.1.0';
 
 const readPackageVersion = (): string => {
   const text = readFileSync(join(repoRoot, 'package.json'), 'utf8');
@@ -43,35 +43,33 @@ const readPackageVersion = (): string => {
   return (parsed as { version: string }).version;
 };
 
-describe('DAR-921 ac-1 / ac-7: package.json version', () => {
-  it(`package.json \`version\` field equals \`${EXPECTED_VERSION}\` exactly`, () => {
-    expect(readPackageVersion()).toBe(EXPECTED_VERSION);
-  });
-});
-
-describe('DAR-921 ac-1 / ac-7: SERVER_VERSION constant', () => {
-  it(`\`SERVER_VERSION\` exported from \`src/server/server.ts\` equals \`${EXPECTED_VERSION}\` and matches \`package.json\` version`, () => {
-    expect(SERVER_VERSION).toBe(EXPECTED_VERSION);
+describe('version sync: SERVER_VERSION matches package.json', () => {
+  it('`SERVER_VERSION` exported from `src/server/server.ts` equals the `version` field in `package.json`', () => {
     expect(SERVER_VERSION).toBe(readPackageVersion());
   });
 });
 
-describe('DAR-921 ac-7: CHANGELOG heading', () => {
-  it(`\`CHANGELOG.md\` contains a \`## [${EXPECTED_VERSION}] - YYYY-MM-DD\` heading with a valid ISO date`, () => {
+describe('version sync: CHANGELOG heading exists for the current version', () => {
+  it('`CHANGELOG.md` contains a `## [<version>]` heading with an ISO date, in either the hand-authored or commit-and-tag-version format', () => {
+    const version = readPackageVersion();
     const body = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8');
-    // Match `## [X.Y.Z] - YYYY-MM-DD` exactly. The date must be ISO-shaped
-    // (4-2-2 digits); the regex deliberately does NOT validate calendar
-    // legality (e.g. it would accept 2026-13-40) — Keep a Changelog only
-    // requires the YYYY-MM-DD shape, and stricter calendar validation
+    const escaped = version.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
+    // Two supported heading shapes:
+    //   `## [X.Y.Z] - YYYY-MM-DD`              (Keep a Changelog, hand-written)
+    //   `## [X.Y.Z](compare-url) (YYYY-MM-DD)` (commit-and-tag-version)
+    // The regex accepts either: an optional `(...)` block after the
+    // bracketed version, then either ` - <date>` or ` (<date>)`. The date
+    // must be ISO-shaped (4-2-2 digits); stricter calendar validation
     // belongs in a date parser, not a heading regex.
-    const escaped = EXPECTED_VERSION.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(`^##\\s+\\[${escaped}\\]\\s+-\\s+(\\d{4}-\\d{2}-\\d{2})\\s*$`, 'm');
+    const pattern = new RegExp(
+      `^##\\s+\\[${escaped}\\](?:\\([^)]*\\))?\\s+(?:-\\s+(\\d{4}-\\d{2}-\\d{2})|\\((\\d{4}-\\d{2}-\\d{2})\\))\\s*$`,
+      'm',
+    );
     const match = body.match(pattern);
-    expect(match, `expected a \`## [${EXPECTED_VERSION}] - YYYY-MM-DD\` heading`).not.toBeNull();
+    expect(match, `expected a \`## [${version}]\` heading with an ISO date`).not.toBeNull();
     if (!match) return;
-    const date = match[1];
+    const date = match[1] ?? match[2];
     expect(date, 'date must be ISO-shaped').toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    // Sanity: the parsed Date must not be Invalid Date.
     expect(Number.isNaN(new Date(date as string).getTime())).toBe(false);
   });
 });
