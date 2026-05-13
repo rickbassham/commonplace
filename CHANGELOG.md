@@ -5,6 +5,21 @@ All notable changes to `commonplace-mcp` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0](https://github.com/rickbassham/commonplace/compare/v0.1.0...v0.2.0) (2026-05-13)
+
+### Added
+
+* **cli:** add commonplace graph subcommand for memory visualization (DAR-933) ([#40](https://github.com/rickbassham/commonplace/issues/40)) ([6b9b08a](https://github.com/rickbassham/commonplace/commit/6b9b08a5001eb2bc6429d98271e501d40d1348ef))
+* connectedness boost in memory_search ranking (DAR-931) ([#38](https://github.com/rickbassham/commonplace/issues/38)) ([60dfff3](https://github.com/rickbassham/commonplace/commit/60dfff3c5138d4dfe3b931ea326530b42bb035b1))
+* one-hop graph expansion in memory_search (DAR-930) ([#35](https://github.com/rickbassham/commonplace/issues/35)) ([d2f8073](https://github.com/rickbassham/commonplace/commit/d2f8073417626f9ec8ef2a062bdb4ce1fbcc9a5b))
+* **release:** adopt commit-and-tag-version for bump + CHANGELOG + tag (DAR-963) ([#31](https://github.com/rickbassham/commonplace/issues/31)) ([17a4a9b](https://github.com/rickbassham/commonplace/commit/17a4a9bfc0c3fdfde9664b54946687e6653aa425)), closes [#22](https://github.com/rickbassham/commonplace/issues/22)
+* **server:** add memory_graph and memory_path MCP tools (DAR-932) ([#39](https://github.com/rickbassham/commonplace/issues/39)) ([ced9ffd](https://github.com/rickbassham/commonplace/commit/ced9ffd56de1c944fc7b89822a6ad02cc38404ee))
+
+
+### Fixed
+
+* **migrate:** normalise harness frontmatter on import; resilient scan (DAR-966) ([#37](https://github.com/rickbassham/commonplace/issues/37)) ([e617d6b](https://github.com/rickbassham/commonplace/commit/e617d6b7d8332527544a0dd6f077943719b9343b))
+
 ## [0.1.0] - 2026-05-10
 
 First public release. A local-first commonplace book that ships as an MCP
