@@ -34,7 +34,7 @@ audit: ## Run security audit at high level
 	pnpm audit --audit-level=high
 
 release: ## Cut a new release (bump version, write CHANGELOG, create tag)
-	pnpm exec commit-and-tag-version
+	scripts/release-with-guard.sh
 	@echo ""
 	@echo "Tag created locally. Inspect the bump, then push to publish:"
 	@echo "  git push --follow-tags"
@@ -44,4 +44,4 @@ release: ## Cut a new release (bump version, write CHANGELOG, create tag)
 	@echo "Then re-run with an explicit --release-as / --prerelease flag."
 
 release-dry: ## Preview the next release without writing anything
-	pnpm exec commit-and-tag-version --dry-run
+	scripts/release-with-guard.sh --dry-run
