@@ -34,6 +34,16 @@ on:
   push:
     tags:
       - 'v*'
+  # Also dispatchable from release-please.yml so a tag pushed by
+  # `release-please-action` via `GITHUB_TOKEN` can still kick off the
+  # publish. GitHub deliberately suppresses recursive workflow triggers
+  # from `GITHUB_TOKEN`-driven `push` events to prevent infinite loops,
+  # so the tag push from the release PR merge does not, on its own,
+  # fire this workflow. `workflow_dispatch` is one of the documented
+  # exceptions: it triggers a run even when invoked by `GITHUB_TOKEN`,
+  # so release-please.yml gets a no-PAT publish chain by dispatching
+  # this workflow on the new tag.
+  workflow_dispatch:
 
 jobs:
   release:

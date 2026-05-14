@@ -4,9 +4,14 @@
 # to either open/refresh a `chore(main): release X.Y.Z` PR (when there
 # are unreleased conventional-commit-style changes) or post a no-op
 # comment explaining why no PR was created. The release is cut by
-# merging that PR: release-please then pushes the `vX.Y.Z` tag, which
-# triggers the existing `.github/workflows/release.yml` workflow to
-# publish to npm and create the GitHub Release.
+# merging that PR: release-please then pushes the `vX.Y.Z` tag, after
+# which the trailing dispatch step in this workflow fires
+# `.github/workflows/release.yml` via `workflow_dispatch` to publish to
+# npm and create the GitHub Release. The explicit dispatch is required
+# because GitHub suppresses recursive workflow triggers from
+# `GITHUB_TOKEN`-driven `push` events; `workflow_dispatch` is one of
+# the documented exceptions that does trigger from `GITHUB_TOKEN`, so
+# this avoids needing a PAT.
 #
 # Security: this workflow takes no user-controllable input (no PR/issue
 # bodies, no commit messages substituted into `run:` blocks). The only
@@ -25,9 +30,12 @@ on:
 permissions:
   # release-please needs `contents: write` to push the release commit +
   # tag at PR-merge time, and `pull-requests: write` to open and update
-  # the rolling release PR. No other scopes are needed.
+  # the rolling release PR. `actions: write` lets the same GITHUB_TOKEN
+  # call the workflow-dispatch API to fire release.yml on the new tag
+  # (the no-PAT publish chain -- see the dispatch step below).
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
@@ -35,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run release-please
+        id: release
         uses: googleapis/release-please-action@v4
         with:
           # Both files at repo root. The action default is the same, but
@@ -42,3 +51,23 @@ jobs:
           # who hasn't memorised release-please defaults.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      - name: Dispatch release workflow on new tag
+        # release-please-action pushes the `vX.Y.Z` tag with GITHUB_TOKEN
+        # when the release PR is merged. GitHub suppresses recursive
+        # workflow triggers from GITHUB_TOKEN-driven push events to
+        # prevent infinite loops, so release.yml (which listens for tag
+        # pushes) does NOT fire on its own. workflow_dispatch is one of
+        # the documented exceptions that DOES trigger from GITHUB_TOKEN,
+        # so we close the chain by dispatching release.yml on the new
+        # tag here. No PAT required.
+        #
+        # Gated on `release_created`: this step is a no-op when the
+        # action only opened/refreshed the rolling release PR (no tag
+        # was pushed). The boolean is emitted as a string by the action,
+        # hence the `== 'true'` comparison.
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run release.yml --ref "$TAG_NAME"

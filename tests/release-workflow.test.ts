@@ -74,16 +74,20 @@ describe('ac-1: release.yml triggers', () => {
     expect(isObject(parsed)).toBe(true);
   });
 
-  it('release.yml `on:` trigger is restricted to `push` events (no pull_request, no workflow_dispatch)', () => {
+  it('release.yml `on:` trigger allows only push tags and workflow_dispatch (no pull_request, no schedule)', () => {
     const wf = loadRelease();
     const on = getOn(wf);
     expect(on).toBeDefined();
     expect(isObject(on), 'on: must be a mapping').toBe(true);
     if (!isObject(on)) return;
     const keys = Object.keys(on);
+    // `push` is the primary trigger (constrained to v* tags by the
+    // next test); `workflow_dispatch` exists so release-please.yml can
+    // dispatch this workflow on the new tag (the no-PAT publish chain).
     expect(keys).toContain('push');
+    // pull_request would publish from unmerged PRs -- never wanted.
+    // schedule would publish on a timer -- never wanted.
     expect(keys, 'pull_request must not appear').not.toContain('pull_request');
-    expect(keys, 'workflow_dispatch must not appear').not.toContain('workflow_dispatch');
     expect(keys, 'schedule must not appear').not.toContain('schedule');
   });
 
