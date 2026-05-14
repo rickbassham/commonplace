@@ -580,18 +580,23 @@ describe('ac-9: contributor docs - release process', () => {
 
   it('the release docs describe a single bump-and-tag step that produces both the version bump and the annotated tag together', () => {
     const { body } = loadReleaseDoc();
-    // The new commit-and-tag-version flow produces the release commit
-    // AND the annotated tag in one local step; the docs must describe
-    // that single step (rather than splitting bump and tag across two
-    // separate, error-prone manual operations).
-    expect(body).toMatch(/commit-and-tag-version|make\s+release/i);
+    // The release-please flow (DAR-995) collapses bump + tag into one
+    // action: merging the rolling `chore(main): release X.Y.Z` PR
+    // commits the version bump AND pushes the annotated tag in one
+    // operation (no split manual steps).
+    expect(body).toMatch(/release-please/i);
     expect(body).toMatch(/tag/i);
   });
 
-  it('the release docs instruct contributors to push the `v<version>` tag and watch the workflow run', () => {
+  it('the release docs describe how the `v<version>` tag reaches GitHub and that the release workflow fires from the tag push', () => {
     const { body } = loadReleaseDoc();
+    // DAR-995: the maintainer no longer runs `git push --follow-tags`.
+    // Merging the release-please-maintained PR causes release-please to
+    // push the annotated tag, which fires `.github/workflows/release.yml`.
+    // Accept either the legacy manual-push wording or the release-please
+    // "tag is pushed automatically on merge" wording.
     expect(body).toMatch(
-      /git\s+push\s+--follow-tags|git\s+tag\s+v|push\s+(--tags|the\s+`?v|tag\s+v)/i,
+      /git\s+push\s+--follow-tags|git\s+tag\s+v|push\s+(--tags|the\s+`?v|tag\s+v)|release-please.*push|push(es|ed).*tag/i,
     );
     expect(body).toMatch(/workflow|actions/i);
   });

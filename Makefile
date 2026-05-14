@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help install build test typecheck lint format format-check audit release release-dry
+.PHONY: help install build test typecheck lint format format-check audit
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -32,16 +32,3 @@ format-check: ## Check formatting without writing
 
 audit: ## Run security audit at high level
 	pnpm audit --audit-level=high
-
-release: ## Cut a new release (bump version, write CHANGELOG, create tag)
-	scripts/release-with-guard.sh
-	@echo ""
-	@echo "Tag created locally. Inspect the bump, then push to publish:"
-	@echo "  git push --follow-tags"
-	@echo ""
-	@echo "If the bump is wrong, undo with:"
-	@echo "  git reset --hard HEAD~1 && git tag -d v<the-new-version>"
-	@echo "Then re-run with an explicit --release-as / --prerelease flag."
-
-release-dry: ## Preview the next release without writing anything
-	scripts/release-with-guard.sh --dry-run

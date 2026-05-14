@@ -31,11 +31,13 @@ import {
 export const SERVER_NAME = 'commonplace';
 
 /**
- * Server version advertised in the initialize handshake. We keep this in
- * sync with the package version manually for now -- there is no need to
- * resolve `package.json` at runtime.
+ * Server version advertised in the initialize handshake. Kept in sync
+ * with `package.json` `version` by release-please via the trailing
+ * `x-release-please-version` annotation comment; the version-sync
+ * invariant tests (`tests/version-sync.test.ts`) fail loudly if drift
+ * ever sneaks in.
  */
-export const SERVER_VERSION = '0.2.1';
+export const SERVER_VERSION = '0.2.1'; // x-release-please-version
 
 export interface CreateServerOptions {
   /**
