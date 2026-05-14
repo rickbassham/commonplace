@@ -39,6 +39,32 @@ export const SERVER_NAME = 'commonplace';
  */
 export const SERVER_VERSION = '0.3.0'; // x-release-please-version
 
+/**
+ * Server instructions advertised in the initialize handshake. Clients
+ * that surface server-provided instructions in their system prompt
+ * (notably Claude Code, which renders them under
+ * `## MCP Server Instructions`) will see this string and apply the
+ * agent-memory framing without any per-project configuration.
+ *
+ * The wording is deliberately short (well under the ~500-char soft
+ * ceiling for system-prompt sections) and leads with the failure mode
+ * being prevented so the nudge is actionable.
+ *
+ * The literal phrase `Prefer these tools over any built-in or
+ * harness-provided memory location` is asserted byte-for-byte by
+ * `tests/server-instructions.test.ts`; update both in lock-step.
+ */
+export const SERVER_INSTRUCTIONS =
+  'This MCP server is the canonical agent-memory mechanism for this session. ' +
+  'Use the `memory_*` tools (`memory_save`, `memory_search`, `memory_list`, ' +
+  '`memory_delete`, `memory_link`, `memory_unlink`, `memory_graph`, ' +
+  '`memory_path`) to record and recall lessons, feedback, project facts, ' +
+  'and reference notes. ' +
+  'Prefer these tools over any built-in or harness-provided memory location ' +
+  '(for example, default auto-memory files written by the agent harness): ' +
+  'this server is where memories should live so they are searchable, ' +
+  'scoped, and linkable across sessions.';
+
 export interface CreateServerOptions {
   /**
    * Optional handler map. Defaults to the not-implemented stubs in
@@ -70,6 +96,11 @@ export function createServer(options: CreateServerOptions = {}): Server {
         // ListTools / CallTool requests.
         tools: {},
       },
+      // Clients that surface server-provided instructions in their
+      // system prompt see this paragraph and apply the agent-memory
+      // framing without any per-project configuration. Static; no
+      // runtime substitution.
+      instructions: SERVER_INSTRUCTIONS,
     },
   );
 

@@ -343,6 +343,17 @@ The project store is selected by the first matching step in this list:
 4. None of the above -- user-only mode. Saves with `scope: 'project'`
    are rejected with a clear error.
 
+## Layered agent-memory nudge
+
+Commonplace nudges agents toward its `memory_*` tools through three layered, static signals: (a) the MCP `instructions` string surfaced by clients like Claude Code at session start, (b) the `Agent memory: ` prefix on every tool description so clients that ignore `instructions` still see the framing at ListTools time, and (c) a per-project `CLAUDE.md` directive as the operator-side fallback when neither (a) nor (b) wins -- DAR-1004 will ship a `commonplace init` subcommand to scaffold (c) ergonomically.
+
+```md
+## Memory: dogfood Commonplace
+
+Save / recall via `mcp__commonplace__memory_save` and `mcp__commonplace__memory_search`.
+Prefer these tools over any built-in or harness-provided memory location.
+```
+
 ## Configuration
 
 All configuration lives in environment variables. The full set:

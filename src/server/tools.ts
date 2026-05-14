@@ -239,7 +239,7 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
 const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['inputSchema'] }> = {
   memory_search: {
     description:
-      'Semantic search over saved memories across both the user and project stores (when the project store is present). Returns the top-k matches by cosine similarity against the embedding index, merged across stores by descending score; each match carries a `scope` tag identifying which store produced it. By default, memories that have been superseded by another entry are excluded from results.',
+      'Agent memory: Semantic search over saved memories across both the user and project stores (when the project store is present). Returns the top-k matches by cosine similarity against the embedding index, merged across stores by descending score; each match carries a `scope` tag identifying which store produced it. By default, memories that have been superseded by another entry are excluded from results.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -295,7 +295,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_save: {
     description:
-      'Save a memory as a markdown file with YAML frontmatter and a derived embedding sidecar. Refuses to overwrite an existing entry; the contract is delete + save. The `scope` argument selects which store to write to (default `user`); saving to `project` requires that a project store was detected at boot.',
+      'Agent memory: Save a memory as a markdown file with YAML frontmatter and a derived embedding sidecar. Refuses to overwrite an existing entry; the contract is delete + save. The `scope` argument selects which store to write to (default `user`); saving to `project` requires that a project store was detected at boot.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -326,7 +326,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_list: {
     description:
-      'List saved memories from both stores. Returns frontmatter-only entries (name, type, description, scope) -- no body. Each entry carries a `scope` tag (`user` | `project`) identifying which store it came from. By default, memories that have been superseded by another entry within their own store are excluded from results.',
+      'Agent memory: List saved memories from both stores. Returns frontmatter-only entries (name, type, description, scope) -- no body. Each entry carries a `scope` tag (`user` | `project`) identifying which store it came from. By default, memories that have been superseded by another entry within their own store are excluded from results.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -351,7 +351,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_delete: {
     description:
-      'Delete a saved memory by name. The `scope` argument is required to disambiguate when the same name exists in both stores; otherwise the lookup automatically resolves to whichever store contains the name. Throws when the name is not present in the targeted scope.',
+      'Agent memory: Delete a saved memory by name. The `scope` argument is required to disambiguate when the same name exists in both stores; otherwise the lookup automatically resolves to whichever store contains the name. Throws when the name is not present in the targeted scope.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -368,7 +368,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_link: {
     description:
-      "Append a typed graph edge from one saved memory to another. The source memory's frontmatter is rewritten atomically. Default `type` is `related-to`; passing `supersedes` routes the edge into the source's `supersedes[]` list instead of `relations[]`. Refuses self-edges, missing targets, and duplicate (to, type) edges. Edges are intra-scope: `from` and `to` must live in the same store.",
+      "Agent memory: Append a typed graph edge from one saved memory to another. The source memory's frontmatter is rewritten atomically. Default `type` is `related-to`; passing `supersedes` routes the edge into the source's `supersedes[]` list instead of `relations[]`. Refuses self-edges, missing targets, and duplicate (to, type) edges. Edges are intra-scope: `from` and `to` must live in the same store.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -398,7 +398,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_unlink: {
     description:
-      "Remove a typed graph edge from one saved memory to another. The source memory's frontmatter is rewritten atomically. When `type` is omitted, removes ALL edges from -> to regardless of type. No-op (with note) when the requested edge does not exist.",
+      "Agent memory: Remove a typed graph edge from one saved memory to another. The source memory's frontmatter is rewritten atomically. When `type` is omitted, removes ALL edges from -> to regardless of type. No-op (with note) when the requested edge does not exist.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -428,7 +428,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_graph: {
     description:
-      'Return the local graph neighborhood of a saved memory. Walks the in-memory graph BFS-style from `name` to `depth` hops, gated by `direction` (outbound / inbound / both) and `types` (which edge labels to follow). Cycles are visited-set safe -- each reachable memory appears once in `nodes`. Default `types` covers the four authored relation types plus `supersedes` (omits body `mentions` edges unless requested explicitly). Default `depth` is 1 and default `direction` is `both`.',
+      'Agent memory: Return the local graph neighborhood of a saved memory. Walks the in-memory graph BFS-style from `name` to `depth` hops, gated by `direction` (outbound / inbound / both) and `types` (which edge labels to follow). Cycles are visited-set safe -- each reachable memory appears once in `nodes`. Default `types` covers the four authored relation types plus `supersedes` (omits body `mentions` edges unless requested explicitly). Default `depth` is 1 and default `direction` is `both`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -466,7 +466,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
   },
   memory_path: {
     description:
-      "Return the shortest directed path between two saved memories using BFS over the in-memory graph. Follows outbound edges from each node. Returns `{ path: [] }` when `from === to` (the empty-edge self-path); `{ path: null, reason: 'unreachable' }` when no path exists; or `{ path: null, reason: 'depth-exceeded' }` when a path exists but its shortest length is greater than `maxDepth`. Default `maxDepth` is 5. Pass `types` to restrict which edge labels the search may traverse (default: all edge types).",
+      "Agent memory: Return the shortest directed path between two saved memories using BFS over the in-memory graph. Follows outbound edges from each node. Returns `{ path: [] }` when `from === to` (the empty-edge self-path); `{ path: null, reason: 'unreachable' }` when no path exists; or `{ path: null, reason: 'depth-exceeded' }` when a path exists but its shortest length is greater than `maxDepth`. Default `maxDepth` is 5. Pass `types` to restrict which edge labels the search may traverse (default: all edge types).",
     inputSchema: {
       type: 'object',
       properties: {
