@@ -6,8 +6,9 @@
  *   2. `SERVER_VERSION` constant exported from `src/server/server.ts`
  *      (reported back to every MCP client via the `initialize` handshake)
  *   3. The most recent `## [X.Y.Z]` heading in `CHANGELOG.md` (matching
- *      either the hand-authored Keep-a-Changelog format used pre-DAR-963
- *      or the auto-generated release-please format used since DAR-995)
+ *      either the hand-authored Keep-a-Changelog format used before the
+ *      commit-and-tag-version migration or the auto-generated
+ *      release-please format used since the release-please migration)
  *
  * The release workflow enforces (1) <-> (2) at publish time and
  * (1) <-> git tag at publish time. These unit tests run on every CI

@@ -52,11 +52,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # Need the full history (not the default shallow clone of depth 1)
-          # so the BREAKING CHANGES guard step below can walk
-          # `<previous-tag>..HEAD` via `git describe --tags`.
-          fetch-depth: 0
 
       - name: Setup pnpm
         # Reads the pnpm version from package.json `packageManager` --
