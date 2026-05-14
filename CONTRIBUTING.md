@@ -94,126 +94,96 @@ fail at the publish step.
 
 ### Per-release flow
 
-Releases are produced by `commit-and-tag-version`, which reads the
-[conventional commits](https://www.conventionalcommits.org) since the
-last `v*` tag, picks the next version, bumps `package.json` and
-`SERVER_VERSION` together, writes a new section to `CHANGELOG.md`,
-commits, and creates an annotated tag. The release workflow
-(`.github/workflows/release.yml`) does the actual `pnpm publish` when
-the tag is pushed.
+Releases are driven by [release-please][rp]. A
+`.github/workflows/release-please.yml` workflow runs on every push to
+`main` and maintains a rolling `chore(main): release X.Y.Z` PR that
+represents "what the next release would look like if shipped now."
+Merging that PR cuts the release: release-please commits the version
+bump (`package.json`, `SERVER_VERSION` in `src/server/server.ts`, and
+`CHANGELOG.md`) and pushes the annotated `vX.Y.Z` tag. The tag push
+fires `.github/workflows/release.yml`, which performs the actual
+`pnpm publish` and creates the GitHub Release.
+
+There is no auto-publish on every merge to `main`. The human gate is
+the release PR review: inspect the proposed bump, the CHANGELOG entry,
+and the tag, then merge when ready.
+
+[rp]: https://github.com/googleapis/release-please
 
 For each release (`X.Y.Z` stable, or `X.Y.Z-<pre>.<n>` pre-release):
 
-1. **Make sure your commits since the last tag are well-formed.**
-   `feat:` produces a minor bump and an "Added" CHANGELOG entry; `fix:`
-   produces a patch bump and a "Fixed" entry; `refactor:` /
-   `perf:` / `revert:` produce visible entries; `chore:` / `docs:` /
-   `test:` / `ci:` / `build:` / `style:` are intentionally hidden from
-   the CHANGELOG (`.versionrc.json` `types`). A footer of
-   `BREAKING CHANGE:` (or a `!` after the type, e.g. `feat!:`) marks
-   a major bump.
-2. **Preview the bump** from a clean `main` checkout:
-   ```sh
-   make release-dry
-   ```
-   This shows what version `commit-and-tag-version` would pick and the
-   CHANGELOG entry it would write. Nothing is written.
-3. **Cut the release**:
-   ```sh
-   make release
-   ```
-   This bumps `package.json` `version`, bumps `SERVER_VERSION` in
-   `src/server/server.ts` via `scripts/server-version-updater.cjs`,
-   prepends a new section to `CHANGELOG.md`, commits all three changes
-   as `chore(release): X.Y.Z`, and creates an annotated tag `vX.Y.Z`.
-4. **Inspect the local bump.** Read the diff (`git show HEAD`) and the
-   tag (`git tag -v vX.Y.Z` or `git cat-file -p vX.Y.Z`). If anything
-   is wrong, undo:
-   ```sh
-   git reset --hard HEAD~1
-   git tag -d vX.Y.Z
-   ```
-   Then re-run with an explicit `--release-as` or `--prerelease`, e.g.
-   `pnpm exec commit-and-tag-version --release-as minor` for a forced
-   minor bump or `--prerelease beta` for `X.Y.Z-beta.0`. (Pre-1.0
-   convention: breaking changes still bump minor, not major.)
-5. **Push**:
-   ```sh
-   git push --follow-tags
-   ```
-   The `Release` workflow fires on the tag push. It re-runs the same
-   gate as CI (`make install` / `typecheck` / `lint` / `build` /
-   `test`), enforces the `package.json` / tag / `SERVER_VERSION`
-   drift guards, derives the npm dist-tag from the tag name (stable ->
-   `latest`, `v0.1.0-beta.1` -> `beta`, etc.), runs
+1. **Write well-formed conventional commits.** Release-please reads the
+   [conventional commits](https://www.conventionalcommits.org) since
+   the last `v*` tag and uses them to pick the next version. `feat:`
+   produces a minor bump and an "Added" CHANGELOG entry; `fix:`
+   produces a patch bump and a "Fixed" entry; `refactor:` / `perf:` /
+   `revert:` produce visible entries; `chore:` / `docs:` / `test:` /
+   `ci:` / `build:` / `style:` are intentionally hidden from the
+   CHANGELOG (configured in `release-please-config.json` under
+   `changelog-sections`). For breaking changes, append a `!` after the
+   type (e.g. `feat!: ...`) so the subject carries the conventional
+   breaking marker. (Pre-1.0 convention: breaking changes still bump
+   minor, not major. `bump-minor-pre-major: true` in
+   `release-please-config.json` encodes this.)
+2. **Watch the release PR.** Within minutes of your conventional-commit
+   merge landing on `main`, release-please opens (or refreshes) a
+   `chore(main): release X.Y.Z` PR. Open it and review:
+   - the proposed `package.json` version bump,
+   - the `SERVER_VERSION` bump in `src/server/server.ts`,
+   - the prepended `## [X.Y.Z]` section in `CHANGELOG.md`,
+   - the annotated tag the PR will produce on merge.
+3. **Merge the release PR** with `gh pr merge <N> --squash --delete-branch`
+   once CI is green. Do NOT use `--admin`. Release-please then pushes
+   `vX.Y.Z` automatically; the `Release` workflow takes over from there.
+4. **The `Release` workflow** runs the same gates as CI (`make install`
+   / `typecheck` / `lint` / `build` / `test`), enforces the
+   `package.json` / tag / `SERVER_VERSION` drift guards, derives the
+   npm dist-tag from the tag name (stable -> `latest`,
+   `v0.1.0-beta.1` -> `beta`, etc.), runs
    `pnpm publish --access public --provenance --tag <derived>` via
    the Trusted Publisher (OIDC), and creates a GitHub Release whose
    body is the matching `## [X.Y.Z]` CHANGELOG section. Pre-release
    tags are marked as pre-releases on the GitHub Release.
 
-If the workflow fails before publish, fix the underlying problem in a
-follow-up PR, delete the failed tag (`git push origin :refs/tags/vX.Y.Z`
-plus a local `git tag -d vX.Y.Z`), and re-run `make release` once the
-fix is merged. If the workflow fails _after_ `pnpm publish` succeeded,
-the version is already on npm -- bump to the next patch and release
-that.
+> **Never hand-edit `package.json` `version` outside the release-please
+> PR.** Release-please pins to `.release-please-manifest.json` as its
+> source of truth. Out-of-band bumps confuse the tool and produce
+> incorrect next-version proposals. Version edits always flow through
+> the rolling release PR.
 
-### BREAKING CHANGES guard
+If the release workflow fails before publish, fix the underlying
+problem in a follow-up PR, delete the failed tag
+(`git push origin :refs/tags/vX.Y.Z` plus a local `git tag -d vX.Y.Z`),
+and merge the next release-please PR once the fix has landed on
+`main`. If the workflow fails _after_ `pnpm publish` succeeded, the
+version is already on npm -- the next release-please PR will propose a
+patch bump.
 
-`conventional-commits-parser` (used by `commit-and-tag-version`) matches the
-literal phrase `BREAKING CHANGE` followed by whitespace as a breaking-change
-note -- it does NOT require the colon the spec calls for. A commit body
-containing that phrase as prose is silently classified as a breaking change,
-producing a spurious `### ⚠ BREAKING CHANGES` section in the generated
-CHANGELOG.
+### release-please config
 
-The **breaking-changes guard** at `scripts/guard-breaking-changes.sh` catches
-this. It runs automatically:
+The release-please behaviour is defined entirely by
+`release-please-config.json` and `.release-please-manifest.json` at
+the repo root:
 
-- as the first step of `make release-dry` and `make release` (via
-  `scripts/release-with-guard.sh`, before any file writes), so a misfire
-  blocks the local release before commit + tag, and
-- in `.github/workflows/release.yml` before `pnpm publish`, so a tag pushed
-  from a checkout that skipped local guards still gets blocked at CI.
-
-When a misfire is detected the guard exits non-zero and stderr names:
-
-- the **offending commit** hash + subject (the commit whose body matched
-  the parser keyword),
-- the **body line** that triggered the parser match, and
-- the guidance string pointing at the bypass env var.
-
-To bypass intentionally (rare -- only for a real `BREAKING CHANGE:` footer
-when the subject was not marked with the `!` breaking marker), set the
-env var:
-
-```sh
-ALLOW_PARSED_BREAKING_CHANGES=1 make release
-```
-
-The standard remedy for a misfire is to amend the offending commit's body
-so the phrase is no longer matched (paraphrase it, or interpolate the
-words), then re-run `make release`.
-
-### `commit-and-tag-version` config
-
-The release tool's behaviour is defined entirely by `.versionrc.json`
-at the repo root:
-
-- `bumpFiles`: tells the tool to bump both `package.json` (built-in
-  `json` updater) and `src/server/server.ts` (custom updater at
-  `scripts/server-version-updater.cjs`, which scopes the rewrite to
-  the `SERVER_VERSION` declaration). The `tests/version-sync.test.ts`
-  invariant catches drift if the two ever fall out of sync.
-- `header`: the CHANGELOG preamble; the tool preserves it verbatim
-  on every run.
-- `types`: maps conventional-commit prefixes to CHANGELOG sections.
-  Hidden types do not appear in the CHANGELOG but still count toward
-  the bump (e.g. a `feat:` commit alongside several `chore:` commits
-  still produces a minor bump and an "Added" section).
-- `tagPrefix: "v"`: the tag format the release workflow expects.
-- `commitAll: true`: every bumped file is included in the release
-  commit, so there are no orphaned dirty changes after `make release`.
+- `packages["."]."release-type": "node"` -- bumps `package.json`
+  `version` automatically.
+- `packages["."]."bump-minor-pre-major": true` -- pre-1.0, breaking
+  changes bump the minor digit instead of the major.
+- `packages["."]."extra-files"` -- additional files to bump alongside
+  `package.json`. The single entry for `src/server/server.ts` uses the
+  `generic` updater plus the trailing `// x-release-please-version`
+  annotation comment to scope the rewrite to the `SERVER_VERSION`
+  declaration. The `tests/version-sync.test.ts` invariant catches
+  drift if the two ever fall out of sync.
+- `packages["."]."changelog-sections"` -- maps conventional-commit
+  prefixes to CHANGELOG sections. Hidden types (`chore`, `test`,
+  `docs`, `ci`, `build`, `style`) do not appear in the CHANGELOG but
+  still count toward the bump (e.g. a `feat:` commit alongside several
+  `chore:` commits still produces a minor bump and an "Added" section).
+- `.release-please-manifest.json` -- the source of truth for the
+  currently-released version. Initialised to `0.2.1` at the time of
+  the c-and-t-v -> release-please migration; release-please updates
+  it automatically on every release.
 
 ## Diagnostic scripts
 

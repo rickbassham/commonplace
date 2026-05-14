@@ -458,13 +458,18 @@ describe('ac-13: setup-branch-protection.sh exists, executable, valid', () => {
 describe('ac-14..ac-22: branch-protection script payload settings', () => {
   const body = (): string => read(protectionScriptPath);
 
-  it('branch-protection script sends `required_pull_request_reviews.required_approving_review_count: 1`', () => {
-    // Accept JSON forms ("required_approving_review_count": 1) and -F /
-    // -f form-field flags (required_pull_request_reviews[required_approving_review_count]=1).
+  it('branch-protection script sends `required_pull_request_reviews.required_approving_review_count: 0`', () => {
+    // DAR-995: dropped from 1 to 0. The review requirement was a no-op for
+    // solo maintenance -- GitHub forbids approving your own PR, so the only
+    // way the rule was ever satisfied was admin bypass. Setting the count
+    // to 0 reflects the actual workflow and lets `enforce_admins: true`
+    // close the bypass.
+    // Accept JSON forms ("required_approving_review_count": 0) and -F /
+    // -f form-field flags (required_pull_request_reviews[required_approving_review_count]=0).
     const b = body();
     expect(
-      /"required_approving_review_count"\s*:\s*1\b/.test(b) ||
-        /required_approving_review_count\s*[:=]\s*1\b/.test(b),
+      /"required_approving_review_count"\s*:\s*0\b/.test(b) ||
+        /required_approving_review_count\s*[:=]\s*0\b/.test(b),
     ).toBe(true);
   });
 
@@ -559,10 +564,14 @@ describe('ac-14..ac-22: branch-protection script payload settings', () => {
     }
   });
 
-  it('branch-protection script sends `enforce_admins: false`', () => {
+  it('branch-protection script sends `enforce_admins: true`', () => {
+    // DAR-995: flipped from false to true. With enforce_admins on, admins
+    // can no longer bypass branch protection -- no `gh pr merge --admin`,
+    // no direct push to main. Release-please-pushed tags are unaffected
+    // (branch protection applies to refs/heads/main, not refs/tags/*).
     const b = body();
     expect(
-      /"enforce_admins"\s*:\s*false\b/.test(b) || /enforce_admins\s*[:=]\s*false\b/.test(b),
+      /"enforce_admins"\s*:\s*true\b/.test(b) || /enforce_admins\s*[:=]\s*true\b/.test(b),
     ).toBe(true);
   });
 

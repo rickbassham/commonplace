@@ -52,11 +52,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # Need the full history (not the default shallow clone of depth 1)
-          # so the BREAKING CHANGES guard step below can walk
-          # `<previous-tag>..HEAD` via `git describe --tags`.
-          fetch-depth: 0
 
       - name: Setup pnpm
         # Reads the pnpm version from package.json `packageManager` --
@@ -179,34 +174,6 @@ jobs:
             exit 1
           fi
           echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
-
-      - name: Guard against spurious BREAKING CHANGES section
-        # DAR-989: catches the case where a commit body contains the literal
-        # phrase `BREAKING CHANGE` as prose (matching the lenient
-        # `conventional-commits-parser` rule) without a `!`-marked subject.
-        # Inspects the committed CHANGELOG.md section for the tagged
-        # version and, if it contains a `### ⚠ BREAKING CHANGES` heading,
-        # requires at least one commit in `<previous-tag>..HEAD` to carry
-        # the conventional-commits `!` breaking marker. Bypass with
-        # `ALLOW_PARSED_BREAKING_CHANGES=1` for the rare legitimate
-        # footer-only breaking-change case. Runs after the CHANGELOG-extraction
-        # step (so it inspects the same committed CHANGELOG content that
-        # the release notes are extracted from) and before `pnpm publish`
-        # (so a misfire blocks the publish at CI even if local guards were
-        # skipped).
-        env:
-          VERSION: ${{ steps.tag_version.outputs.version }}
-        run: |
-          # Full history is already fetched by the Checkout step
-          # (fetch-depth: 0) so the guard can walk `<previous-tag>..HEAD`.
-          PREV_TAG="$(git describe --tags --abbrev=0 "v${VERSION}^" 2>/dev/null || true)"
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..HEAD"
-          else
-            RANGE="HEAD"
-          fi
-          echo "guard range: $RANGE"
-          scripts/guard-breaking-changes.sh "$VERSION" CHANGELOG.md "$RANGE"
 
       - name: Publish to npm via Trusted Publisher (OIDC)
         # Gates and drift guards above must all pass before this step

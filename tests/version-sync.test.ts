@@ -6,19 +6,20 @@
  *   2. `SERVER_VERSION` constant exported from `src/server/server.ts`
  *      (reported back to every MCP client via the `initialize` handshake)
  *   3. The most recent `## [X.Y.Z]` heading in `CHANGELOG.md` (matching
- *      either the hand-authored Keep-a-Changelog format used pre-DAR-963
- *      or the auto-generated commit-and-tag-version format used since)
+ *      either the hand-authored Keep-a-Changelog format used before the
+ *      commit-and-tag-version migration or the auto-generated
+ *      release-please format used since the release-please migration)
  *
  * The release workflow enforces (1) <-> (2) at publish time and
  * (1) <-> git tag at publish time. These unit tests run on every CI
  * build so a missed bump fails fast.
  *
  * Reference value: `package.json`'s `version` field is the source of
- * truth. `commit-and-tag-version` bumps it atomically alongside
- * `SERVER_VERSION` and the CHANGELOG (commitAll: true), so the
- * invariants below all reduce to "did the bump touch every place it
- * was supposed to?" A missed bump in any single place fails CI before
- * the tag is pushed.
+ * truth. release-please bumps it atomically alongside `SERVER_VERSION`
+ * (via the `extra-files` updater) and the CHANGELOG, so the invariants
+ * below all reduce to "did the bump touch every place it was supposed
+ * to?" A missed bump in any single place fails CI before the tag is
+ * pushed.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -50,13 +51,13 @@ describe('version sync: SERVER_VERSION matches package.json', () => {
 });
 
 describe('version sync: CHANGELOG heading exists for the current version', () => {
-  it('`CHANGELOG.md` contains a `## [<version>]` heading with an ISO date, in either the hand-authored or commit-and-tag-version format', () => {
+  it('`CHANGELOG.md` contains a `## [<version>]` heading with an ISO date, in either the hand-authored or release-please format', () => {
     const version = readPackageVersion();
     const body = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8');
     const escaped = version.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
     // Two supported heading shapes:
     //   `## [X.Y.Z] - YYYY-MM-DD`              (Keep a Changelog, hand-written)
-    //   `## [X.Y.Z](compare-url) (YYYY-MM-DD)` (commit-and-tag-version)
+    //   `## [X.Y.Z](compare-url) (YYYY-MM-DD)` (release-please)
     // The regex accepts either: an optional `(...)` block after the
     // bracketed version, then either ` - <date>` or ` (<date>)`. The date
     // must be ISO-shaped (4-2-2 digits); stricter calendar validation
