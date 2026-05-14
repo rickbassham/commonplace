@@ -1,5 +1,5 @@
 /**
- * DAR-929 integration test for ac-5 (mentions edges NOT in match.relations
+ * Integration test for ac-5 (mentions edges NOT in match.relations
  * on the wire) and a sanity check on supersede filtering through the
  * full MCP transport.
  *
@@ -161,9 +161,9 @@ describe('ac-5 (integration): on-the-wire JSON has no mentions edges in match.re
         expect(r.isError).toBe(false);
       }
 
-      // Save M directly via the store (relations not yet exposed via the
-      // memory_save MCP tool — DAR-928 will own that). The supersede /
-      // relations behaviour is independent of how M was created.
+      // Save M directly via the store (relations are authored via
+      // memory_link, not via memory_save). The supersede / relations
+      // behaviour is independent of how M was created.
       await h.store.save({
         name: 'm',
         type: 'reference',

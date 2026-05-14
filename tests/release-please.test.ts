@@ -1,5 +1,5 @@
 /**
- * DAR-995 contract tests: release-please pipeline shape.
+ * Contract tests: release-please pipeline shape.
  *
  * Verifies the static, committed artefacts of the release-please flow
  * (workflow YAML, config JSON, manifest JSON), the cleanup of the legacy
@@ -323,8 +323,8 @@ describe('ac-9: branch-protection script flips two settings, preserves the rest'
 
   it('payload preserves all other branch-protection fields byte-identically', () => {
     const b = body();
-    // The pre-DAR-995 payload had these settings; AC-9 requires them
-    // unchanged. Asserting on each field individually documents the
+    // The pre-release-please payload had these settings; the AC requires
+    // them unchanged. Asserting on each field individually documents the
     // contract surface rather than a single opaque blob comparison.
     expect(/"strict"\s*:\s*true\b/.test(b)).toBe(true);
     expect(/"contexts"\s*:\s*\[/.test(b)).toBe(true);

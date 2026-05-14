@@ -1,6 +1,6 @@
 /**
- * In-memory vector index backed by markdown + sidecar files on disk
- * (DAR-916), with multi-process safety primitives layered on (DAR-923):
+ * In-memory vector index backed by markdown + sidecar files on disk, with
+ * multi-process safety primitives layered on:
  *
  *   - **atomic writes** -- every `.md` and `.embedding` write goes through
  *     {@link atomicWrite} (write-temp + fsync + rename + dir-fsync) so a
@@ -15,7 +15,7 @@
  *     the last scan, so changes from another process show up on the next
  *     call without explicit coordination.
  *
- * # Out of scope (per DAR-923 contract envelope)
+ * # Out of scope
  *
  *   - cross-machine / network-mounted directory sync
  *   - a shared resident daemon coordinating writers
@@ -43,8 +43,8 @@ import { extractMentions, mentionsExtractionEnabled } from './mentions.js';
 import { decodeSidecar, encodeSidecar } from './sidecar.js';
 
 /**
- * Stale-lock threshold per DAR-923 ac-3: a lockfile older than this is
- * treated as orphaned (the prior holder crashed) and reclaimed on the next
+ * Stale-lock threshold: a lockfile older than this is treated as orphaned
+ * (the prior holder crashed) and reclaimed on the next
  * acquire attempt. proper-lockfile's `stale` option is in milliseconds.
  */
 const STALE_LOCK_MS = 5000;
@@ -89,12 +89,12 @@ const hasErrorCode = (err: unknown, code: string): boolean => {
  * target. Returns the release function. Uses `realpath: false` so the lock
  * works even when the target file does not exist yet (fresh save), and
  * `stale: 5000` so an orphaned lock from a crashed prior holder is
- * reclaimed instead of blocking indefinitely (DAR-923 ac-3).
+ * reclaimed instead of blocking indefinitely.
  *
  * Translates proper-lockfile's `ELOCKED` error into a clearer
  * "MemoryStore: lock for memory `<name>` is busy" message that surfaces
- * the memory name -- consumers (sibling DAR-924 tooling, MCP layer
- * DAR-919) need the name to render an actionable error.
+ * the memory name -- consumers (scope-routing tooling, the MCP CRUD
+ * handlers) need the name to render an actionable error.
  */
 const acquireNameLock = async (dir: string, name: string): Promise<() => Promise<void>> => {
   const target = lockTargetForName(dir, name);
@@ -143,7 +143,7 @@ export interface MemoryEntry {
   supersedes: string[];
   /** L2-normalised CLS-pooled embedding vector. */
   vector: Float32Array;
-  /** sha256 hex digest of the canonical content (DAR-911 `contentSha`). */
+  /** sha256 hex digest of the canonical content (`contentSha`). */
   contentSha: string;
   /** Model id this vector was computed under (matches the configured embedder). */
   modelId: string;
@@ -158,7 +158,7 @@ export interface MemoryStoreOptions {
   /** Embedder instance whose `modelId` and `dim` define sidecar freshness. */
   embedder: Embedder;
   /**
-   * Optional in-memory graph index (DAR-926). When supplied, the store
+   * Optional in-memory graph index. When supplied, the store
    * keeps it synchronised with disk: `scan()` calls `graph.rebuild(entries)`,
    * `save()` calls `graph.add(entry)`, and `delete()` calls `graph.remove(name)`.
    * When omitted, the store does not maintain a graph -- callers that don't
@@ -175,33 +175,32 @@ export interface ScanResult {
    * Number of `.md` files for which a sidecar was (re)written this scan.
    * This is the union of {@link embedded} (no prior sidecar) and
    * {@link staleReembedded} (prior sidecar present but stale or corrupt).
-   * Kept as a single combined count for backward compatibility with the
-   * DAR-916 contract; callers that need the breakdown should use the
-   * disjoint fields below.
+   * Kept as a single combined count for backward compatibility; callers
+   * that need the breakdown should use the disjoint fields below.
    */
   reembedded: number;
   /**
-   * DAR-918: number of `.md` files whose sidecar was MISSING (or could not
-   * be read at all) and was created during this scan. Disjoint from
+   * Number of `.md` files whose sidecar was MISSING (or could not be read
+   * at all) and was created during this scan. Disjoint from
    * {@link staleReembedded}; their sum equals {@link reembedded}.
    */
   embedded: number;
   /**
-   * DAR-918: number of `.md` files whose `.embedding` existed but was stale
+   * Number of `.md` files whose `.embedding` existed but was stale
    * (contentSha / modelId / dim mismatch) or corrupt and was rewritten
    * during this scan. Disjoint from {@link embedded}; their sum equals
    * {@link reembedded}.
    */
   staleReembedded: number;
   /**
-   * DAR-918: number of `.embedding` files removed because no matching
-   * `<name>.md` existed in the directory (orphan cleanup). When
+   * Number of `.embedding` files removed because no matching `<name>.md`
+   * existed in the directory (orphan cleanup). When
    * {@link ScanOptions.dryRun} is true, this is the count of files that
    * WOULD have been removed -- the orphans are left on disk.
    */
   orphaned: number;
   /**
-   * DAR-918: number of `.md` files whose existing sidecar was already valid
+   * Number of `.md` files whose existing sidecar was already valid
    * (matching modelId, dim, contentSha) and was reused without touching the
    * embedder or disk. Disjoint from {@link embedded} and
    * {@link staleReembedded}; their sum equals the count of `.md` files
@@ -214,7 +213,7 @@ export interface ScanResult {
    */
   fresh: number;
   /**
-   * DAR-966: `.md` files whose frontmatter could not be parsed (missing or
+   * `.md` files whose frontmatter could not be parsed (missing or
    * malformed `---` delimiters, invalid YAML, missing required field, ...).
    * Each entry records the absolute path and a short reason string. The
    * scan continues past the offending file so a single bad input does not
@@ -228,7 +227,7 @@ export interface ScanResult {
   skipped: Array<{ path: string; reason: string }>;
 }
 
-/** Options for {@link MemoryStore.scan} (DAR-918). */
+/** Options for {@link MemoryStore.scan}. */
 export interface ScanOptions {
   /**
    * When `true`, scan() reports what it WOULD do without writing any
@@ -250,10 +249,10 @@ export interface ScanOptions {
 
 /**
  * Default value applied to {@link SearchOptions.limit} when the caller omits
- * one (DAR-917). Exported so consumers that perform their own post-filter
- * slicing (e.g. the `memory_search` MCP handler in DAR-929) can reference the
- * same constant rather than re-declaring `5` and silently drifting if the
- * default ever changes.
+ * one. Exported so consumers that perform their own post-filter slicing
+ * (e.g. the `memory_search` MCP handler) can reference the same constant
+ * rather than re-declaring `5` and silently drifting if the default ever
+ * changes.
  */
 export const DEFAULT_SEARCH_LIMIT = 5;
 
@@ -299,7 +298,7 @@ export class MemoryStore {
   /**
    * Last observed `mtimeMs` of the memory directory, captured at the end of
    * each successful {@link scan}. Used by {@link search} and {@link list}
-   * to detect external writers (DAR-923 ac-4) -- if the directory's mtime
+   * to detect external writers -- if the directory's mtime
    * has advanced since this value, a rescan is forced before answering.
    *
    * `null` means "we have not scanned yet"; the next {@link search} or
@@ -315,7 +314,7 @@ export class MemoryStore {
 
   /**
    * The on-disk directory this store was constructed against. Exposed so
-   * adjacent layers (e.g. the MCP CRUD handlers in DAR-919) can derive
+   * adjacent layers (e.g. the MCP CRUD handlers) can derive
    * canonical file paths for response payloads without reaching into
    * private state. Read-only by convention; callers MUST NOT mutate the
    * directory contents directly -- always go through {@link save},
@@ -330,7 +329,7 @@ export class MemoryStore {
    * a fresh {@link scan}. Cheap (~1ms): we only stat the dir; the scan
    * itself is unconditional only when the mtime check fires.
    *
-   * Used by {@link search} and {@link list} (DAR-923 ac-4).
+   * Used by {@link search} and {@link list}.
    */
   async #rescanIfMtimeChanged(): Promise<void> {
     if (!existsSync(this.#dir)) {
@@ -394,7 +393,7 @@ export class MemoryStore {
    * scan() repeatedly is safe -- entries that disappeared from disk drop
    * out, and re-added entries reappear.
    *
-   * # Orphan cleanup (DAR-918)
+   * # Orphan cleanup
    *
    * After the per-`.md` pass, scan() walks the directory once more and
    * removes any `.embedding` file whose matching `<name>.md` is missing.
@@ -404,7 +403,7 @@ export class MemoryStore {
    * {@link ScanResult.orphaned} field. In dry-run mode (see
    * {@link ScanOptions.dryRun}) the count is reported without unlinking.
    *
-   * # Dry-run (DAR-918)
+   * # Dry-run
    *
    * Pass `{ dryRun: true }` to make scan() compute the same per-file
    * action breakdown (`embedded`, `staleReembedded`, `orphaned`) without
@@ -433,7 +432,7 @@ export class MemoryStore {
       const mdPath = join(this.#dir, filename);
       const sidecarPath = mdPath.replace(/\.md$/, '.embedding');
 
-      // DAR-966: a single malformed file must not crash the whole scan.
+      // A single malformed file must not crash the whole scan.
       // readMemory throws when the frontmatter is missing delimiters, not
       // valid YAML, or missing a required field; we capture the reason,
       // emit a stderr warning, and move on to the next file. The
@@ -463,7 +462,7 @@ export class MemoryStore {
         // (EACCES, EIO, EMFILE, ENOMEM, ...) propagate to the caller rather
         // than being silently treated as "corrupt -- re-embed". Only the
         // decode step's intentional throw-on-bad-bytes is swallowed below;
-        // that's the documented contract for sidecar corruption (DAR-916 ac-3).
+        // that's the documented contract for sidecar corruption.
         const bytes = readFileSync(sidecarPath);
         try {
           const decoded = decodeSidecar(bytes);
@@ -502,7 +501,7 @@ export class MemoryStore {
           contentSha: sha,
           vector,
         });
-        // DAR-923 ac-1: route the sidecar (re-)write through the atomic
+        // Route the sidecar (re-)write through the atomic
         // helper so a concurrent reader either sees the prior sidecar or
         // the new one, never a partial file. Same-fs guard + fsync apply.
         await atomicWrite(sidecarPath, buf);
@@ -529,7 +528,7 @@ export class MemoryStore {
       });
     }
 
-    // DAR-918: orphan cleanup. An `.embedding` file with no matching
+    // Orphan cleanup. An `.embedding` file with no matching
     // `<name>.md` is unreachable -- nothing in the index can ever resolve
     // to it -- so the migrate CLI removes it on a real scan. In dry-run we
     // count without removing.
@@ -551,7 +550,7 @@ export class MemoryStore {
     this.#entries = next;
     if (this.#graph !== undefined) {
       // Extract `[[name]]` mentions from each body when extraction is
-      // enabled (DAR-927). The list is passed alongside the entries to
+      // enabled. The list is passed alongside the entries to
       // `rebuild` so authored and mention-derived edges share a single
       // dangling pass; this matches the contract test "onDangling callback
       // is invoked for mention-derived dangling edges during rebuild".
@@ -594,7 +593,8 @@ export class MemoryStore {
    * `embed()` rejects (e.g. model load failure, OOM in the inference
    * pipeline), the `.md` is left on disk with no matching sidecar and no
    * entry in the in-memory array. This is by design: the contract delegates
-   * atomic write-temp+rename and crash-safety to DAR-923. Recovery is
+   * atomic write-temp+rename and crash-safety to the atomic-write helper.
+   * Recovery is
    * self-healing on the next {@link scan} (the orphan `.md` is treated as a
    * missing-sidecar case and re-embedded), or manual: a subsequent `save()`
    * with the same name will reject with the "memory file already exists"
@@ -612,14 +612,14 @@ export class MemoryStore {
     const mdPath = join(this.#dir, `${name}.md`);
     const sidecarPath = join(this.#dir, `${name}.embedding`);
 
-    // DAR-924 ac-3: lazily create the memory directory recursively on first
-    // save. mkdir -p is idempotent so existing dirs are a no-op; this lets
+    // Lazily create the memory directory recursively on first save.
+    // mkdir -p is idempotent so existing dirs are a no-op; this lets
     // the project store auto-create on the first `memory_save({ scope:
     // 'project' })` against a fresh project root without requiring the bin
     // to pre-create the dir.
     await mkdir(this.#dir, { recursive: true });
 
-    // DAR-923 ac-3: hold a per-name advisory lock for the entire write
+    // Hold a per-name advisory lock for the entire write
     // (md + embedding). This serialises racing writers on the same name
     // both within and across processes. Stale locks (>5s) are reclaimed
     // automatically -- see acquireNameLock.
@@ -627,7 +627,7 @@ export class MemoryStore {
     try {
       // Re-check disk presence under the lock so another process that won
       // the race (and finished before we acquired) is observed here -- the
-      // duplicate-name semantics from DAR-916 are preserved across
+      // duplicate-name semantics are preserved across
       // processes via this on-disk check.
       if (existsSync(mdPath)) {
         throw new Error(
@@ -635,7 +635,7 @@ export class MemoryStore {
         );
       }
 
-      // DAR-923 ac-1: route both the .md and .embedding writes through the
+      // Route both the .md and .embedding writes through the
       // atomic helper so a crash mid-write leaves the prior file intact.
       // .md is written first so contentSha is computed against the exact
       // memory the caller passed in (which is what serializeMemory
@@ -668,7 +668,7 @@ export class MemoryStore {
       this.#entries.push(entry);
       if (this.#graph !== undefined) {
         this.#graph.add(entry);
-        // DAR-927: extract `[[name]]` mentions and add one mentions edge
+        // Extract `[[name]]` mentions and add one mentions edge
         // per unique target. The helper handles env-var gating and the
         // self-edge bridge -- see {@link #mentionsFor}.
         for (const edge of this.#mentionsFor(entry)) {
@@ -682,8 +682,8 @@ export class MemoryStore {
       this.#refreshMtimeBaseline();
     } finally {
       // Release on every path -- success and any thrown error -- so the
-      // next save() / delete() on the same name can proceed (DAR-923
-      // ac-3: "lock not leaked on error path").
+      // next save() / delete() on the same name can proceed (lock must
+      // not leak on the error path).
       try {
         await release();
       } catch {
@@ -734,8 +734,8 @@ export class MemoryStore {
    * Note: enforcement is in-memory-first by design. Callers are expected to
    * have called {@link scan} (or {@link save}) so the in-memory array
    * reflects what's on disk. This matches the single-process scope where the
-   * in-memory state is authoritative between `scan()` calls (DAR-923 owns
-   * any external-writer rescan policy).
+   * in-memory state is authoritative between `scan()` calls (the mtime-
+   * baseline tracking owns any external-writer rescan policy).
    */
   public async delete(name: string): Promise<void> {
     const idx = this.#entries.findIndex((e) => e.name === name);
@@ -748,7 +748,7 @@ export class MemoryStore {
     const mdPath = join(this.#dir, `${name}.md`);
     const sidecarPath = join(this.#dir, `${name}.embedding`);
 
-    // DAR-923 ac-3: take the same per-name lock that save() holds, so a
+    // Take the same per-name lock that save() holds, so a
     // delete cannot interleave with an in-flight save on the same name.
     const release = await acquireNameLock(this.#dir, name);
     try {
@@ -776,8 +776,8 @@ export class MemoryStore {
   }
 
   /**
-   * DAR-928 ac-2/ac-3: append a single typed edge to a loaded memory's
-   * frontmatter and atomically rewrite the source `.md`. Sidecar / vector
+   * Append a single typed edge to a loaded memory's frontmatter and
+   * atomically rewrite the source `.md`. Sidecar / vector
    * are deliberately untouched -- the canonical `contentSha` is scoped over
    * `(type, name, description, body)` only (see {@link contentSha}), so
    * adding or removing graph edges does NOT invalidate the embedding.
@@ -796,7 +796,7 @@ export class MemoryStore {
    *   - duplicate edge (same `(to, type)` already present on the source)
    *
    * On success: the source `.md` is rewritten through the
-   * {@link atomicWrite} helper (DAR-923), the in-memory entry's
+   * {@link atomicWrite} helper, the in-memory entry's
    * `relations` / `supersedes` fields are updated in place, and the graph
    * (when one is wired) gets an incremental {@link MemoryGraph.addEdge}
    * call -- no `scan()` and no `rebuild()`. The directory mtime baseline
@@ -882,7 +882,7 @@ export class MemoryStore {
   }
 
   /**
-   * DAR-928 ac-2/ac-3 counterpart of {@link linkEdge}: remove edges from a
+   * Counterpart of {@link linkEdge}: remove edges from a
    * loaded memory's frontmatter and atomically rewrite the source `.md`.
    * Sidecar / vector are untouched (same `contentSha` scoping argument as
    * {@link linkEdge}).
@@ -1013,8 +1013,8 @@ export class MemoryStore {
    *
    * The return type is `ReadonlyArray<MemoryEntry>` so the compiler catches
    * accidental mutation attempts (push/splice/sort) on what is the store's
-   * authoritative state. Future consumers that need to sort/filter (DAR-917
-   * search, DAR-926 graph) should make a shallow copy with `.slice()` or
+   * authoritative state. Consumers that need to sort/filter (the search
+   * path, the graph builder) should make a shallow copy with `.slice()` or
    * `[...store.all()]` before mutating.
    *
    * Note: this returns a live reference to the internal array (typed as
@@ -1029,7 +1029,7 @@ export class MemoryStore {
 
   /**
    * Rescan-aware analogue of {@link all} for callers that need to observe
-   * external writers (DAR-923 ac-4). Stats the memory directory and forces
+   * external writers. Stats the memory directory and forces
    * a full {@link scan} when its mtime has advanced since the last scan;
    * otherwise returns the existing in-memory entry array unchanged.
    *
@@ -1047,8 +1047,7 @@ export class MemoryStore {
   }
 
   /**
-   * Brute-force top-k cosine search over the in-memory entry array
-   * (DAR-917).
+   * Brute-force top-k cosine search over the in-memory entry array.
    *
    * Pipeline:
    *
@@ -1061,7 +1060,7 @@ export class MemoryStore {
    *      lowercasing.
    *   3. Score every entry in {@link all} as the dot product of the query
    *      vector with `entry.vector`. Because entries' vectors are
-   *      L2-normalised at write time (DAR-916), this dot product equals
+   *      L2-normalised at write time, this dot product equals
    *      cosine similarity in `[-1, 1]`.
    *   4. Apply optional filters (`type`, `threshold`) BEFORE the limit slice,
    *      so `limit` counts only post-filter matches.
@@ -1081,11 +1080,11 @@ export class MemoryStore {
    *     defined (per the approved contract envelope).
    *   - Input sanitisation of `opts.limit` (negatives, NaN, non-integers) is
    *     out of scope for the store layer; the implementation behaves per
-   *     `Array.prototype.slice` semantics. The MCP tool layer (DAR-920) is
+   *     `Array.prototype.slice` semantics. The MCP tool layer is
    *     responsible for caller-side validation.
    */
   public async search(query: string, opts: SearchOptions = {}): Promise<SearchHit[]> {
-    // DAR-923 ac-4: rescan if an external process advanced the dir mtime
+    // Rescan if an external process advanced the dir mtime
     // since our last scan. Cheap stat() in the common no-op case.
     await this.#rescanIfMtimeChanged();
 
@@ -1112,7 +1111,7 @@ export class MemoryStore {
  * L2-normalised this equals cosine similarity. Length mismatch is treated as
  * a programming error and surfaces via the index access pattern -- in
  * practice the embedder configured on the store and the entries' vectors
- * always agree on `dim` (DAR-916 sidecar reuse rules enforce this).
+ * always agree on `dim` (the sidecar reuse rules enforce this).
  */
 const dotProduct = (a: Float32Array, b: Float32Array): number => {
   const n = Math.min(a.length, b.length);

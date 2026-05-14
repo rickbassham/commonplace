@@ -1,5 +1,5 @@
 /**
- * DAR-932 ac-5 performance test: at corpus size 10K with avg outbound fan-out
+ * Performance test: at corpus size 10K with avg outbound fan-out
  * 5, `memory_graph({ name: <root>, depth: 3 })` completes in <50ms.
  *
  * We bypass the disk-backed MemoryStore + Embedder here -- those are not
@@ -63,7 +63,7 @@ const makeStoreShim = (entries: MemoryEntry[]): MemoryStore => {
   return shim as unknown as MemoryStore;
 };
 
-describe('DAR-932 ac-5: performance', () => {
+describe('memory_graph performance', () => {
   it('synthetic 10K-node graph with avg outbound fan-out 5: memory_graph({ name: <root>, depth: 3 }) completes in <50ms wall-clock on the CI runner (single best-of-N run after warmup to absorb GC jitter)', async () => {
     const { entries, graph } = buildSyntheticCorpus(10_000, 5);
     const store = makeStoreShim(entries);

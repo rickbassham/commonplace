@@ -1,12 +1,10 @@
 /**
- * DAR-923 contract tests for `MemoryStore` integration with the multi-process
+ * Contract tests for `MemoryStore` integration with the multi-process
  * safety primitives:
  *
  *   - ac-1: every `.md` and `.embedding` write goes through the atomic helper
  *   - ac-3: per-name advisory locks around save() and delete()
  *   - ac-4: mtime-based external-writer rescan in search() and list/all()
- *
- * Test names mirror the contract envelope on DAR-923 (round 1, approved).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

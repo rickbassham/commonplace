@@ -1,5 +1,5 @@
 /**
- * DAR-920 unit tests: real handler for memory_search.
+ * Unit tests: real handler for memory_search.
  *
  * Covers the in-process handler surface only -- argument validation, dispatch
  * to `MemoryStore.search`, and response serialisation. End-to-end coverage
@@ -136,7 +136,7 @@ describe('ac-2: memory_search handler dispatches to store.search', () => {
     const round = JSON.parse(JSON.stringify(out));
     expect(round).toEqual(out);
     // The top-level envelope is fixed at three keys; inner match shape is
-    // additive (DAR-929 adds `relations` and the optional `supersededBy`).
+    // additive (later changes added `relations` and the optional `supersededBy`).
     expect(new Set(Object.keys(out))).toEqual(new Set(['matches', 'query', 'totalScanned']));
   });
 
@@ -189,9 +189,10 @@ describe('ac-3: match shape and full-body return', () => {
     expect(m.description).toBe('description for alpha');
     expect(m.body).toBe('BODY-ALPHA');
     expect(typeof m.score).toBe('number');
-    // DAR-929 added `relations` (always present) and an optional
-    // `supersededBy` to the match shape; DAR-924 added the always-present
-    // `scope` tag identifying which store produced the match.
+    // The supersede-filter pass added `relations` (always present) and an
+    // optional `supersededBy` to the match shape; the dual-store split
+    // added the always-present `scope` tag identifying which store
+    // produced the match.
     expect(new Set(Object.keys(m))).toEqual(
       new Set(['name', 'type', 'description', 'body', 'score', 'relations', 'scope']),
     );
@@ -226,7 +227,7 @@ describe('ac-3: match shape and full-body return', () => {
     const out = await handler({ query: 'q' });
     if (!isRecord(out)) throw new Error('not record');
     const matches = out.matches as Array<{ score: number; name: string }>;
-    // DAR-924: the dual-store handler merges hits across stores and re-sorts
+    // The dual-store handler merges hits across stores and re-sorts
     // descending by score so the merged top-k is ordered correctly. Asserts
     // are by name (rather than position) so the test is robust to ordering
     // changes that don't affect the rounding contract under test.
@@ -263,7 +264,7 @@ describe('ac-5: type filter validation', () => {
 // --------------------------------------------------------------------------
 
 describe('ac-6: empty corpus + response invariants', () => {
-  it("memory_search against an empty corpus does not invoke the embedder (verified via spy on the embedder's `embed` method) -- preserves the DAR-917 cold-store fast path", async () => {
+  it("memory_search against an empty corpus does not invoke the embedder (verified via spy on the embedder's `embed` method) -- preserves the cold-store fast path", async () => {
     const embedder = makeStubEmbedder();
     const store = new MemoryStore({ dir: tmp, embedder });
     await store.scan();
@@ -331,7 +332,7 @@ describe('ac-6: empty corpus + response invariants', () => {
 // --------------------------------------------------------------------------
 
 describe('ac-1: buildToolDefinitions surfaces real memory_search', () => {
-  it('buildToolDefinitions returns a memory_search definition whose handler is NOT the not-implemented stub when DAR-920 handler is wired', async () => {
+  it('buildToolDefinitions returns a memory_search definition whose handler is NOT the not-implemented stub when the real handler is wired', async () => {
     const store = makeStore();
     await store.scan();
     const handlers = createDefaultHandlers({ store });
@@ -348,7 +349,7 @@ describe('ac-1: buildToolDefinitions surfaces real memory_search', () => {
 });
 
 // --------------------------------------------------------------------------
-// DAR-913 ac-2 / ac-4: COMMONPLACE_DEFAULT_LIMIT honoured by memory_search
+// COMMONPLACE_DEFAULT_LIMIT honoured by memory_search
 // --------------------------------------------------------------------------
 
 /**
@@ -366,7 +367,7 @@ const populateStore = async (store: MemoryStore, count: number): Promise<void> =
   }
 };
 
-describe('DAR-913 ac-2: memory_search honours COMMONPLACE_DEFAULT_LIMIT when caller omits limit', () => {
+describe('memory_search honours COMMONPLACE_DEFAULT_LIMIT when caller omits limit', () => {
   it('memory_search uses COMMONPLACE_DEFAULT_LIMIT when the caller omits limit', async () => {
     const store = makeStore();
     await store.scan();
@@ -429,7 +430,7 @@ describe('DAR-913 ac-2: memory_search honours COMMONPLACE_DEFAULT_LIMIT when cal
   });
 });
 
-describe('DAR-913 ac-4: memory_search slice honours env-resolved default limit on populated stores', () => {
+describe('memory_search slice honours env-resolved default limit on populated stores', () => {
   it("memory_search with env.COMMONPLACE_DEFAULT_LIMIT='3' and no caller limit returns at most 3 hits when the store has more than 3 entries", async () => {
     const store = makeStore();
     await store.scan();

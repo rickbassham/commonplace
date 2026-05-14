@@ -1,15 +1,14 @@
 # Sidecar binary format (`.embedding`)
 
 This document specifies the on-disk wire format for the binary `.embedding`
-sidecars that pair with each memory `.md` file. The format is owned by
-[DAR-910](https://linear.app/darkdragonsastro/issue/DAR-910); the encode and
-decode implementations live in [`src/store/sidecar.ts`](../src/store/sidecar.ts).
+sidecars that pair with each memory `.md` file. The encode and decode
+implementations live in [`src/store/sidecar.ts`](../src/store/sidecar.ts).
 
 ## Why a sidecar?
 
 The markdown file is the source of truth. Embeddings are derived data — they
 can be deleted and rebuilt at any time. Each sidecar carries enough metadata
-that the consumer (DAR-916) can detect three kinds of staleness automatically:
+that the consumer can detect three kinds of staleness automatically:
 
 | What changed                                        | How it's detected      |
 | --------------------------------------------------- | ---------------------- |
@@ -60,15 +59,15 @@ For bge-base (`L = 23`, `dim = 768`), this is `42 + 23 + 3072 = 3137` bytes
 - **model_id** (`model_len` bytes, offset 6). The embedding model identifier
   encoded as utf-8 (e.g. `Xenova/bge-base-en-v1.5`). The format is
   intentionally model-agnostic — the bytes are opaque utf-8. Validating that
-  the model is known/installed is the consumer's job (DAR-916).
+  the model is known/installed is the consumer's job.
 
 - **dim** (4 bytes, offset `6 + model_len`). The vector dimensionality, as a
   uint32 little-endian. For bge-base this is `768`. The encoder MUST throw if
   `vector.length !== dim`.
 
 - **content_sha** (32 bytes, offset `10 + model_len`). The raw sha256 digest
-  of the canonical source `.md` content (as defined by DAR-911 in
-  `src/store/memory.ts`). The encode API accepts the digest as a 64-character
+  of the canonical source `.md` content (as defined in `src/store/memory.ts`).
+  The encode API accepts the digest as a 64-character
   lowercase hex string and writes the decoded 32 raw bytes; the decode API
   re-encodes those bytes back to 64-character lowercase hex.
 
@@ -125,13 +124,11 @@ float32 once during encode and preserved exactly thereafter.
 This document and the implementing module own only the wire format.
 
 - Filesystem I/O for sidecars (read/write, atomic rename, advisory locking) is
-  owned by [DAR-916](https://linear.app/darkdragonsastro/issue/DAR-916).
+  owned by `src/store/memory-store.ts`.
 - Computing `content_sha` from markdown content is owned by
-  [DAR-911](https://linear.app/darkdragonsastro/issue/DAR-911); see
   `src/store/memory.ts`.
-- The embedding model itself is owned by
-  [DAR-912](https://linear.app/darkdragonsastro/issue/DAR-912).
+- The embedding model itself is owned by `src/embedder/`.
 - Staleness-detection logic that consumes the decoded header is owned by
-  DAR-916.
+  `MemoryStore`.
 - Endianness portability beyond little-endian is explicitly not supported.
 - Compression or checksumming of the vector payload is not in scope.

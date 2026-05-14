@@ -1,6 +1,6 @@
 /**
- * Migration CLI (DAR-918) — extends the DAR-926 `--prune-dangling` slice
- * into the full one-shot migrate command exposed by the `commonplace` bin.
+ * Migration CLI — the one-shot migrate command exposed by the `commonplace`
+ * bin, including the `--prune-dangling` rewrite pass.
  *
  * # Behaviour
  *
@@ -15,8 +15,7 @@
  *      (orphan cleanup).
  *   4. When `--prune-dangling` is set, rewrites each `.md` whose
  *      `relations[]` or `supersedes[]` references a name that does not
- *      resolve to any loaded memory, dropping the dangling entries (the
- *      DAR-926 behaviour, preserved verbatim).
+ *      resolve to any loaded memory, dropping the dangling entries.
  *
  * The embed pass routes through {@link MemoryStore.scan}: there is exactly
  * one embed code path in the codebase, and the migrate CLI is a wrapper
@@ -47,9 +46,9 @@
  * # Atomicity
  *
  * `--prune-dangling` writes each affected `.md` through `writeFileSync`.
- * Crash-safe atomic write-temp+rename / fsync semantics are owned by
- * DAR-923 and apply transitively to the embed pass via
- * {@link MemoryStore.scan}'s use of `atomicWrite`.
+ * Crash-safe atomic write-temp+rename / fsync semantics are owned by the
+ * `atomicWrite` helper and apply transitively to the embed pass via
+ * {@link MemoryStore.scan}.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -126,13 +125,13 @@ export interface MigrateResult {
    * {@link import('../store/memory-store.js').ScanResult.fresh} so the CLI
    * summary line "loaded: N unchanged" can be reported directly without
    * subtracting from {@link loaded} (whose semantics differ between live
-   * and dry-run modes -- see DAR-918 review f-1).
+   * and dry-run modes.
    */
   fresh: number;
   /** One entry per .md that had dangling edges pruned. Empty when nothing to prune. */
   pruned: PrunedFile[];
   /**
-   * DAR-966: `.md` files whose frontmatter could not be parsed (missing or
+   * `.md` files whose frontmatter could not be parsed (missing or
    * malformed `---` delimiters, invalid YAML, missing required field, ...).
    * Surfaced verbatim from {@link import('../store/memory-store.js').ScanResult.skipped}.
    * The legacy `migrate <dir>` form uses this to report bad files in its
@@ -232,7 +231,7 @@ const listMemoriesFromDisk = (
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
     if (!ent.isFile()) continue;
     if (!ent.name.endsWith('.md')) continue;
-    // DAR-966: skip unparseable files instead of crashing. The scan pass
+    // Skip unparseable files instead of crashing. The scan pass
     // already reported them via ScanResult.skipped; the prune pass simply
     // ignores them (no edges to dangling-check on a file we can't read).
     try {
@@ -265,14 +264,14 @@ const groupByFrom = (edges: DanglingEdge[]): Map<string, DanglingEdge[]> => {
 };
 
 // -------------------------------------------------------------------------
-// Auto-import from external memory sources (DAR-961)
+// Auto-import from external memory sources
 // -------------------------------------------------------------------------
 
 /**
- * The set of known external memory sources that ship a built-in importer
- * (DAR-961). Importers for sources whose data already lives behind an
- * MCP server (mem0, Letta, ...) are deliberately omitted -- the
- * documented MCP-to-MCP pattern (see README) handles those without any
+ * The set of known external memory sources that ship a built-in importer.
+ * Importers for sources whose data already lives behind an MCP server
+ * (mem0, Letta, ...) are deliberately omitted -- the documented
+ * MCP-to-MCP pattern (see README) handles those without any
  * commonplace-side integration code.
  */
 export const KNOWN_IMPORT_SOURCES = ['claude-code'] as const;
@@ -305,7 +304,7 @@ export interface DetectedSource {
  * `~/.claude/projects/` dir exists but cannot be enumerated due to a
  * permission error. Detection still returns a (possibly empty) sources
  * array; the warning gives the caller something to render so the failure
- * mode is debuggable rather than silent (DAR-961 review f-4).
+ * mode is debuggable rather than silent.
  */
 export interface DetectionWarning {
   /** Absolute path that could not be read. */
@@ -357,7 +356,7 @@ export const detectImportSources = (opts: DetectOptions = {}): DetectedSource[] 
  * exists but cannot be enumerated). Detection is still best-effort -- a
  * warning never causes a throw -- but surfacing the message lets the CLI
  * render a debuggable signal instead of an indistinguishable
- * "no external memory sources detected" (DAR-961 review f-4).
+ * "no external memory sources detected".
  */
 export const detectImportSourcesDetailed = (opts: DetectOptions = {}): DetectionResult => {
   const home = opts.home ?? homedir();
@@ -390,7 +389,7 @@ export const detectImportSourcesDetailed = (opts: DetectOptions = {}): Detection
     try {
       files = readdirSync(memDir, { withFileTypes: true })
         .filter((d) => d.isFile() && d.name.endsWith('.md'))
-        // DAR-966: exclude the harness's per-project `MEMORY.md` index
+        // Exclude the harness's per-project `MEMORY.md` index
         // file (case-insensitive). It is markdown with no frontmatter --
         // a system file, not a memory -- and copying it into the user
         // store pollutes the index and crashes the post-copy scan.
@@ -473,8 +472,8 @@ export interface ImportOptions {
 }
 
 /**
- * DAR-966: parse a harness-emitted memory file in commonplace-canonical
- * form, tolerating the harness's permissive YAML quoting.
+ * Parse a harness-emitted memory file in commonplace-canonical form,
+ * tolerating the harness's permissive YAML quoting.
  *
  * The harness writes a flat key/value frontmatter (no nested
  * mappings, no flow sequences in description) and does NOT auto-quote
@@ -615,7 +614,7 @@ export const runImportFromClaudeCode = async (opts: ImportOptions): Promise<Impo
   // dir) is reported with a distinct, accurate reason rather than the
   // misleading "already exists in <userDir>" -- which implies a
   // pre-existing user-dir entry, not a within-run collision between two
-  // sibling Claude Code projects (DAR-961 review f-2).
+  // sibling Claude Code projects.
   const importedFromThisRun = new Map<string, string>();
 
   for (const src of sources) {
@@ -647,8 +646,8 @@ export const runImportFromClaudeCode = async (opts: ImportOptions): Promise<Impo
         perSourceSkipped += 1;
         continue;
       }
-      // DAR-966: read the source through the permissive harness-
-      // frontmatter parser (which tolerates unquoted values containing
+      // Read the source through the permissive harness-frontmatter
+      // parser (which tolerates unquoted values containing
       // colon-space) and re-emit via `serializeMemory` so the imported
       // file lands in commonplace-canonical YAML regardless of the
       // harness's quoting habits. Files that cannot be parsed (missing
@@ -738,13 +737,12 @@ export type ParsedMigrateArgs =
  * Canonical usage string for the `commonplace migrate` surface. Exported so
  * the bare-bin entry (`src/index.ts`) can render the same multi-line message
  * a parser usage_error renders -- one source of truth for "how do I invoke
- * commonplace" rather than two strings that drift over time (DAR-961
- * review f-1).
+ * commonplace" rather than two strings that drift over time.
  *
  * `--auto` is documented inline as a forward-compat no-op so a user who
  * sees it in `--help` knows it does not change today's behaviour and won't
  * be surprised when interactive prompting later sits behind a different
- * flag (DAR-961 review f-3).
+ * flag.
  */
 /**
  * The single `graph` line appended to {@link USAGE}. Defined here (rather
@@ -763,8 +761,8 @@ export const USAGE =
   '       commonplace migrate --from <source>       (import from a known source; --dry-run / --auto supported)\n' +
   '                                                 (--auto is a forward-compat no-op today; reserved for future interactive prompting)\n' +
   '       commonplace migrate <dir>                 (rebuild sidecars for an existing memory dir; --dry-run / --prune-dangling supported)\n' +
-  // DAR-933: the graph subcommand shares this USAGE so the bare-bin no-arg
-  // error path lists every subcommand the dispatcher knows about. The
+  // The graph subcommand shares this USAGE so the bare-bin no-arg error
+  // path lists every subcommand the dispatcher knows about. The
   // graph-specific `--help` body lives in `src/cli/graph.ts` (`GRAPH_HELP`);
   // this line is the dispatcher-level summary only.
   USAGE_GRAPH_LINE;
@@ -779,14 +777,14 @@ const isKnownImportSource = (v: string): v is KnownImportSource =>
  * `process.exit` calls through the parser.
  *
  * Recognised forms:
- *   `migrate`                                     -- detection-only (DAR-961)
- *   `migrate --from <source>`                     -- import from a known source (DAR-961)
+ *   `migrate`                                     -- detection-only
+ *   `migrate --from <source>`                     -- import from a known source
  *   `migrate --from <source> --dry-run`           -- ditto, report without writing
  *   `migrate --from <source> --auto`              -- non-interactive (currently a no-op vs. default)
- *   `migrate <dir>`                               -- rebuild sidecars for <dir> (DAR-918)
- *   `migrate <dir> --dry-run`                     -- DAR-918
- *   `migrate <dir> --prune-dangling`              -- DAR-918
- *   `migrate <dir> --dry-run --prune-dangling`    -- DAR-918
+ *   `migrate <dir>`                               -- rebuild sidecars for <dir>
+ *   `migrate <dir> --dry-run`                     -- rebuild sidecars, report without writing
+ *   `migrate <dir> --prune-dangling`              -- rebuild sidecars and prune dangling edges
+ *   `migrate <dir> --dry-run --prune-dangling`    -- both flags combined
  *
  * Anything else returns either `usage_error` (right command, wrong args)
  * or `unknown_subcommand` (different first token entirely).
@@ -856,7 +854,7 @@ export const parseMigrateArgs = (argv: readonly string[]): ParsedMigrateArgs => 
   }
 
   // Mode resolution: --from selects import mode; bare `migrate` selects
-  // detection mode; a positional <dir> selects scan mode (DAR-918).
+  // detection mode; a positional <dir> selects scan mode.
   if (from !== null) {
     if (dir !== null) {
       return {
@@ -954,7 +952,7 @@ export const migrateMain = async (opts: MigrateMainOptions): Promise<MigrateMain
   return migrateScan(parsed, opts);
 };
 
-/** Detection mode (DAR-961): report what we would import, write nothing. */
+/** Detection mode: report what we would import, write nothing. */
 const migrateDetect = (
   _parsed: { kind: 'ok'; mode: 'detect' },
   opts: MigrateMainOptions,
@@ -962,8 +960,7 @@ const migrateDetect = (
   const home = opts.home;
   // Use the warnings-aware variant so a permission failure on
   // `~/.claude/projects/` produces a debuggable signal on stderr instead
-  // of being indistinguishable from a genuinely empty home (DAR-961
-  // review f-4).
+  // of being indistinguishable from a genuinely empty home.
   const { sources, warnings } = detectImportSourcesDetailed(home === undefined ? {} : { home });
 
   // Warnings go to stderr so the stdout summary stays parseable. Each
@@ -1003,7 +1000,7 @@ const migrateDetect = (
   return { exitCode: 0 };
 };
 
-/** Import mode (DAR-961): copy compatible files into COMMONPLACE_USER_DIR + scan/embed. */
+/** Import mode: copy compatible files into COMMONPLACE_USER_DIR + scan/embed. */
 const migrateImport = async (
   parsed: { kind: 'ok'; mode: 'import'; from: KnownImportSource; dryRun: boolean; auto: boolean },
   opts: MigrateMainOptions,
@@ -1050,7 +1047,7 @@ const migrateImport = async (
     }
   }
   if (skippedCount > 0) {
-    // DAR-966: list each skipped file with its name, source dir, and
+    // List each skipped file with its name, source dir, and
     // reason so an operator can see both same-name collisions and
     // unrecoverable-frontmatter skips in the same section. The reason
     // string is short and human-readable (e.g. "already exists in ..."
@@ -1070,7 +1067,7 @@ const migrateImport = async (
   return { exitCode: 0 };
 };
 
-/** Legacy scan mode (DAR-918): rebuild sidecars for an existing dir. */
+/** Legacy scan mode: rebuild sidecars for an existing dir. */
 const migrateScan = async (
   parsed: { kind: 'ok'; mode: 'scan'; dir: string; pruneDangling: boolean; dryRun: boolean },
   opts: MigrateMainOptions,
@@ -1114,7 +1111,7 @@ const migrateScan = async (
     `  orphaned:     ${result.orphaned} sidecar${result.orphaned === 1 ? '' : 's'} without matching .md${result.orphaned === 0 ? '' : parsed.dryRun ? ' (would be cleaned up)' : ' (cleaned up)'}`,
   ];
   if (result.skipped.length > 0) {
-    // DAR-966: a `migrate <dir>` re-run after a partial import surfaces
+    // A `migrate <dir>` re-run after a partial import surfaces
     // each malformed `.md` here so the operator can hand-fix it instead
     // of guessing why a previous scan crashed.
     lines.push(

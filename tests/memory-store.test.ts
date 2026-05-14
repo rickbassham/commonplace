@@ -1,10 +1,6 @@
 /**
- * DAR-916 contract tests.
- *
- * Behavioral tests for the MemoryStore class -- the in-memory vector index
+ * Contract tests for the MemoryStore class -- the in-memory vector index
  * backed by `<dir>/*.md` + `<name>.embedding` sidecar files.
- *
- * Test names mirror the contract envelope on DAR-916 (round 1, approved).
  *
  * The Embedder dependency is stubbed (no real model load) so these tests
  * run hermetically and quickly. The stub satisfies the structural contract

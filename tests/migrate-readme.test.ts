@@ -1,5 +1,5 @@
 /**
- * DAR-961 ac-7: README sanity tests for the migration section.
+ * README sanity tests for the migration section.
  *
  * Asserts the migration documentation covers:
  *   - the `commonplace migrate` entry-point (with `--from claude-code`,
@@ -22,7 +22,7 @@ import { join } from 'node:path';
 const repoRoot = join(__dirname, '..');
 const readme = (): string => readFileSync(join(repoRoot, 'README.md'), 'utf8');
 
-describe('DAR-961 ac-7: README migration section', () => {
+describe('README migration section', () => {
   it('contains a migration section that documents `commonplace migrate`, `--from claude-code`, `--auto`, and `--dry-run` with at least one example invocation', () => {
     const body = readme();
     expect(body).toMatch(/##\s+Migration/i);

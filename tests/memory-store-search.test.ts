@@ -1,11 +1,7 @@
 /**
- * DAR-917 contract tests.
- *
- * Behavioral tests for `MemoryStore.search(query, opts?)` -- brute-force
+ * Contract tests for `MemoryStore.search(query, opts?)` -- brute-force
  * top-k cosine search over the in-memory index. Vectors in the store are
- * normalized at write time (DAR-916), so cosine reduces to a dot product.
- *
- * Test names mirror the contract envelope on DAR-917 (round 1, approved).
+ * normalized at write time, so cosine reduces to a dot product.
  *
  * The Embedder dependency is stubbed (no real model load) so these tests
  * run hermetically and quickly. Stubs return small deterministic vectors

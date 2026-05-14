@@ -1,13 +1,9 @@
 /**
- * DAR-925 contract tests.
- *
- * Behavioral tests for the `relations[]` and `supersedes[]` frontmatter graph
- * fields layered on top of the DAR-911 memory I/O primitives:
+ * Contract tests for the `relations[]` and `supersedes[]` frontmatter
+ * graph fields layered on top of the memory I/O primitives:
  *   - readMemory(path)   -> { ..., relations, supersedes }
  *   - writeMemory(path, memory)   accepts relations / supersedes
  *   - contentSha(memory)          MUST NOT depend on relations / supersedes
- *
- * Test names mirror the contract envelope on DAR-925 (round 1).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -268,7 +264,7 @@ body
     ]);
   });
 
-  it("readMemory throws with an error message naming the offending value when a relations entry has type 'mentions' (intentionally absent — auto-extracted in DAR-927)", () => {
+  it("readMemory throws with an error message naming the offending value when a relations entry has type 'mentions' (intentionally absent — auto-extracted by the body tokenizer)", () => {
     const md = `---
 name: src
 description: d

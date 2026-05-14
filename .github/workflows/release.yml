@@ -1,7 +1,7 @@
-# DAR-960: tag-triggered npm publish for commonplace-mcp.
+# Tag-triggered npm publish for commonplace-mcp.
 #
 # This workflow runs when a `v*` tag is pushed. It mirrors the gate in
-# `ci.yml` (DAR-914) so the same Make targets that protect main also
+# `ci.yml` so the same Make targets that protect main also
 # protect the publish, then derives an npm dist-tag from the pushed tag
 # (stable -> `latest`, pre-release tags -> their alphabetic prefix --
 # `beta`, `rc`, `alpha`, `next`, ...) via the unit-tested
@@ -115,10 +115,10 @@ jobs:
 
       - name: Verify SERVER_VERSION matches package.json version
         # Drift guard #2: SERVER_VERSION in src/server/server.ts is
-        # advertised in the MCP initialize handshake. DAR-921 already
-        # flagged this drift mode -- bump package.json but forget the
-        # constant. Extract the literal from the source file and
-        # compare to the package version computed above.
+        # advertised in the MCP initialize handshake. The common drift
+        # mode is bumping package.json but forgetting the constant.
+        # Extract the literal from the source file and compare to the
+        # package version computed above.
         env:
           PKG_VERSION: ${{ steps.tag_version.outputs.version }}
         run: |

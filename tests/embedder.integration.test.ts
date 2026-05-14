@@ -1,5 +1,5 @@
 /**
- * DAR-912 contract integration tests.
+ * Contract integration tests for the Embedder.
  *
  * These tests load the real `Xenova/bge-base-en-v1.5` model via
  * `@huggingface/transformers` and run an actual embed() round trip. The
@@ -14,7 +14,6 @@
  *   - `dim` reads back as 768 and `modelId` round-trips
  *   - dim equals the returned vector's length after a successful embed()
  *
- * Test names mirror the contract envelope on DAR-912 (round 1, approved).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -70,7 +69,7 @@ describe('ac-6 (integration): bge-base load + embed round trip', () => {
   }, 120_000);
 });
 
-describe('DAR-913 ac-5 (integration): unknown COMMONPLACE_MODEL surfaces a lazy load error naming the offending model id', () => {
+describe('unknown COMMONPLACE_MODEL surfaces a lazy load error naming the offending model id', () => {
   it('memory_search against a store using an unknown COMMONPLACE_MODEL surfaces an error whose message names the offending model id when the embedder first loads', async () => {
     const bogus = 'definitely-not-a-real/commonplace-test-model';
     const e = new Embedder(bogus);
@@ -78,7 +77,7 @@ describe('DAR-913 ac-5 (integration): unknown COMMONPLACE_MODEL surfaces a lazy 
     try {
       // First embed call triggers transformers.js's pipeline() factory,
       // which is where an unknown id surfaces. We don't pre-validate at
-      // construction time per DAR-913 ac-5.
+      // construction time -- validation is lazy.
       await e.embed('anything');
     } catch (err) {
       msg = err instanceof Error ? err.message : String(err);

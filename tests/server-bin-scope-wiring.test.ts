@@ -1,5 +1,5 @@
 /**
- * DAR-924 ac-5 source-level wiring assertions for the dual-store boot.
+ * Source-level wiring assertions for the dual-store boot.
  *
  * The dual-store wiring is verified end-to-end by the in-memory transport
  * tests in `server-roots-detection.integration.test.ts` and the spawned-bin
@@ -22,7 +22,7 @@ const repoRoot = join(__dirname, '..');
 const binSource = readFileSync(join(repoRoot, 'src/bin/commonplace-mcp.ts'), 'utf8');
 const bootSource = readFileSync(join(repoRoot, 'src/bin/boot.ts'), 'utf8');
 
-describe('DAR-924 ac-5: bin / boot module wires user and project stores correctly', () => {
+describe('bin / boot module wires user and project stores correctly', () => {
   it('the bin imports bootServer from ./boot.js so detection + store construction lives in a unit-testable module', () => {
     expect(binSource).toMatch(/from\s+['"]\.\/boot\.js['"]/);
     expect(binSource).toMatch(/\bbootServer\b/);
@@ -67,7 +67,7 @@ describe('DAR-924 ac-5: bin / boot module wires user and project stores correctl
     expect(bootSource).toMatch(/createDefaultHandlers\s*\(\s*\{[^}]*projectStore[^}]*\}/s);
   });
 
-  it('no code path in the bin or boot module still constructs a single store keyed on COMMONPLACE_MEMORY_DIR (the DAR-919 single-store wiring is removed)', () => {
+  it('no code path in the bin or boot module still constructs a single store keyed on COMMONPLACE_MEMORY_DIR (the legacy single-store wiring is removed)', () => {
     // The deprecated env var name must not appear inline as an env read.
     expect(binSource).not.toMatch(/process\.env\.COMMONPLACE_MEMORY_DIR/);
     expect(bootSource).not.toMatch(/process\.env\.COMMONPLACE_MEMORY_DIR/);

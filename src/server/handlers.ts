@@ -1,21 +1,16 @@
 /**
- * MCP tool handlers for the four memory tools.
- *
- * - DAR-919 wired the CRUD handlers (`memory_save`, `memory_list`,
- *   `memory_delete`).
- * - DAR-920 wires the search handler (`memory_search`).
+ * MCP tool handlers for the memory tools.
  *
  * Each handler validates its arguments at entry, dispatches to the
  * corresponding {@link MemoryStore} method, and returns a JSON-serialisable
  * shape that the MCP server's CallToolRequest dispatcher (in `./server.ts`)
  * wraps in a single text content block.
  *
- * Validation is deliberately manual rather than via a schema library --
- * the contract envelope leaves the choice to the implementer, manual
- * validation has zero new dependencies, and the rejection messages are
- * tailored to name the offending field. Error messages from the store
- * layer (DAR-916 / DAR-917 / DAR-923) are passed through unchanged so they
- * keep mentioning the offending name.
+ * Validation is deliberately manual rather than via a schema library:
+ * manual validation has zero new dependencies, and the rejection messages
+ * are tailored to name the offending field. Error messages from the store
+ * layer are passed through unchanged so they keep mentioning the offending
+ * name.
  */
 
 import { join } from 'node:path';
@@ -36,7 +31,7 @@ import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from './defaults
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /**
- * The two store scopes the server can address (DAR-924).
+ * The two store scopes the server can address.
  *
  * - `'user'` -- the user-level store (always loaded). Personal rules,
  *   preferences, hard feedback. Located under `COMMONPLACE_USER_DIR` (or
@@ -54,13 +49,13 @@ export const SCOPES: readonly Scope[] = ['user', 'project'] as const;
  * Construction options shared by all handler factories. Two shapes are
  * accepted:
  *
- *   - `{ store }` -- legacy single-store form (DAR-919). Treated as
- *     user-only mode: `store` becomes the user store and no project store
- *     is wired. Existing callers (and tests) that pass this shape continue
- *     to work; saves with `scope: 'project'` will be rejected.
+ *   - `{ store }` -- legacy single-store form. Treated as user-only mode:
+ *     `store` becomes the user store and no project store is wired.
+ *     Existing callers (and tests) that pass this shape continue to work;
+ *     saves with `scope: 'project'` will be rejected.
  *
- *   - `{ userStore, projectStore? }` -- DAR-924 dual-store form. The user
- *     store is required; the project store is omitted in user-only mode.
+ *   - `{ userStore, projectStore? }` -- dual-store form. The user store is
+ *     required; the project store is omitted in user-only mode.
  *
  * Mixing both fields (e.g. `{ store, userStore }`) is not supported -- the
  * `userStore` field wins so the new shape can be adopted incrementally.
@@ -79,45 +74,45 @@ export interface HandlerOptions {
   projectStore?: MemoryStore;
   /**
    * Default top-k applied by `memory_search` when the caller omits
-   * `limit`. Resolved by the bin from `COMMONPLACE_DEFAULT_LIMIT`
-   * (DAR-913). When omitted, the search handler falls back to
+   * `limit`. Resolved by the bin from `COMMONPLACE_DEFAULT_LIMIT`. When
+   * omitted, the search handler falls back to
    * {@link DEFAULT_SEARCH_LIMIT}. Other handlers ignore this option.
    */
   defaultLimit?: number;
   /**
    * The user-scope {@link MemoryGraph} used for one-hop expansion in
-   * `memory_search` (DAR-930). Threaded through the bin from the user
+   * `memory_search`. Threaded through the bin from the user
    * `MemoryStore`'s graph. When omitted, `expand: 'one-hop'` requests still
    * validate but produce no expanded neighbors for the user scope.
    */
   userGraph?: MemoryGraph;
   /**
    * The project-scope {@link MemoryGraph} used for one-hop expansion in
-   * `memory_search` (DAR-930). Threaded through the bin from the project
+   * `memory_search`. Threaded through the bin from the project
    * `MemoryStore`'s graph when a project store was detected. When omitted,
    * `expand: 'one-hop'` requests still validate but produce no expanded
    * neighbors for the project scope.
    */
   projectGraph?: MemoryGraph;
   /**
-   * Decay applied to expanded neighbors' scores in `memory_search`
-   * (DAR-930). Resolved by the bin from `COMMONPLACE_EXPANSION_DECAY`.
-   * Defaults to `0.7` when omitted.
+   * Decay applied to expanded neighbors' scores in `memory_search`.
+   * Resolved by the bin from `COMMONPLACE_EXPANSION_DECAY`. Defaults to
+   * `0.7` when omitted.
    */
   expansionDecay?: number;
   /**
-   * Alpha coefficient for the connectedness boost (DAR-931). Each direct
-   * cosine hit's score is augmented by `alpha * log(1 + inbound_count)`
-   * before the descending-score sort. `inbound_count` reads the per-scope
+   * Alpha coefficient for the connectedness boost. Each direct cosine
+   * hit's score is augmented by `alpha * log(1 + inbound_count)` before
+   * the descending-score sort. `inbound_count` reads the per-scope
    * {@link MemoryGraph}'s inbound edges, filtered to exclude `mentions`
    * and `supersedes` edge types. Defaults to `0.02` when omitted; setting
-   * to `0` disables the boost (and yields identical results to v0.1
-   * ranking).
+   * to `0` disables the boost (and yields identical results to the
+   * unboosted ranking).
    *
-   * The boost composes with DAR-930 one-hop expansion: expanded
-   * neighbors' decayed scores are computed from the BOOSTED direct-hit
-   * score (not from raw cosine), so connectedness propagates through
-   * expansion deterministically.
+   * The boost composes with one-hop expansion: expanded neighbors'
+   * decayed scores are computed from the BOOSTED direct-hit score (not
+   * from raw cosine), so connectedness propagates through expansion
+   * deterministically.
    */
   connectednessBoost?: number;
 }
@@ -165,7 +160,7 @@ export interface MemorySaveResult {
     description: string;
   };
   path: string;
-  /** Which store the memory was written to (DAR-924). */
+  /** Which store the memory was written to. */
   scope: Scope;
 }
 
@@ -175,7 +170,7 @@ export interface MemoryListResult {
     name: string;
     type: MemoryType;
     description: string;
-    /** Which store this entry came from (DAR-924). */
+    /** Which store this entry came from. */
     scope: Scope;
   }>;
 }
@@ -192,7 +187,7 @@ export interface MemoryListResult {
  * `supersedes[]` field is the source of truth (the in-memory graph indexes
  * the same data). This keeps the search/list handlers self-contained:
  * neither needs to reach into the store's optional graph instance, and the
- * filter still works whether or not a graph is wired in (DAR-928).
+ * filter still works whether or not a graph is wired in.
  */
 const buildSupersededMap = (entries: ReadonlyArray<MemoryEntry>): Map<string, string> => {
   const out = new Map<string, string>();
@@ -204,7 +199,7 @@ const buildSupersededMap = (entries: ReadonlyArray<MemoryEntry>): Map<string, st
       // `store.all()` -- this reflects file-system/scan order and is NOT
       // contractually stable across rescans. The AC does not specify a
       // deterministic tie-breaker; if a stable value becomes important
-      // (e.g. when DAR-930+ exposes graph traversal), pick a tie-break
+      // (e.g. when graph traversal is exposed directly), pick a tie-break
       // here (lexicographically smallest superseder name would be the
       // simplest) rather than relying on iteration order.
       if (!out.has(target)) {
@@ -218,14 +213,14 @@ const buildSupersededMap = (entries: ReadonlyArray<MemoryEntry>): Map<string, st
 /** Return shape for {@link createMemoryDeleteHandler}. */
 export interface MemoryDeleteResult {
   deleted: string;
-  /** Which store the memory was removed from (DAR-924). */
+  /** Which store the memory was removed from. */
   scope: Scope;
 }
 
 /**
- * The literal values accepted for `memory_search`'s `expand` argument
- * (DAR-930). `'none'` is the default and a true alias for omitting the
- * field; `'one-hop'` opts into outbound-edge expansion.
+ * The literal values accepted for `memory_search`'s `expand` argument.
+ * `'none'` is the default and a true alias for omitting the field;
+ * `'one-hop'` opts into outbound-edge expansion.
  */
 export const EXPAND_MODES = ['none', 'one-hop'] as const;
 
@@ -233,11 +228,11 @@ export const EXPAND_MODES = ['none', 'one-hop'] as const;
 export type ExpandMode = (typeof EXPAND_MODES)[number];
 
 /**
- * The edge types `memory_search` will follow during one-hop expansion
- * (DAR-930). The four authored relation types plus `supersedes` and
- * `mentions`; structurally equivalent to {@link EdgeType} but re-declared
- * here so we don't accidentally widen by adding a never-walked sentinel
- * to the graph's edge enum.
+ * The edge types `memory_search` will follow during one-hop expansion.
+ * The four authored relation types plus `supersedes` and `mentions`;
+ * structurally equivalent to {@link EdgeType} but re-declared here so we
+ * don't accidentally widen by adding a never-walked sentinel to the
+ * graph's edge enum.
  */
 export const EXPAND_TYPES = [
   ...RELATION_TYPES,
@@ -247,8 +242,8 @@ export const EXPAND_TYPES = [
 
 /**
  * Default `expandTypes` for `memory_search` one-hop expansion when the
- * caller does not supply one (DAR-930). Limited to the two
- * "build-context" relations on purpose: `builds-on` and `related-to` are
+ * caller does not supply one. Limited to the two "build-context"
+ * relations on purpose: `builds-on` and `related-to` are
  * the edge types most likely to surface useful neighbors the agent did
  * not ask for. `mentions`, `supersedes`, `contradicts`, and `child-of`
  * each need explicit opt-in (an agent that wants the older entry can
@@ -262,29 +257,29 @@ export interface MemorySearchMatch {
   type: MemoryType;
   description: string;
   /**
-   * Full memory body verbatim. Per DAR-920 ac-3 we never truncate, summarise,
-   * or otherwise transform the body -- the caller gets exactly what was
-   * persisted, so a follow-up read is unnecessary.
+   * Full memory body verbatim. We never truncate, summarise, or otherwise
+   * transform the body -- the caller gets exactly what was persisted, so a
+   * follow-up read is unnecessary.
    */
   body: string;
   /** Cosine similarity from {@link MemoryStore.search}, rounded to 3 decimals. */
   score: number;
   /**
    * Outgoing graph edges authored on this memory's frontmatter `relations:`
-   * list (DAR-925/DAR-929). Always present -- empty array when the memory has
-   * no authored outgoing edges.
+   * list. Always present -- empty array when the memory has no authored
+   * outgoing edges.
    *
    * Only the four authored {@link import('../store/memory.js').RelationType}
    * values surface here (`related-to`, `builds-on`, `contradicts`,
    * `child-of`). The `supersedes:` frontmatter list does NOT round-trip
    * through `relations` (`supersededBy` already carries that signal). Body
-   * `[[name]]` mention edges (DAR-927) are deliberately excluded too --
-   * surfacing them is deferred to the v0.2 `memory_graph` tool (DAR-930+).
+   * `[[name]]` mention edges are deliberately excluded too -- surfacing
+   * them is the job of the dedicated `memory_graph` tool.
    */
   relations: Relation[];
   /**
-   * Which store produced this match (DAR-924). Always present so callers
-   * can disambiguate same-name entries across stores.
+   * Which store produced this match. Always present so callers can
+   * disambiguate same-name entries across stores.
    */
   scope: Scope;
   /**
@@ -295,11 +290,10 @@ export interface MemorySearchMatch {
    */
   supersededBy?: string;
   /**
-   * Present only on entries that were added by one-hop graph expansion
-   * (DAR-930), absent on direct cosine hits (key absent, not undefined).
-   * `source` is the name of the direct hit whose outbound edge pulled this
-   * neighbor into the response; `edge` is the edge type that connected
-   * them.
+   * Present only on entries that were added by one-hop graph expansion;
+   * absent on direct cosine hits (key absent, not undefined). `source` is
+   * the name of the direct hit whose outbound edge pulled this neighbor
+   * into the response; `edge` is the edge type that connected them.
    */
   via?: { source: string; edge: EdgeType };
 }
@@ -434,15 +428,15 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
  * fields on the optional arguments object:
  *
  *   - `type` -- restrict results to entries of this {@link MemoryType}.
- *   - `includeSuperseded` (DAR-929) -- when `true`, include memories that
- *     have been superseded by another memory; default `false`, which omits
- *     them from the response.
+ *   - `includeSuperseded` -- when `true`, include memories that have been
+ *     superseded by another memory; default `false`, which omits them from
+ *     the response.
  *
  * The response strips the body and any graph metadata, matching the
- * documented frontmatter-only shape; per the DAR-929 contract, `relations`
- * is NOT mirrored on `memory_list` -- only `memory_search` matches gain
- * outgoing relations. The `includeSuperseded` flag is mirrored here so
- * callers can scan the corpus consistently across both tools.
+ * documented frontmatter-only shape. `relations` is NOT mirrored on
+ * `memory_list` -- only `memory_search` matches gain outgoing relations.
+ * The `includeSuperseded` flag is mirrored here so callers can scan the
+ * corpus consistently across both tools.
  */
 export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
   const { userStore, projectStore } = resolveStores(opts, 'memory_list');
@@ -492,8 +486,8 @@ export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
 };
 
 /**
- * Validate a `limit` argument. Per DAR-917 the search store layer delegates
- * limit sanitisation to the MCP layer; we accept positive integers, reject
+ * Validate a `limit` argument. The search store layer delegates limit
+ * sanitisation to the MCP layer; we accept positive integers, reject
  * everything else (NaN, negatives, non-integers, non-numbers) with a message
  * naming the field. `undefined` is allowed -- the handler picks
  * {@link DEFAULT_SEARCH_LIMIT}.
@@ -518,8 +512,8 @@ const validateLimit = (raw: unknown, toolName: string): number | undefined => {
  * `undefined`); anything else must be a literal boolean. The error message
  * names the offending field so the caller's UI can highlight it.
  *
- * Used by both `memory_search` and `memory_list` for `includeSuperseded`
- * (DAR-929). We deliberately reject truthy strings like `'true'` and
+ * Used by both `memory_search` and `memory_list` for `includeSuperseded`.
+ * We deliberately reject truthy strings like `'true'` and
  * numerics like `1` so callers learn the type contract early -- this keeps
  * the wire shape predictable across MCP clients (some of which would
  * happily pass `'true'` if accepted).
@@ -563,7 +557,7 @@ const validateThreshold = (raw: unknown, toolName: string): number | undefined =
 const roundScore = (score: number): number => Math.round(score * 1000) / 1000;
 
 /**
- * Validate the optional `expand` argument for `memory_search` (DAR-930).
+ * Validate the optional `expand` argument for `memory_search`.
  * `undefined` is allowed and returns `undefined` (caller chooses the
  * default); anything else must be one of {@link EXPAND_MODES}. Rejects
  * unknown literals, numbers, null, etc. with a message that names the
@@ -584,8 +578,8 @@ const validateExpand = (raw: unknown, toolName: string): ExpandMode | undefined 
 };
 
 /**
- * Validate the optional `expandTypes` argument for `memory_search`
- * (DAR-930). `undefined` is allowed and returns `undefined`; anything else
+ * Validate the optional `expandTypes` argument for `memory_search`.
+ * `undefined` is allowed and returns `undefined`; anything else
  * must be an array whose every element is a recognised {@link EdgeType}.
  * Validation rejects non-array shapes, empty / non-string elements, and
  * unknown edge-type strings (e.g. `'bogus'`) with a message that lists the
@@ -616,8 +610,8 @@ const validateExpandTypes = (raw: unknown, toolName: string): EdgeType[] | undef
 };
 
 /**
- * Validate the optional `expandLimit` argument for `memory_search`
- * (DAR-930). Non-negative integer (zero is permitted -- it means "no
+ * Validate the optional `expandLimit` argument for `memory_search`.
+ * Non-negative integer (zero is permitted -- it means "no
  * neighbors per hit" and is honoured rather than coerced to the default).
  * Rejects negatives, non-integers, NaN, +/-Infinity, and non-numbers with
  * a message that names the field.
@@ -639,14 +633,14 @@ const validateExpandLimit = (raw: unknown, toolName: string): number | undefined
 
 /**
  * Default `expandLimit` for `memory_search` one-hop expansion when the
- * caller does not supply one (DAR-930). Capped at 2 so a single hub
+ * caller does not supply one. Capped at 2 so a single hub
  * memory cannot flood the response with its entire neighborhood; callers
  * that want more pass `expandLimit` explicitly.
  */
 const DEFAULT_EXPAND_LIMIT = 2;
 
 /**
- * Edge types that the connectedness boost (DAR-931) IGNORES when counting
+ * Edge types that the connectedness boost IGNORES when counting
  * a memory's inbound edges. `mentions` is body-tokenizer-derived and
  * noisy (a passing reference is not necessarily a vote of importance);
  * `supersedes` is structural (the successor doesn't endorse the
@@ -658,8 +652,8 @@ const BOOST_EXCLUDED_EDGE_TYPES = new Set<EdgeType>(['mentions', 'supersedes']);
 /**
  * Compute `inbound_count` for the connectedness boost: number of inbound
  * edges to `name` whose type is NOT in {@link BOOST_EXCLUDED_EDGE_TYPES}.
- * Returns `0` when the graph is undefined (the DAR-930 "optional graph"
- * contract: the handler keeps working in test setups without a graph).
+ * Returns `0` when the graph is undefined (the "optional graph" contract:
+ * the handler keeps working in test setups without a graph).
  */
 const countBoostInbound = (graph: MemoryGraph | undefined, name: string): number => {
   if (graph === undefined) return 0;
@@ -686,8 +680,8 @@ const applyBoost = (score: number, alpha: number, inboundCount: number): number 
 /**
  * Construct the `memory_search` handler bound to a specific store. Validates
  * the `{ query, limit?, type?, threshold?, includeSuperseded? }` argument
- * shape, dispatches to `store.search()`, applies the DAR-929 supersede
- * filter, and serialises the {@link SearchHit}s into the documented
+ * shape, dispatches to `store.search()`, applies the supersede filter,
+ * and serialises the {@link SearchHit}s into the documented
  * `{ matches, query, totalScanned }` envelope.
  *
  * Why this shape:
@@ -701,13 +695,13 @@ const applyBoost = (score: number, alpha: number, inboundCount: number): number 
  *     response with the original prompt without round-tripping their own
  *     state.
  *   - `totalScanned` reflects the entries the store actually considered
- *     post-supersede-filter (DAR-929 ac-2) -- distinct from `matches.length`,
- *     which can be lower because of `type` / `threshold` / `limit`. When
+ *     post-supersede-filter -- distinct from `matches.length`, which can be
+ *     lower because of `type` / `threshold` / `limit`. When
  *     `includeSuperseded: true` is passed, `totalScanned` reflects the full
  *     corpus including superseded entries (the filter is a no-op).
  *
- * Limit sanitisation is the MCP tool layer's responsibility per DAR-917; we
- * reject NaN / negative / non-integer `limit` values rather than coercing.
+ * Limit sanitisation is the MCP tool layer's responsibility; we reject
+ * NaN / negative / non-integer `limit` values rather than coercing.
  *
  * Why we apply the supersede filter AFTER calling `store.search`:
  *
@@ -725,46 +719,41 @@ const applyBoost = (score: number, alpha: number, inboundCount: number): number 
  * wire a graph (and matches the graph's `isSuperseded` semantics: an entry
  * is excluded iff some loaded memory has it in its `supersedes[]`).
  *
- * Out of scope (per the DAR-929 contract envelope): one-hop expansion
- * (DAR-930), connectedness boost (DAR-931), env-var resolution for
- * `COMMONPLACE_DEFAULT_LIMIT` (DAR-913), reranking, snippet generation,
- * and surfacing `mentions` edges in match.relations.
+ * Out of scope: reranking, snippet generation, and surfacing `mentions`
+ * edges in `match.relations`.
  */
 export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
   const { userStore, projectStore } = resolveStores(opts, 'memory_search');
   // Resolve the default top-k once at handler-construction time. When the
-  // bin supplies one (resolved from `COMMONPLACE_DEFAULT_LIMIT` per
-  // DAR-913), it wins; otherwise we fall back to the store-layer default
-  // so this handler still works in test setups that wire the factory
-  // directly without an env-var pass.
+  // bin supplies one (resolved from `COMMONPLACE_DEFAULT_LIMIT`), it
+  // wins; otherwise we fall back to the store-layer default so this
+  // handler still works in test setups that wire the factory directly
+  // without an env-var pass.
   const fallbackLimit = opts.defaultLimit ?? DEFAULT_SEARCH_LIMIT;
-  // DAR-930: per-scope graph references plus expansion decay. The graphs
-  // are optional -- when omitted, `expand: 'one-hop'` requests validate
-  // their arguments but produce no expanded neighbors. This keeps the
-  // handler usable from test harnesses that wire the factory without a
-  // graph (e.g. the DAR-920/DAR-924 tests that predate DAR-928).
+  // Per-scope graph references plus expansion decay. The graphs are
+  // optional -- when omitted, `expand: 'one-hop'` requests validate their
+  // arguments but produce no expanded neighbors. This keeps the handler
+  // usable from test harnesses that wire the factory without a graph.
   const userGraph = opts.userGraph;
   const projectGraph = opts.projectGraph;
   const expansionDecay = opts.expansionDecay ?? DEFAULT_EXPANSION_DECAY;
-  // DAR-931: alpha for the additive connectedness boost. Default lives
-  // in `./defaults.ts` so the bin and the handler factory read from a
-  // single source of truth; the bin resolves
-  // `COMMONPLACE_CONNECTEDNESS_BOOST` (re-exporting the same default)
-  // and passes the result here. When alpha is 0 the boost short-circuits
-  // (see {@link applyBoost}).
+  // Alpha for the additive connectedness boost. Default lives in
+  // `./defaults.ts` so the bin and the handler factory read from a single
+  // source of truth; the bin resolves `COMMONPLACE_CONNECTEDNESS_BOOST`
+  // (re-exporting the same default) and passes the result here. When
+  // alpha is 0 the boost short-circuits (see {@link applyBoost}).
   const connectednessBoost = opts.connectednessBoost ?? DEFAULT_CONNECTEDNESS_BOOST;
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
     const query = requireString(args, 'query', 'memory_search');
 
     // Build SearchOptions with only the fields the caller actually
-    // supplied. Per DAR-920's contract test "omits unset SearchOptions
-    // fields when the corresponding tool argument is absent", we must not
-    // inject defaults at this layer -- the store's internal default of 5
-    // (DAR-917) takes effect when `limit` is omitted. Once DAR-913 lands
-    // env-var resolution for `COMMONPLACE_DEFAULT_LIMIT`, that resolver
-    // will own the override; re-reading the env var here would duplicate
-    // its scope.
+    // supplied. The contract is "omits unset SearchOptions fields when the
+    // corresponding tool argument is absent" -- we must not inject defaults
+    // at this layer. The store's internal default of 5 takes effect when
+    // `limit` is omitted; the env-var resolver for
+    // `COMMONPLACE_DEFAULT_LIMIT` owns the override, so re-reading the env
+    // var here would duplicate its scope.
     const callerLimit = validateLimit(args.limit, 'memory_search');
     const callerType =
       args.type !== undefined ? validateMemoryType(args.type, 'memory_search') : undefined;
@@ -773,7 +762,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       validateBoolean(args.includeSuperseded, 'includeSuperseded', 'memory_search') ?? false;
     const scope = validateScope(args.scope, 'memory_search');
 
-    // DAR-930 expansion knobs. Each is validated unconditionally so a
+    // Expansion knobs. Each is validated unconditionally so a
     // caller that sets only `expandTypes` (without `expand: 'one-hop'`)
     // still gets a clear error on a bogus edge type rather than a silent
     // no-op. The expand mode itself is parsed last so a malformed
@@ -799,7 +788,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     }
 
     // For each target store, build per-store SearchOptions. We DO NOT pass
-    // `limit` to the store when the caller omitted it (DAR-920 contract
+    // `limit` to the store when the caller omitted it (the contract is
     // "omits unset SearchOptions fields"). When the caller did set a limit,
     // we pass it to each store independently -- the merged top-k slice
     // happens after we receive hits from both stores. We intentionally
@@ -838,9 +827,9 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
         searchOpts.threshold = threshold;
       }
 
-      // Headroom for the supersede filter (DAR-929 carried forward): when
-      // not including superseded entries, enlarge the store-side limit so
-      // the supersede pass leaves enough candidates.
+      // Headroom for the supersede filter: when not including superseded
+      // entries, enlarge the store-side limit so the supersede pass leaves
+      // enough candidates.
       if (!includeSuperseded) {
         const corpusSize = target.store.all().length;
         const desired = callerLimit ?? fallbackLimit;
@@ -857,8 +846,8 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       const supersededMap = buildSupersededMap(allEntries);
       supersededByScope.set(target.scope, supersededMap);
 
-      // Per-store totalScanned contribution. Mirrors the DAR-929 semantics
-      // (post-supersede when not including superseded).
+      // Per-store totalScanned contribution. Mirrors the supersede-filter
+      // semantics (post-supersede when not including superseded).
       const storeScanned = includeSuperseded
         ? allEntries.length
         : allEntries.length - countSupersededInCorpus(allEntries, supersededMap);
@@ -873,8 +862,8 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       }
     }
 
-    // DAR-931: apply the additive connectedness boost to each direct
-    // hit's score BEFORE the descending-score sort. The boost is
+    // Apply the additive connectedness boost to each direct hit's score
+    // BEFORE the descending-score sort. The boost is
     // `alpha * log(1 + inbound_count)` where `inbound_count` reads the
     // per-scope MemoryGraph's inbound edges, filtered to exclude
     // `mentions` and `supersedes` edge types (these are noisy /
@@ -902,7 +891,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     });
     boostedHits.sort((a, b) => b.score - a.score);
 
-    // DAR-930: build the unified candidate list. Direct hits are added
+    // Build the unified candidate list. Direct hits are added
     // first, then expansion (when opted in) appends decayed neighbors
     // gated by `expandTypes`, `expandLimit`, and the per-scope supersede
     // filter. We deduplicate against direct-hit names so a memory that's
@@ -910,8 +899,8 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // some other direct hit; we also dedupe across neighbors so two
     // direct hits pointing at the same neighbor don't double-count it.
     //
-    // The `score` on each direct candidate is the BOOSTED score (DAR-931),
-    // so expansion's `direct.score * expansionDecay` propagates the boost
+    // The `score` on each direct candidate is the BOOSTED score, so
+    // expansion's `direct.score * expansionDecay` propagates the boost
     // through to expanded neighbors -- expanded entries decay the boosted
     // direct-hit score, not raw cosine.
     interface Candidate {
@@ -1028,16 +1017,16 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
           // superseded by some other memory is dropped just like direct
           // hits would be).
           if (!includeSuperseded && supersededMap.has(neighborEntry.name)) continue;
-          // Respect the type filter when the caller scoped the search
-          // (DAR-920 ac-5). Expansion shouldn't introduce off-type
-          // matches that direct search would have rejected.
+          // Respect the type filter when the caller scoped the search.
+          // Expansion shouldn't introduce off-type matches that direct
+          // search would have rejected.
           if (callerType !== undefined && neighborEntry.type !== callerType) continue;
 
           const decayedScore = direct.score * expansionDecay;
-          // Respect the threshold filter when the caller set one
-          // (DAR-920). The threshold gates the SCORE returned to the
-          // caller; an expanded neighbor whose decayed score falls below
-          // it shouldn't sneak in.
+          // Respect the threshold filter when the caller set one. The
+          // threshold gates the SCORE returned to the caller; an expanded
+          // neighbor whose decayed score falls below it shouldn't sneak
+          // in.
           if (threshold !== undefined && decayedScore < threshold) continue;
 
           candidates.push({
@@ -1165,8 +1154,8 @@ export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => 
       }
     } else {
       // No explicit scope: only unambiguous when the name lives in exactly
-      // one store. DAR-924 ac-6: "delete requires scope to disambiguate
-      // when the same name exists in both."
+      // one store. Delete requires an explicit scope to disambiguate when
+      // the same name exists in both.
       if (inUser && inProject) {
         throw new Error(
           `memory_delete: memory \`${name}\` exists in both 'user' and 'project' scopes; ambiguous without an explicit scope -- pass { name, scope: 'user' | 'project' } to disambiguate`,
@@ -1185,8 +1174,7 @@ export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => 
     }
 
     // `store.delete` rejects unknown names with a message containing the
-    // offending name (DAR-916), which is what the missing-name tests
-    // assert against.
+    // offending name, which is what the missing-name tests assert against.
     await target.delete(name);
     return { deleted: name, scope };
   };
@@ -1244,7 +1232,7 @@ const validateLinkType = (
  *
  *   - rejects self-edges, missing targets, and duplicate `(to, type)`
  *     edges before any disk write
- *   - rewrites the source `.md` through the DAR-923 atomic helper
+ *   - rewrites the source `.md` through the atomic write helper
  *   - updates the in-memory entry and the store's `graph` (when one was
  *     passed at construction time) incrementally (no scan, no rebuild)
  *
@@ -1329,8 +1317,8 @@ export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => 
  * - When `scope` is omitted, prefer the unique store that holds `from`. If
  *   `from` lives in both stores, the caller must disambiguate.
  *
- * Existing single-store callers (DAR-928 tests) pass no scope and have no
- * project store -- they fall through to the user store unchanged.
+ * Existing single-store callers pass no scope and have no project store
+ * -- they fall through to the user store unchanged.
  */
 const pickStoreForName = (
   name: string,
@@ -1362,14 +1350,14 @@ const pickStoreForName = (
 };
 
 // ===========================================================================
-// DAR-932: memory_graph and memory_path
+// memory_graph and memory_path
 // ===========================================================================
 
 /**
- * Edge types `memory_graph` and `memory_path` can traverse (DAR-932). The
- * union covers the four authored {@link RelationType} values plus
- * `'supersedes'` and `'mentions'`. The runtime constant is shared with the
- * tool registry so the inputSchema enum stays in lockstep with the validator.
+ * Edge types `memory_graph` and `memory_path` can traverse. The union
+ * covers the four authored {@link RelationType} values plus `'supersedes'`
+ * and `'mentions'`. The runtime constant is shared with the tool registry
+ * so the inputSchema enum stays in lockstep with the validator.
  */
 export const GRAPH_EDGE_TYPES = [
   ...RELATION_TYPES,
@@ -1378,7 +1366,7 @@ export const GRAPH_EDGE_TYPES = [
 ] as const satisfies readonly EdgeType[];
 
 /**
- * The three directions accepted by `memory_graph` (DAR-932).
+ * The three directions accepted by `memory_graph`.
  *
  * - `'out'` -- only outbound edges from the root are walked.
  * - `'in'` -- only inbound edges to the root are walked.

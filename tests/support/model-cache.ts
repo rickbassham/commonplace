@@ -1,6 +1,6 @@
 /**
- * Helpers for locating the on-disk transformers.js model cache that DAR-955
- * tests need to inspect (existence, size, parseability).
+ * Helpers for locating the on-disk transformers.js model cache that the
+ * cold-start tests need to inspect (existence, size, parseability).
  *
  * transformers.js resolves its `cacheDir` to `<pkg>/.cache/` where `<pkg>`
  * is the install root of `@huggingface/transformers`. Under pnpm that path

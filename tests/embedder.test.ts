@@ -1,13 +1,9 @@
 /**
- * DAR-912 contract tests (unit).
- *
- * Behavioral tests for the Embedder wrapper around `@huggingface/transformers`.
+ * Unit tests for the Embedder wrapper around `@huggingface/transformers`.
  *
  * The pipeline factory is mocked so these tests run hermetically without
  * pulling real model weights from the HF hub. The integration counterparts
  * (real model load + embed) live in `tests/embedder.integration.test.ts`.
- *
- * Test names mirror the contract envelope on DAR-912 (round 1, approved).
  */
 
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -182,17 +178,17 @@ describe('ac-4: pooling cls + normalize true', () => {
 });
 
 // -------------------------------------------------------------------------
-// DAR-935: clear cached pipeline promise on init failure
+// Clear cached pipeline promise on init failure
 //
-// The DAR-912 contract caches the in-flight pipeline *promise* to give the
-// AC-3 "single shared init" guarantee. That cache must be cleared when the
+// The Embedder caches the in-flight pipeline *promise* to give the
+// "single shared init" guarantee. That cache must be cleared when the
 // promise rejects, otherwise every subsequent embed() on the same Embedder
 // replays the same rejection forever. These tests cover the failure-then-
-// retry path; the success-path ac-1/ac-3/ac-5 contract tests above already
-// cover the "unchanged on success" half of the contract.
+// retry path; the success-path contract tests above already cover the
+// "unchanged on success" half of the contract.
 // -------------------------------------------------------------------------
 
-describe('DAR-935: init failure clears cached pipeline promise', () => {
+describe('init failure clears cached pipeline promise', () => {
   it('after a successful first embed(), a second embed() on the same Embedder does not call the pipeline factory again (factory invoked exactly once across multiple successful embed() calls)', async () => {
     pipelineMock.mockResolvedValue(makeFakePipeline(768));
     const e = new Embedder('Xenova/bge-base-en-v1.5');

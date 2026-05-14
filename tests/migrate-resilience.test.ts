@@ -1,10 +1,8 @@
 /**
- * DAR-966 contract tests: migrate-path resilience to permissively-formatted
+ * Contract tests: migrate-path resilience to permissively-formatted
  * harness frontmatter, MEMORY.md exclusion, structured skip reasons for
  * unrecoverable source files, and skip-and-warn semantics on
  * `MemoryStore.scan()`.
- *
- * Test names mirror the approved contract envelope on DAR-966.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -625,7 +623,7 @@ describe('ac-6: round-trip + regression coverage', () => {
     expect(reread.type).toBe('project');
   });
 
-  it("(d) regression: importing a source dir containing only well-formed harness files produces target .md files that scan(), embed, and re-read identically to today's behaviour (imported counts and resulting sidecar contents match the pre-DAR-966 happy-path expectations)", async () => {
+  it("(d) regression: importing a source dir containing only well-formed harness files produces target .md files that scan(), embed, and re-read identically to today's behaviour (imported counts and resulting sidecar contents match the pre-resilience happy-path expectations)", async () => {
     writeClaudeCodeProject('-slug-1', [makeMemory('alpha'), makeMemory('bravo')]);
 
     const result = await runImportFromClaudeCode({

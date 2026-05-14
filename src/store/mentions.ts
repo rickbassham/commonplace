@@ -1,5 +1,5 @@
 /**
- * `[[name]]` body-mention extractor (DAR-927).
+ * `[[name]]` body-mention extractor.
  *
  * This module owns the pure tokenizer: given a memory's markdown body, it
  * returns the unique set of mention targets in first-occurrence order. The
@@ -25,16 +25,17 @@
  *     code blocks or backtick spans is intentionally treated like any
  *     other mention. Adding markdown-aware exclusion is non-goal #1 in
  *     the contract.
- *   - Surfacing mentions through MCP tool responses (DAR-929 / DAR-932
- *     own that surface).
+ *   - Surfacing mentions through MCP tool responses; that's owned by the
+ *     `memory_search` supersede-filter pass and the `memory_graph` /
+ *     `memory_path` handlers.
  *
  * # Performance shape
  *
  * The extractor performs a single linear regex scan over the body and a
  * `Set` membership check per match. Cost is O(body.length) plus
- * O(matches) -- mirroring the O(authored-degree) shape used by DAR-926
- * for authored relations. No perf budget is asserted; see contract
- * non-goal #5.
+ * O(matches) -- mirroring the O(authored-degree) shape used by the
+ * adjacency-list builder for authored relations. No perf budget is
+ * asserted.
  */
 
 import { NAME_PATTERN } from './memory.js';

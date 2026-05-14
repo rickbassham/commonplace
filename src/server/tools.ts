@@ -1,21 +1,15 @@
 /**
  * MCP tool registry for the commonplace server.
  *
- * This module is the single source of truth for the four tool names
- * (`memory_search`, `memory_save`, `memory_list`, `memory_delete`) and the
- * stub handlers wired to them. Sibling issues (DAR-919, DAR-920, etc.) will
- * replace each stub handler in place without changing the registration
- * surface.
+ * This module is the single source of truth for the tool names and the
+ * handlers wired to them.
  *
  * The registry is exposed as a typed module export so other modules (and
  * tests) can introspect it directly without going through a running server.
  *
- * Scope (DAR-909): tool registration, ListTools schema delivery, and
- * CallTool name dispatch. Argument validation, real handler logic, and the
- * final inputSchema shape for each tool are owned by the sibling handler
- * issues. The schemas here are structurally valid (object with a properties
- * map) and aligned with the documented argument shapes in those issues, but
- * they are intentionally loose -- handlers will tighten them.
+ * Scope: tool registration, ListTools schema delivery, and CallTool name
+ * dispatch. Argument validation and real handler logic live in the
+ * `./handlers.ts` factory functions; this module wires them up.
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
@@ -87,9 +81,8 @@ export interface ToolDefinition {
 }
 
 /**
- * Stub handler used for every tool in this issue. Sibling issues will
- * replace each stub with a real handler at the call sites in
- * {@link buildToolDefinitions}.
+ * Stub handler used when no store has been wired (e.g. tests that exercise
+ * the registry's shape without a backing store).
  *
  * The error message is exactly `'not implemented'` so the contract test in
  * `tests/server-tools.test.ts` (and downstream callers) can match on it.
@@ -101,80 +94,79 @@ const notImplemented: ToolHandler = async () => {
 /**
  * Options for {@link createDefaultHandlers}. Two shapes are accepted:
  *
- *   - **Legacy (DAR-919)**: `{ store }` -- treated as user-only mode; `store`
- *     becomes the user store and no project store is wired. Saves with
- *     `scope: 'project'` are rejected. Existing tests and callers that pass
- *     this shape continue to work.
- *   - **DAR-924 dual-store**: `{ userStore, projectStore? }` -- the user
- *     store is required; the project store is omitted in user-only mode.
+ *   - **Legacy single-store**: `{ store }` -- treated as user-only mode;
+ *     `store` becomes the user store and no project store is wired. Saves
+ *     with `scope: 'project'` are rejected. Existing tests and callers that
+ *     pass this shape continue to work.
+ *   - **Dual-store**: `{ userStore, projectStore? }` -- the user store is
+ *     required; the project store is omitted in user-only mode.
  *
  * When neither `store` nor `userStore` is supplied, every tool falls back
- * to the not-implemented stub (preserving the DAR-909 baseline for callers
- * that haven't wired a store yet).
+ * to the not-implemented stub.
  */
 export interface CreateDefaultHandlersOptions {
   /**
-   * Legacy single-store option (DAR-919). Treated as the user store.
+   * Legacy single-store option. Treated as the user store.
    *
    * @deprecated Prefer `userStore` (and optional `projectStore`).
    */
   store?: MemoryStore;
   /**
-   * The user-level memory store (DAR-924). Always loaded.
+   * The user-level memory store. Always loaded.
    */
   userStore?: MemoryStore;
   /**
-   * The project-level memory store (DAR-924). Loaded only when a project
-   * root is detected; absent in user-only mode.
+   * The project-level memory store. Loaded only when a project root is
+   * detected; absent in user-only mode.
    */
   projectStore?: MemoryStore;
   /**
-   * Optional in-memory graph (DAR-926) for the user store. The graph is
-   * owned by the {@link MemoryStore} (passed to
+   * Optional in-memory graph for the user store. The graph is owned by
+   * the {@link MemoryStore} (passed to
    * `new MemoryStore({ dir, embedder, graph })`) which keeps it in sync
    * via scan/save/delete/linkEdge/unlinkEdge.
    *
    * Used in two places at handler-wiring time:
    *
-   *   - As an explicit signal that "this server has a graph" per DAR-928
-   *     ac-5 (the bin passes its `userGraph` here so the wiring intent is
-   *     visible at the call site).
+   *   - As an explicit signal that "this server has a graph" (the bin
+   *     passes its `userGraph` here so the wiring intent is visible at the
+   *     call site).
    *   - As the user-scope graph reference threaded into the
-   *     `memory_search` handler for one-hop expansion (DAR-930). The
-   *     project-scope graph is supplied separately via {@link projectGraph}.
+   *     `memory_search` handler for one-hop expansion. The project-scope
+   *     graph is supplied separately via {@link projectGraph}.
    *
    * The link/unlink handlers do not need a graph reference -- they
    * dispatch through the store, which owns the single graph instance.
    */
   graph?: MemoryGraph;
   /**
-   * Optional in-memory graph for the project store (DAR-930). Threaded
-   * into the `memory_search` handler so one-hop expansion can walk the
-   * project store's edges. Cross-scope expansion is intentionally not
-   * supported: a user-scope direct hit only walks the user graph, and a
-   * project-scope direct hit only walks the project graph.
+   * Optional in-memory graph for the project store. Threaded into the
+   * `memory_search` handler so one-hop expansion can walk the project
+   * store's edges. Cross-scope expansion is intentionally not supported: a
+   * user-scope direct hit only walks the user graph, and a project-scope
+   * direct hit only walks the project graph.
    */
   projectGraph?: MemoryGraph;
   /**
    * Optional default top-k for `memory_search` when the caller omits
-   * `limit`. Resolved by the bin from `COMMONPLACE_DEFAULT_LIMIT`
-   * (DAR-913); when omitted, the search handler falls back to
+   * `limit`. Resolved by the bin from `COMMONPLACE_DEFAULT_LIMIT`; when
+   * omitted, the search handler falls back to
    * {@link import('../store/memory-store.js').DEFAULT_SEARCH_LIMIT}
    * (`5`).
    */
   defaultLimit?: number;
   /**
-   * Optional one-hop expansion decay for `memory_search` (DAR-930).
-   * Resolved by the bin from `COMMONPLACE_EXPANSION_DECAY`; defaults to
-   * `0.7` when omitted. Out-of-range values are validated by the env-var
-   * resolver (`resolveExpansionDecay`), not here.
+   * Optional one-hop expansion decay for `memory_search`. Resolved by the
+   * bin from `COMMONPLACE_EXPANSION_DECAY`; defaults to `0.7` when omitted.
+   * Out-of-range values are validated by the env-var resolver
+   * (`resolveExpansionDecay`), not here.
    */
   expansionDecay?: number;
   /**
-   * Optional alpha coefficient for the connectedness boost (DAR-931).
-   * Resolved by the bin from `COMMONPLACE_CONNECTEDNESS_BOOST`; defaults
-   * to `0.02` when omitted. Setting to `0` disables the boost (and yields
-   * identical results to v0.1 ranking). Negative / non-finite values are
+   * Optional alpha coefficient for the connectedness boost. Resolved by
+   * the bin from `COMMONPLACE_CONNECTEDNESS_BOOST`; defaults to `0.02`
+   * when omitted. Setting to `0` disables the boost (and yields identical
+   * results to the unboosted ranking). Negative / non-finite values are
    * rejected by the env-var resolver (`resolveConnectednessBoost`), not
    * here.
    */
@@ -183,11 +175,9 @@ export interface CreateDefaultHandlersOptions {
 
 /**
  * Default handler map. When a user store is supplied (via either the legacy
- * `store` field or the DAR-924 `userStore` field), all six tools are wired
- * to real handlers (memory_search via DAR-920 + DAR-924 dual-store merge,
- * CRUD via DAR-919 + DAR-924 scope routing, link/unlink via DAR-928 +
- * DAR-924 scope routing). When neither is supplied, every tool falls back
- * to the not-implemented stub.
+ * `store` field or the `userStore` field), every tool is wired to a real
+ * handler from `./handlers.ts`. When neither is supplied, every tool falls
+ * back to the not-implemented stub.
  */
 export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}): ToolHandlerMap {
   const userStore = options.userStore ?? options.store;
@@ -285,7 +275,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           type: 'string',
           enum: [...EXPAND_MODES],
           description:
-            "One-hop graph expansion mode (DAR-930). 'none' (default) returns only direct cosine hits. 'one-hop' augments the response with outbound graph neighbors of each direct hit, each carrying a `via: { source, edge }` field naming the direct hit that pulled it in. Expanded entries are scored at direct_hit_score * decay (default decay 0.7, configurable via COMMONPLACE_EXPANSION_DECAY) and deduplicated against direct hits.",
+            "One-hop graph expansion mode. 'none' (default) returns only direct cosine hits. 'one-hop' augments the response with outbound graph neighbors of each direct hit, each carrying a `via: { source, edge }` field naming the direct hit that pulled it in. Expanded entries are scored at direct_hit_score * decay (default decay 0.7, configurable via COMMONPLACE_EXPANSION_DECAY) and deduplicated against direct hits.",
         },
         expandTypes: {
           type: 'array',

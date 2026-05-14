@@ -1,5 +1,5 @@
 /**
- * DAR-924 ac-1 integration tests: server requests roots/list after init and
+ * Integration tests: server requests roots/list after init and
  * gracefully tolerates clients that don't support roots.
  *
  * These tests build the server boot sequence the same way the bin does, but
@@ -105,7 +105,7 @@ const setupHarness = async (options: {
   };
 };
 
-describe('DAR-924 ac-1: server issues roots/list after server.connect', () => {
+describe('server issues roots/list after server.connect', () => {
   it('issues a roots/list JSON-RPC request after server.connect(transport) returns', async () => {
     let receivedRequest = false;
     const h = await setupHarness({

@@ -1,15 +1,15 @@
 /**
- * DAR-932 unit tests: memory_graph and memory_path MCP handlers.
+ * Unit tests: memory_graph and memory_path MCP handlers.
  *
  * Covers the in-process handler surface only: registration on TOOL_NAMES,
  * ListTools schema shape, CallTool dispatch, BFS traversal correctness
  * (depth/types/direction filters), cycle handling, and the documented
  * response shape including the `{ path: null, reason }` discriminator.
  *
- * Performance (ac-5) lives in `server-handlers-graph-perf.integration.test.ts`
- * because it relies on a 10K-entry synthetic graph and a warmup pass.
- * Spawned-bin end-to-end coverage (ac-7) lives in
- * `server-bin-graph.integration.test.ts`.
+ * Performance assertions live in
+ * `server-handlers-graph-perf.integration.test.ts` because they rely on a
+ * 10K-entry synthetic graph and a warmup pass. Spawned-bin end-to-end
+ * coverage lives in `server-bin-graph.integration.test.ts`.
  *
  * Pattern matches `server-handlers-link.test.ts`: a real `MemoryStore`
  * against a tmp dir + stub embedder + real `MemoryGraph` synchronised by
@@ -94,7 +94,7 @@ const setupHarness = async (
 // --------------------------------------------------------------------------
 
 describe('ac-1: tool registration', () => {
-  it("TOOL_NAMES includes 'memory_graph' and 'memory_path' (and still includes all six prior tool names from DAR-928)", async () => {
+  it("TOOL_NAMES includes 'memory_graph' and 'memory_path' (and still includes the six prior tool names)", async () => {
     const { TOOL_NAMES } = await import('../src/server/tools.js');
     expect([...TOOL_NAMES]).toEqual([
       'memory_search',
@@ -163,7 +163,7 @@ describe('ac-1: tool registration', () => {
     }
   });
 
-  it('createDefaultHandlers({ userStore, graph }) returns real (non-stub) handlers for memory_graph and memory_path; createDefaultHandlers({}) (no store/graph) returns the not-implemented stub for both names so the DAR-909 baseline is preserved', async () => {
+  it('createDefaultHandlers({ userStore, graph }) returns real (non-stub) handlers for memory_graph and memory_path; createDefaultHandlers({}) (no store/graph) returns the not-implemented stub for both names so the baseline is preserved', async () => {
     const { store, graph } = await setupHarness([{ name: 'alpha' }]);
     const real = createDefaultHandlers({ userStore: store, graph });
     // Real handlers do not throw 'not implemented'.

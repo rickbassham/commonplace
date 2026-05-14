@@ -1,5 +1,5 @@
 /**
- * DAR-929 unit tests: search/list response shape additions and
+ * Unit tests: search/list response shape additions and
  * default-exclude-superseded semantics.
  *
  * Covers:
@@ -13,7 +13,7 @@
  *           is omitted on entries that are not superseded.
  *   - ac-4: each match carries the outgoing authored relations from
  *           frontmatter, in order, verbatim.
- *   - ac-5: mentions edges (DAR-927) are NOT included in `match.relations`;
+ *   - ac-5: mentions edges are NOT included in `match.relations`;
  *           `supersedes` edges also do not leak through.
  *
  * The integration coverage for ac-5 (spawned-bin / on-the-wire) lives in
@@ -148,7 +148,7 @@ describe('ac-1: response shape additions', () => {
     }
   });
 
-  it('all DAR-920 server-handlers-search tests (ac-1 through ac-6 in tests/server-handlers-search.test.ts) continue to pass without modification to their expected `query`, `totalScanned`, `score`, `body`, `name`, `type`, `description` assertions', async () => {
+  it('the baseline server-handlers-search tests (ac-1 through ac-6 in tests/server-handlers-search.test.ts) continue to pass without modification to their expected `query`, `totalScanned`, `score`, `body`, `name`, `type`, `description` assertions', async () => {
     // This test asserts a structural invariant: a fresh search match still
     // carries name/type/description/body/score with the documented values.
     // Adding `relations` and (optionally) `supersededBy` is additive; we
@@ -432,7 +432,7 @@ describe('ac-4: each match contains its outgoing relations from frontmatter', ()
 // --------------------------------------------------------------------------
 
 describe('ac-5: mentions and supersedes edges are not in match.relations', () => {
-  it('given a memory M whose body contains `[[other_memory]]` mention tokens (which DAR-927 records as `mentions` edges in the MemoryGraph), the memory_search match for M does NOT include any entry of edge type `mentions` in its `relations` array', async () => {
+  it('given a memory M whose body contains `[[other_memory]]` mention tokens (which the body tokenizer records as `mentions` edges in the MemoryGraph), the memory_search match for M does NOT include any entry of edge type `mentions` in its `relations` array', async () => {
     const embedder = makeProgrammableEmbedder();
     const store = makeStore(embedder);
     await store.scan();
@@ -572,9 +572,9 @@ describe('createDefaultHandlers still wires real handlers', () => {
   });
 });
 
-// Type-level smoke test: keep MemorySearchMatch's DAR-929 fields wired
-// to a real assertion so removing either one from the interface produces
-// a TS compile error AND a runtime failure.
+// Type-level smoke test: keep MemorySearchMatch's supersede-aware fields
+// wired to a real assertion so removing either one from the interface
+// produces a TS compile error AND a runtime failure.
 describe('MemorySearchMatch type surface', () => {
   it('exposes `relations` (required) and `supersededBy` (optional) fields', () => {
     const sample: Pick<MemorySearchMatch, 'relations' | 'supersededBy'> = {

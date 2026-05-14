@@ -1,11 +1,11 @@
 /**
- * Environment-variable resolution for the embedder model id and the
- * `memory_search` default limit (DAR-913), the one-hop expansion decay
- * (DAR-930), and the connectedness boost (DAR-931).
+ * Environment-variable resolution for the embedder model id, the
+ * `memory_search` default limit, the one-hop expansion decay, and the
+ * connectedness boost.
  *
  * The memory-directory env vars (`COMMONPLACE_USER_DIR`,
  * `COMMONPLACE_PROJECT_DIR`, deprecated `COMMONPLACE_MEMORY_DIR`) are owned
- * by `./scope.ts` (DAR-924). This module covers the remaining knobs:
+ * by `./scope.ts`. This module covers the remaining knobs:
  *
  *   - `COMMONPLACE_MODEL` -- embedding model id passed to transformers.js.
  *     Default `Xenova/bge-base-en-v1.5`. Empty string is treated as unset.
@@ -14,23 +14,24 @@
  *     unset. Invalid values (non-integer, negative, NaN) throw at boot
  *     rather than silently coercing -- the operator should learn about a
  *     misconfiguration immediately, not see weirdly-truncated results.
- *   - `COMMONPLACE_EXPANSION_DECAY` (DAR-930) -- multiplicative score
- *     applied to one-hop graph-expanded neighbors of a direct
- *     `memory_search` hit. Default `0.7`. Allowed range is `(0, 1]`; values
- *     outside the range or non-numeric throw at boot.
- *   - `COMMONPLACE_CONNECTEDNESS_BOOST` (DAR-931) -- alpha coefficient for
- *     the additive `alpha * log(1 + inbound_count)` connectedness boost
+ *   - `COMMONPLACE_EXPANSION_DECAY` -- multiplicative score applied to
+ *     one-hop graph-expanded neighbors of a direct `memory_search` hit.
+ *     Default `0.7`. Allowed range is `(0, 1]`; values outside the range
+ *     or non-numeric throw at boot.
+ *   - `COMMONPLACE_CONNECTEDNESS_BOOST` -- alpha coefficient for the
+ *     additive `alpha * log(1 + inbound_count)` connectedness boost
  *     applied to each direct cosine hit's score in `memory_search`.
  *     Default `0.02`. Must be a finite non-negative number; `0` disables
- *     the boost entirely (and yields identical results to v0.1 ranking).
- *     Negative / non-numeric / NaN / Infinity values throw at boot.
+ *     the boost entirely (and yields identical results to the unboosted
+ *     ranking). Negative / non-numeric / NaN / Infinity values throw at
+ *     boot.
  *
  * # Out of scope
  *
  *   - Pre-validating `COMMONPLACE_MODEL` against a known-models list. The
- *     embedder catches unknown ids lazily on the first `embed()` call
- *     (DAR-913 ac-5); we deliberately do NOT pre-validate here.
- *   - A config-file fallback. v0.1 is env-vars-only; see DAR-913.
+ *     embedder catches unknown ids lazily on the first `embed()` call; we
+ *     deliberately do NOT pre-validate here.
+ *   - A config-file fallback. v0.1 is env-vars-only.
  */
 
 import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from '../server/defaults.js';
@@ -49,14 +50,14 @@ export const ENV_MODEL = 'COMMONPLACE_MODEL';
 export const ENV_DEFAULT_LIMIT = 'COMMONPLACE_DEFAULT_LIMIT';
 
 /**
- * Env var name for the one-hop expansion decay (DAR-930). Defaults to
+ * Env var name for the one-hop expansion decay. Defaults to
  * {@link DEFAULT_EXPANSION_DECAY} when unset or empty. Must be a number in
  * `(0, 1]` when set; invalid values throw at boot.
  */
 export const ENV_EXPANSION_DECAY = 'COMMONPLACE_EXPANSION_DECAY';
 
 /**
- * Env var name for the connectedness boost alpha (DAR-931). Defaults to
+ * Env var name for the connectedness boost alpha. Defaults to
  * {@link DEFAULT_CONNECTEDNESS_BOOST} when unset or empty. Must be a finite
  * non-negative number when set; invalid values throw at boot. Setting it to
  * `0` disables the boost.
@@ -65,7 +66,6 @@ export const ENV_CONNECTEDNESS_BOOST = 'COMMONPLACE_CONNECTEDNESS_BOOST';
 
 /**
  * Default embedding model id when `COMMONPLACE_MODEL` is unset or empty.
- * Mirrors the `DEFAULT_MODEL_ID` used by the bin pre-DAR-913.
  */
 export const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
 
@@ -76,11 +76,11 @@ export const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
 export const DEFAULT_LIMIT = 5;
 
 /**
- * Re-export the default values for the expansion decay (DAR-930) and the
- * connectedness boost (DAR-931). The canonical definitions live in
- * `../server/defaults.ts` so the handler factory and the env resolvers
- * share a single source of truth; bumping a default in either spot would
- * otherwise silently drift from the other.
+ * Re-export the default values for the expansion decay and the connectedness
+ * boost. The canonical definitions live in `../server/defaults.ts` so the
+ * handler factory and the env resolvers share a single source of truth;
+ * bumping a default in either spot would otherwise silently drift from the
+ * other.
  */
 export { DEFAULT_EXPANSION_DECAY, DEFAULT_CONNECTEDNESS_BOOST };
 
@@ -92,9 +92,9 @@ export { DEFAULT_EXPANSION_DECAY, DEFAULT_CONNECTEDNESS_BOOST };
  * who clear the variable (e.g. `COMMONPLACE_MODEL=`) get the default
  * rather than a transformers.js error on `''`.
  *
- * Does NOT validate the model id -- per DAR-913 ac-5 the embedder catches
- * unknown ids lazily on the first `embed()` call, and the resulting error
- * names the offending id.
+ * Does NOT validate the model id -- the embedder catches unknown ids
+ * lazily on the first `embed()` call, and the resulting error names the
+ * offending id.
  */
 export function resolveModelId(env: NodeJS.ProcessEnv): string {
   const raw = env[ENV_MODEL];
@@ -135,7 +135,7 @@ export function resolveDefaultLimit(env: NodeJS.ProcessEnv): number {
 }
 
 /**
- * Resolve the one-hop expansion decay from the environment (DAR-930).
+ * Resolve the one-hop expansion decay from the environment.
  *
  * Returns the parsed number when `COMMONPLACE_EXPANSION_DECAY` is set,
  * otherwise {@link DEFAULT_EXPANSION_DECAY}. Empty strings are treated as
@@ -169,7 +169,7 @@ export function resolveExpansionDecay(env: NodeJS.ProcessEnv): number {
 }
 
 /**
- * Resolve the connectedness boost alpha from the environment (DAR-931).
+ * Resolve the connectedness boost alpha from the environment.
  *
  * Returns the parsed number when `COMMONPLACE_CONNECTEDNESS_BOOST` is set,
  * otherwise {@link DEFAULT_CONNECTEDNESS_BOOST}. Empty strings are treated
@@ -183,7 +183,7 @@ export function resolveExpansionDecay(env: NodeJS.ProcessEnv): number {
  * silently produce no boost (or negative boosts).
  *
  * Zero is accepted as a valid disable value -- yields identical results
- * to v0.1 / DAR-929 ranking.
+ * to the unboosted ranking.
  */
 export function resolveConnectednessBoost(env: NodeJS.ProcessEnv): number {
   const raw = env[ENV_CONNECTEDNESS_BOOST];

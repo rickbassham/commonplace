@@ -1,5 +1,5 @@
 /**
- * Embedder wrapper around `@huggingface/transformers` (DAR-912).
+ * Embedder wrapper around `@huggingface/transformers`.
  *
  * A thin, single-string wrapper that isolates the rest of the codebase from
  * `transformers.js`'s pipeline machinery. Exposes:
@@ -35,11 +35,9 @@
  *
  * - Batched embed APIs (single-string is enough today; revisit if a
  *   downstream issue needs throughput).
- * - Environment-variable model selection (DAR-913 owns `COMMONPLACE_MODEL`).
+ * - Environment-variable model selection (`COMMONPLACE_MODEL` is resolved by
+ *   the bin's env module).
  * - Disk-cache control, tokenizer/truncation knobs, abort signals.
- *
- * See the contract envelope on DAR-912 for the full list of explicit
- * non-goals and their reasons.
  */
 
 import {
@@ -175,7 +173,7 @@ export class Embedder {
    * If the in-flight promise rejects (e.g. a transient HuggingFace hub
    * failure on the very first load), we clear `#pipelinePromise` so the
    * next `embed()` call retries the load instead of replaying the cached
-   * rejection forever (DAR-935). The clearing is attached via a `.catch()`
+   * rejection forever. The clearing is attached via a `.catch()`
    * side-effect on a local reference rather than reassigning the field
    * before returning, so concurrent callers that already grabbed the same
    * promise still observe the same rejection -- they share one failed

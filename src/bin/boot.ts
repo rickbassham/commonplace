@@ -1,5 +1,5 @@
 /**
- * Boot sequence for the commonplace MCP server (DAR-924).
+ * Boot sequence for the commonplace MCP server.
  *
  * Extracted into a module so the spawned-bin's wiring is unit-testable
  * without paying the bin's stdio + transformers.js cold-start cost. The
@@ -13,9 +13,9 @@
  *   1. Resolve the user dir from env (`COMMONPLACE_USER_DIR`, with
  *      `COMMONPLACE_MEMORY_DIR` honoured as a deprecated alias).
  *   2. mkdir -p the user dir so first-run users don't get ENOENT on save.
- *      The project dir is auto-created lazily on first project save
- *      (DAR-924 ac-3) -- we don't pre-create it here so user-only mode
- *      doesn't litter the filesystem.
+ *      The project dir is auto-created lazily on first project save -- we
+ *      don't pre-create it here so user-only mode doesn't litter the
+ *      filesystem.
  *   3. Construct the user `MemoryStore` and run `scan()` to load it.
  *   4. Build a deferred handler map (the project store is unknown until
  *      after `roots/list` returns).
@@ -85,10 +85,10 @@ export interface BootResult {
   scope: ScopeDetectionResult;
 }
 
-// `DEFAULT_MODEL_ID` lives in `./env.ts` post-DAR-913 (alongside the
-// `COMMONPLACE_MODEL` env var that may override it). The bin still resolves
-// the model id via `resolveModelId()` below so test harnesses passing a
-// stub embedder bypass the resolver entirely.
+// `DEFAULT_MODEL_ID` lives in `./env.ts` alongside the `COMMONPLACE_MODEL`
+// env var that may override it. The bin still resolves the model id via
+// `resolveModelId()` below so test harnesses passing a stub embedder bypass
+// the resolver entirely.
 
 /**
  * Issue a `roots/list` request to the connected client and translate the
@@ -134,8 +134,8 @@ const requestRoots = async (server: Server): Promise<RootEntry[] | null> => {
  * the step-by-step contract.
  */
 export async function bootServer(options: BootOptions): Promise<BootResult> {
-  // Step 0: resolve the env-driven knobs (DAR-913). `resolveDefaultLimit`
-  // throws on invalid `COMMONPLACE_DEFAULT_LIMIT` values; we do this BEFORE
+  // Step 0: resolve the env-driven knobs. `resolveDefaultLimit` throws on
+  // invalid `COMMONPLACE_DEFAULT_LIMIT` values; we do this BEFORE
   // mkdir-ing the user dir so a misconfigured operator gets a clear stderr
   // message without the bin first creating directories on disk.
   const defaultLimit = resolveDefaultLimit(options.env);
@@ -160,8 +160,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
 
   await mkdir(initialScope.userDir, { recursive: true });
 
-  // Shared graph (DAR-928). The user store owns its own graph; the project
-  // store gets its own graph instance because the graph is per-store
+  // The user store owns its own graph; the project store gets its own
+  // graph instance because the graph is per-store
   // (scoping is preserved at the store boundary -- a user memory cannot
   // link to a project memory and vice versa, see handlers.ts).
   const userGraph = new MemoryGraph();
@@ -175,8 +175,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   // Step 3+4: wire handlers WITHOUT a project store yet. roots/list
   // happens after server.connect, so the project store -- if any -- is
   // only known after the round-trip completes. `defaultLimit` is the
-  // resolved `COMMONPLACE_DEFAULT_LIMIT` value (DAR-913); the search
-  // handler uses it when the caller omits `limit`.
+  // resolved `COMMONPLACE_DEFAULT_LIMIT` value; the search handler uses it
+  // when the caller omits `limit`.
   const handlers = createDefaultHandlers({
     userStore,
     graph: userGraph,
@@ -202,8 +202,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
 
   // Step 8: if a project root was detected, construct the project store
   // and re-bind the server's handler map so subsequent CallTool requests
-  // see both stores. The project store is NOT mkdir'd up front -- DAR-924
-  // ac-3 specifies auto-create on first save, so user-only sessions that
+  // see both stores. The project store is NOT mkdir'd up front -- the
+  // contract is auto-create on first save, so user-only sessions that
   // happen to share a cwd with a marker dir don't side-effect.
   let projectStore: MemoryStore | null = null;
   if (finalScope.projectDir !== null) {

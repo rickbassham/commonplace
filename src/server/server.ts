@@ -6,9 +6,9 @@
  * these and connects it to a {@link StdioServerTransport}; the integration
  * tests connect it to an {@link InMemoryTransport}.
  *
- * Scope (DAR-909): tool registration, ListTools schema delivery, and
- * CallTool name dispatch via {@link callTool}. No store wiring, no
- * configuration, no signal handling.
+ * Scope: tool registration, ListTools schema delivery, and CallTool name
+ * dispatch via {@link callTool}. No store wiring, no configuration, no
+ * signal handling.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -91,7 +91,7 @@ export function createServer(options: CreateServerOptions = {}): Server {
  * server with the given handler map. The MCP SDK's `setRequestHandler`
  * replaces any prior handler for the same method, so this is also the
  * mechanism by which {@link bootServer} swaps in the dual-store handler
- * map after the post-connect `roots/list` round-trip completes (DAR-924).
+ * map after the post-connect `roots/list` round-trip completes.
  *
  * Exposed separately from {@link createServer} so the boot sequence can
  * rebuild the handler map once the project store is known without

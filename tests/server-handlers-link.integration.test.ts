@@ -1,5 +1,5 @@
 /**
- * DAR-928 integration tests: end-to-end memory_link / memory_unlink behaviour.
+ * Integration tests: end-to-end memory_link / memory_unlink behaviour.
  *
  * Covers:
  *   - ac-2 valid YAML round-trip through readMemory

@@ -1,7 +1,5 @@
 /**
- * DAR-910 contract tests.
- *
- * Behavioral tests for the binary `.embedding` sidecar wire format:
+ * Contract tests for the binary `.embedding` sidecar wire format:
  * - encodeSidecar({ modelId, dim, contentSha, vector }): Buffer
  * - decodeSidecar(buf): { modelId, dim, contentSha, vector }
  *
@@ -14,8 +12,6 @@
  *   dim         4 bytes   uint32 LE
  *   content_sha 32 bytes  raw sha256 (decoded from the 64-char hex string)
  *   vector      dim*4     float32 LE
- *
- * Test names mirror the contract envelope on DAR-910 (round 1).
  */
 
 import { describe, expect, it } from 'vitest';

@@ -1,5 +1,5 @@
 /**
- * DAR-930 unit tests: one-hop graph expansion in `memory_search`.
+ * Unit tests: one-hop graph expansion in `memory_search`.
  *
  * Covers the in-process handler surface only -- argument validation,
  * expand-mode opt-in, deduplication against direct hits and across
@@ -130,7 +130,7 @@ const seedHubGraph = async (
 // --------------------------------------------------------------------------
 
 describe('ac-1: expansion opt-in and default behaviour', () => {
-  it('memory_search with no `expand` argument returns the same matches array (same names, same scores, same order, no `via` keys) as before this issue -- verified against a snapshot of DAR-929 search response on a graph-bearing corpus', async () => {
+  it('memory_search with no `expand` argument returns the same matches array (same names, same scores, same order, no `via` keys) as before expansion was added -- verified against a snapshot of the pre-expansion search response on a graph-bearing corpus', async () => {
     const embedder = makeProgrammableEmbedder();
     const store = new MemoryStore({ dir: tmp, embedder });
     const graph = new MemoryGraph();
@@ -415,7 +415,7 @@ describe('ac-2: hub-graph expansion + expandLimit + expandTypes', () => {
     }
   });
 
-  it("memory_search with `expandTypes: ['mentions']` follows mentions edges (DAR-927) -- demonstrating that mentions is gated behind explicit opt-in rather than excluded outright", async () => {
+  it("memory_search with `expandTypes: ['mentions']` follows mentions edges -- demonstrating that mentions is gated behind explicit opt-in rather than excluded outright", async () => {
     const embedder = makeProgrammableEmbedder();
     const store = new MemoryStore({ dir: tmp, embedder });
     const graph = new MemoryGraph();
@@ -579,7 +579,7 @@ describe('ac-4: decay scoring + final sort/slice', () => {
     expect(n1.score).toBeCloseTo(0.7, 5);
   });
 
-  it('when env var `COMMONPLACE_EXPANSION_DECAY=0.5` is set at boot, expanded entries are scored at `s_H * 0.5` (verified end-to-end through resolveExpansionDecay or equivalent env-resolver, mirroring the DAR-913 pattern used by `COMMONPLACE_DEFAULT_LIMIT`)', async () => {
+  it('when env var `COMMONPLACE_EXPANSION_DECAY=0.5` is set at boot, expanded entries are scored at `s_H * 0.5` (verified end-to-end through resolveExpansionDecay or equivalent env-resolver, mirroring the pattern used by `COMMONPLACE_DEFAULT_LIMIT`)', async () => {
     const embedder = makeProgrammableEmbedder();
     const store = new MemoryStore({ dir: tmp, embedder });
     const graph = new MemoryGraph();
@@ -724,7 +724,7 @@ describe('ac-6: README documentation invariants', () => {
     expect(readme).toMatch(/direct hits omit/i);
   });
 
-  it('README.md documents the `COMMONPLACE_EXPANSION_DECAY` env var with its default value 0.7 and the allowed range, alongside the other env vars listed by DAR-913', async () => {
+  it('README.md documents the `COMMONPLACE_EXPANSION_DECAY` env var with its default value 0.7 and the allowed range, alongside the other server env vars', async () => {
     const { readFileSync } = await import('node:fs');
     const readme = readFileSync(join(__dirname, '..', 'README.md'), 'utf8');
     expect(readme).toMatch(/COMMONPLACE_EXPANSION_DECAY/);

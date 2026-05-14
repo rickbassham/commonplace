@@ -1,5 +1,5 @@
 /**
- * DAR-924 ac-2 / ac-7: unit tests for the scope-detection function.
+ * Unit tests for the scope-detection function.
  *
  * Each detection branch (env / roots / cwd / none) is exercised
  * independently of the spawned bin so the priority order can be asserted
@@ -33,7 +33,7 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-describe('DAR-924 ac-2 / ac-7: scope detection -- env > roots > cwd > none', () => {
+describe('scope detection: env > roots > cwd > none', () => {
   it('exposes detectScope as a unit-testable export so each branch can be exercised without spawning the bin', () => {
     expect(typeof detectScope).toBe('function');
   });
@@ -128,7 +128,7 @@ describe('DAR-924 ac-2 / ac-7: scope detection -- env > roots > cwd > none', () 
   });
 });
 
-describe('DAR-924: user-dir env resolution', () => {
+describe('user-dir env resolution', () => {
   it('COMMONPLACE_USER_DIR overrides the default and does not flag the deprecation alias', () => {
     const got = resolveUserDir({ [ENV_USER_DIR]: '/explicit/user/dir' });
     expect(got.userDir).toBe('/explicit/user/dir');

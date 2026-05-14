@@ -1,5 +1,5 @@
 /**
- * DAR-932 ac-7 spawned-bin integration: end-to-end coverage for
+ * Spawned-bin integration: end-to-end coverage for
  * `memory_graph` and `memory_path` against the real bin and its real
  * MemoryGraph instance. This proves the boot path wires both per-scope
  * graphs into the new handler factories so the running server can serve
@@ -53,7 +53,7 @@ const parseToolResultJson = (result: unknown): unknown => {
   return JSON.parse(first.text);
 };
 
-describe('DAR-932 bin integration: memory_graph and memory_path end-to-end', () => {
+describe('bin integration: memory_graph and memory_path end-to-end', () => {
   const binPath = readBinPath();
   let memoryDir: string;
   let client: Client;

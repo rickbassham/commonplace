@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DAR-960: derive an npm dist-tag from a semver version string.
+# Derive an npm dist-tag from a semver version string.
 #
 # Usage:   scripts/derive-dist-tag.sh <version>
 # Example: scripts/derive-dist-tag.sh 0.1.0          -> latest

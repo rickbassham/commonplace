@@ -1,10 +1,10 @@
 /**
- * DAR-955 cold-start invariants for the spawned-bin integration harness.
+ * Cold-start invariants for the spawned-bin integration harness.
  *
  * # Background
  *
- * `tests/server-bin.integration.test.ts` (DAR-919) was flaky on `make test`
- * runs from a cold transformers.js model cache: the first invocation
+ * `tests/server-bin.integration.test.ts` was flaky on `make test` runs
+ * from a cold transformers.js model cache: the first invocation
  * occasionally failed with one of two surface symptoms,
  *
  *   - `MCP error -32000: Connection closed` (child process died), or
@@ -67,7 +67,7 @@ import { modelOnnxPath } from './support/model-cache.js';
 
 const MODEL_ID = 'Xenova/bge-base-en-v1.5';
 
-describe('DAR-955: boot-ordering invariant (model cache precondition)', () => {
+describe('boot-ordering invariant: model cache precondition', () => {
   it('after globalSetup runs, the transformers.js model cache contains a non-empty model.onnx for the configured embedder model', () => {
     // The race we are guarding against is: a worker reads `model.onnx` while
     // another writer is still streaming it. The globalSetup eliminates the

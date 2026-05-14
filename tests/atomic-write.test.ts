@@ -1,7 +1,5 @@
 /**
- * DAR-923 contract tests for the atomicWrite helper.
- *
- * Test names mirror the contract envelope on DAR-923 (round 1, approved):
+ * Contract tests for the atomicWrite helper:
  *   - ac-1: write-temp-then-rename + same-filesystem guard
  *   - ac-2: fsync semantics + descriptor lifecycle
  *

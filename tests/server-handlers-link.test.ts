@@ -1,5 +1,5 @@
 /**
- * DAR-928 unit tests: real handlers for memory_link and memory_unlink.
+ * Unit tests: real handlers for memory_link and memory_unlink.
  *
  * Covers the in-process handler surface only -- input validation, atomic
  * write routing (verified via test seam on `__atomicWriteHooks.fs`), graph
@@ -167,10 +167,10 @@ describe('ac-1: tool registration', () => {
 });
 
 // --------------------------------------------------------------------------
-// ac-2: atomic writes via the DAR-923 helper
+// ac-2: atomic writes via the atomicWrite helper
 // --------------------------------------------------------------------------
 
-describe('ac-2: atomic writes via the DAR-923 helper', () => {
+describe('ac-2: atomic writes via the atomicWrite helper', () => {
   // The atomic-write helper exposes a test seam at `__atomicWriteHooks.fs`.
   // We wrap each call so we can observe which paths got `open`'d for write.
   // After each test we restore the real fs so other tests are unaffected.
@@ -254,7 +254,7 @@ describe('ac-4: graph updated incrementally', () => {
 
     const scanSpy = vi.spyOn(store, 'scan');
     const rebuildSpy = vi.spyOn(graph, 'rebuild');
-    // The graph's incremental edge API is `addRelationEdge` (added in DAR-928).
+    // The graph's incremental edge API is `addEdge`.
     // We check that some incremental method was called by snapshotting before
     // and after, and by asserting the outbound bucket grew.
     const beforeSnap = graph.snapshot();

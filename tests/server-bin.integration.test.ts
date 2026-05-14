@@ -1,5 +1,5 @@
 /**
- * DAR-919 bin integration test: spawn the built `commonplace-mcp` bin and
+ * Bin integration test: spawn the built `commonplace-mcp` bin and
  * exercise a full memory_save -> memory_list -> memory_delete round-trip
  * via real MCP stdio framing, with a real Embedder loading real model
  * weights against a tmp memory directory.
@@ -58,7 +58,7 @@ function firstTextContent(content: unknown): string {
   return first.text;
 }
 
-describe('DAR-919 bin integration: spawned bin with real Embedder + MemoryStore', () => {
+describe('bin integration: spawned bin with real Embedder + MemoryStore', () => {
   const binPath = readBinPath();
   let memoryDir: string;
   let client: Client;
@@ -116,7 +116,7 @@ describe('DAR-919 bin integration: spawned bin with real Embedder + MemoryStore'
       arguments: {
         name: 'integration_marker',
         type: 'reference',
-        description: 'DAR-919 bin integration sentinel.',
+        description: 'bin integration sentinel.',
         body: 'This memory is created by the spawned-bin integration test to verify end-to-end wiring.',
       },
     });
@@ -168,7 +168,7 @@ describe('DAR-919 bin integration: spawned bin with real Embedder + MemoryStore'
     expect(finalListed.memories).toEqual([]);
   }, 120_000);
 
-  it('memory_search is wired to the real DAR-920 handler in the spawned bin: a query against an empty memory dir returns a non-error CallToolResult whose payload is `{ matches: [], query: <input>, totalScanned: 0 }`', async () => {
+  it('memory_search is wired to the real handler in the spawned bin: a query against an empty memory dir returns a non-error CallToolResult whose payload is `{ matches: [], query: <input>, totalScanned: 0 }`', async () => {
     const result = await client.callTool({
       name: 'memory_search',
       arguments: { query: 'anything' },
@@ -186,7 +186,7 @@ describe('DAR-919 bin integration: spawned bin with real Embedder + MemoryStore'
   });
 });
 
-describe('DAR-913 ac-6 bin integration: spawned bin honours COMMONPLACE_DEFAULT_LIMIT', () => {
+describe('bin integration: spawned bin honours COMMONPLACE_DEFAULT_LIMIT', () => {
   const binPath = readBinPath();
   let memoryDir: string;
   let client: Client;
@@ -266,7 +266,7 @@ describe('DAR-913 ac-6 bin integration: spawned bin honours COMMONPLACE_DEFAULT_
   }, 180_000);
 });
 
-describe('DAR-930 bin integration: spawned bin exercises one-hop expansion through the real graph', () => {
+describe('bin integration: spawned bin exercises one-hop expansion through the real graph', () => {
   const binPath = readBinPath();
   let memoryDir: string;
   let client: Client;
@@ -423,7 +423,7 @@ describe('DAR-930 bin integration: spawned bin exercises one-hop expansion throu
   }, 180_000);
 });
 
-describe('DAR-931 bin integration: spawned bin honours COMMONPLACE_CONNECTEDNESS_BOOST', () => {
+describe('bin integration: spawned bin honours COMMONPLACE_CONNECTEDNESS_BOOST', () => {
   const binPath = readBinPath();
   let memoryDir: string;
   let client: Client;

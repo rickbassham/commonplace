@@ -1,5 +1,5 @@
 /**
- * Memory `.md` file I/O with typed YAML frontmatter (DAR-911 + DAR-925).
+ * Memory `.md` file I/O with typed YAML frontmatter.
  *
  * A "memory" is a single markdown file whose YAML frontmatter carries a
  * baseline shape plus optional typed graph fields:
@@ -9,28 +9,28 @@
  * name: feedback_scope
  * description: Don't shrink scope unilaterally
  * type: feedback   # one of: user | feedback | project | reference
- * relations:       # DAR-925, optional, defaults to []
+ * relations:       # optional, defaults to []
  *   - to: other_name
  *     type: builds-on
- * supersedes:      # DAR-925, optional, defaults to []
+ * supersedes:      # optional, defaults to []
  *   - old_name
  * ---
  * <body>
  * ```
  *
  * The markdown file is the source of truth -- any sidecar (e.g. the binary
- * `.embedding` produced by DAR-910) is derived from this content and the
- * `contentSha` exported here. Critically, `contentSha` is canonicalised over
- * the v0.1 baseline frontmatter only (`type`, `name`, `description`) plus the
- * body. The graph fields (`relations`, `supersedes`) MUST NOT change the sha;
- * adding or removing graph edges does not invalidate the embedding.
+ * `.embedding`) is derived from this content and the `contentSha` exported
+ * here. Critically, `contentSha` is canonicalised over the baseline
+ * frontmatter only (`type`, `name`, `description`) plus the body. The graph
+ * fields (`relations`, `supersedes`) MUST NOT change the sha; adding or
+ * removing graph edges does not invalidate the embedding.
  *
- * Out of scope for DAR-925:
- *   - verifying that referenced memory names exist on disk (DAR-926)
- *   - building the in-memory adjacency list / graph (DAR-926)
- *   - `[[name]]` body mention extraction (DAR-927)
- *   - `memory_link` / `memory_unlink` MCP edit tools (DAR-928)
- *   - atomic writes / advisory locks (DAR-923)
+ * Out of scope for this module:
+ *   - verifying that referenced memory names exist on disk
+ *   - building the in-memory adjacency list / graph
+ *   - `[[name]]` body mention extraction
+ *   - `memory_link` / `memory_unlink` MCP edit tools
+ *   - atomic writes / advisory locks
  */
 
 import { createHash } from 'node:crypto';
@@ -45,10 +45,11 @@ export const MEMORY_TYPES = ['user', 'feedback', 'project', 'reference'] as cons
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
 /**
- * The four allowed `relations[].type` values (DAR-925).
+ * The four allowed `relations[].type` values.
  *
  * `mentions` is intentionally absent: implicit `[[name]]` mentions in body
- * content are extracted by DAR-927, not authored as typed edges.
+ * content are extracted by the mention tokenizer, not authored as typed
+ * edges.
  */
 export const RELATION_TYPES = ['related-to', 'builds-on', 'contradicts', 'child-of'] as const;
 
@@ -103,9 +104,9 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
 /**
  * `^[a-z0-9_]+$` -- lowercase letters, digits, underscore. No path separators.
  *
- * Exported so DAR-927's `[[name]]` body-tokenizer can share the exact same
- * acceptance pattern as memory filenames; the contract requires parity
- * between the two.
+ * Exported so the `[[name]]` body-tokenizer can share the exact same
+ * acceptance pattern as memory filenames; the tokenizer and the filename
+ * validator must accept the same strings.
  */
 export const NAME_PATTERN = /^[a-z0-9_]+$/;
 
@@ -116,9 +117,9 @@ export const NAME_PATTERN = /^[a-z0-9_]+$/;
  * separators explicitly in the error so the failure mode is easy to
  * recognise.
  *
- * Exported so DAR-927's mention-tokenizer parity tests can assert that the
- * same strings accepted as memory names are also accepted as mention
- * targets, and vice versa.
+ * Exported so the mention-tokenizer parity tests can assert that the same
+ * strings accepted as memory names are also accepted as mention targets,
+ * and vice versa.
  */
 export const validateName = (name: unknown, ctx: string): string => {
   if (typeof name !== 'string') {
@@ -329,7 +330,8 @@ export const readMemory = (path: string): ReadMemory => {
  * ```
  *
  * Empty `relations[]` or `supersedes[]` are omitted entirely so files that
- * carry no graph metadata stay byte-identical to the DAR-911 baseline form.
+ * carry no graph metadata stay byte-identical to the pre-graph baseline
+ * form.
  *
  * Two guarantees:
  *
@@ -347,7 +349,8 @@ export const readMemory = (path: string): ReadMemory => {
  * `memory.name` appears in its own `relations[].to` or `supersedes[]`.
  *
  * Note: this issue intentionally uses a plain `fs.writeFileSync`. Atomic
- * write-temp+rename and advisory locking are owned by DAR-923. The caller is
+ * write-temp+rename and advisory locking are owned by the atomic-write
+ * helper. The caller is
  * responsible for ensuring the parent directory exists; `writeMemory` does
  * not `mkdir -p`.
  */
@@ -361,7 +364,7 @@ export const writeMemory = (path: string, memory: Memory): void => {
  * does; the round-trip and byte-idempotence guarantees on writeMemory hold
  * for the bytes returned here.
  *
- * Exposed so DAR-923 can route the `.md` write through the atomic helper
+ * Exposed so callers can route the `.md` write through the atomic helper
  * (which takes raw bytes) without duplicating the canonical-form logic.
  */
 export const serializeMemory = (memory: Memory): string => {
@@ -415,9 +418,9 @@ export const serializeMemory = (memory: Memory): string => {
  * `${type}\n${name}\n${description}\n${body}`.
  *
  * The sha is deliberately scoped to the v0.1 baseline frontmatter plus the
- * body. The graph fields `relations` and `supersedes` (DAR-925) DO NOT
- * participate in the sha -- adding or removing graph edges must not
- * invalidate the corresponding embedding sidecar.
+ * body. The graph fields `relations` and `supersedes` DO NOT participate
+ * in the sha -- adding or removing graph edges must not invalidate the
+ * corresponding embedding sidecar.
  *
  * Returns a 64-character lowercase hex string.
  */

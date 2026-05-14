@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DAR-914: Apply branch protection to `main` for the commonplace repo.
+# Apply branch protection to `main` for the commonplace repo.
 #
 # This script is the reproducible source of truth for the branch
 # protection settings -- review changes here, run the script out-of-band
@@ -12,7 +12,7 @@
 #     `node-version: [22, 24]` and a single job named `ci`. The
 #     status-check contexts below ("ci (22)" / "ci (24)") must match
 #     the rendered matrix-leg job names. Drift between this script and
-#     ci.yml is checked by the DAR-914 contract tests.
+#     ci.yml is checked by the ci-workflow contract tests.
 #
 # Usage:
 #   ./scripts/setup-branch-protection.sh [owner/repo]

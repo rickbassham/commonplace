@@ -1,12 +1,8 @@
 /**
- * DAR-911 contract tests.
- *
- * Behavioral tests for the memory `.md` file I/O primitives:
+ * Contract tests for the memory `.md` file I/O primitives:
  * - readMemory(path)   -> { name, description, type, body, raw }
  * - writeMemory(path, memory)
  * - contentSha(memory) -> 64-char lowercase sha256 hex
- *
- * Test names mirror the contract envelope on DAR-911 (round 1).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

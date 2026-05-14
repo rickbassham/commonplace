@@ -1,8 +1,7 @@
 /**
- * DAR-933 contract tests for the `commonplace graph <name>` subcommand.
+ * Contract tests for the `commonplace graph <name>` subcommand.
  *
- * Test names mirror the approved contract envelope on DAR-933. The CLI
- * surface is broken across:
+ * The CLI surface is broken across:
  *
  *   - argv parsing: `parseGraphArgs`
  *   - mermaid / json / dot renderers
@@ -270,8 +269,7 @@ describe('ac-3: mermaid validity', () => {
       // Pipe the CLI's *live* mermaid output (via the same renderer
       // graphMain dispatches to) to mmdc, not the committed snapshot.
       // This gives direct (rather than transitive-through-snapshot)
-      // coverage that renderMermaid's output is mmdc-valid. (DAR-933
-      // review f-4.)
+      // coverage that renderMermaid's output is mmdc-valid.
       const rendered = await loadFixtureAndRender(c, 'mermaid');
       const out = join(tmp, `${c}.svg`);
       const res = spawnSync('mmdc', ['-i', '-', '-o', out], {
@@ -344,8 +342,8 @@ describe('ac-4: cycle handling', () => {
     expect(new Set(edgeLines).size).toBe(3);
   });
 
-  it('fixture with a self-reference attempt (rejected at graph-build time per DAR-926) does not appear in mermaid output and does not crash the renderer', async () => {
-    // DAR-926 rejects self-edges at parse and graph-build time. The CLI
+  it('fixture with a self-reference attempt (rejected at graph-build time) does not appear in mermaid output and does not crash the renderer', async () => {
+    // The graph rejects self-edges at parse and graph-build time. The CLI
     // should accept a memory with no self-edge and the renderer should
     // produce zero self-loop lines (no `a -- ... --> a`).
     await seedStore([{ name: 'a' }]);
@@ -619,7 +617,7 @@ describe('ac-7: fixture corpus snapshots', () => {
     expect(inDecoded.edges.every((e) => e.to === 'root')).toBe(true);
   });
 
-  it('`from === to` edge case fixture (root memory references itself by name in a way the graph permits — i.e., zero outbound to self, since DAR-926 rejects self-edges): each format emits the root with zero self-loops and does not crash', async () => {
+  it('`from === to` edge case fixture (root memory references itself by name in a way the graph permits — i.e., zero outbound to self, since the graph rejects self-edges): each format emits the root with zero self-loops and does not crash', async () => {
     await seedStore([{ name: 'root' }]);
     for (const fmt of ['mermaid', 'json', 'dot'] as const) {
       const res = await runMain(['graph', 'root', '--format', fmt]);
@@ -668,7 +666,7 @@ describe('ac-8: --help and dispatcher parity', () => {
     expect(graphHelp.mode).toBe('help');
   });
 
-  it("the canonical `USAGE` constant exported from the dispatcher includes a `commonplace graph <name>` line and is rendered verbatim from both the bare-bin no-arg error path and the `graph` parser's usage_error path (matches DAR-961 review f-1 single-source-of-truth pattern)", () => {
+  it("the canonical `USAGE` constant exported from the dispatcher includes a `commonplace graph <name>` line and is rendered verbatim from both the bare-bin no-arg error path and the `graph` parser's usage_error path (single-source-of-truth pattern)", () => {
     expect(USAGE).toContain('commonplace graph <name>');
     const parsed = parseGraphArgs(['graph']);
     expect(parsed.kind).toBe('usage_error');

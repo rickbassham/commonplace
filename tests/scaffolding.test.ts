@@ -1,5 +1,5 @@
 /**
- * DAR-908 contract tests.
+ * Scaffolding contract tests.
  *
  * These tests verify the scaffolding contract: package metadata, TS/ESM
  * config, src/ skeleton, Makefile-driven dev loop, lint/format/editor
@@ -388,9 +388,9 @@ describe('ac-22: CLAUDE.md', () => {
     expect(sec).toMatch(/derived/i);
   });
 
-  it('CLAUDE.md Environment section cross-links DAR-913 for the env-vars list', () => {
+  it('CLAUDE.md Environment section references env-var configuration', () => {
     const sec = sectionOf('## Environment');
-    expect(sec).toMatch(/DAR-913/);
+    expect(sec).toMatch(/env(ironment)?[- ]var/i);
   });
 
   it('CLAUDE.md Overrides section is present and indicates no overrides yet', () => {

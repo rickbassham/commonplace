@@ -1,5 +1,5 @@
 /**
- * DAR-914 contract tests.
+ * CI-workflow contract tests.
  *
  * Verifies the CI workflow at `.github/workflows/ci.yml`, the
  * reproducible branch-protection script at
@@ -459,7 +459,7 @@ describe('ac-14..ac-22: branch-protection script payload settings', () => {
   const body = (): string => read(protectionScriptPath);
 
   it('branch-protection script sends `required_pull_request_reviews.required_approving_review_count: 0`', () => {
-    // DAR-995: dropped from 1 to 0. The review requirement was a no-op for
+    // Dropped from 1 to 0. The review requirement was a no-op for
     // solo maintenance -- GitHub forbids approving your own PR, so the only
     // way the rule was ever satisfied was admin bypass. Setting the count
     // to 0 reflects the actual workflow and lets `enforce_admins: true`
@@ -565,7 +565,7 @@ describe('ac-14..ac-22: branch-protection script payload settings', () => {
   });
 
   it('branch-protection script sends `enforce_admins: true`', () => {
-    // DAR-995: flipped from false to true. With enforce_admins on, admins
+    // Flipped from false to true. With enforce_admins on, admins
     // can no longer bypass branch protection -- no `gh pr merge --admin`,
     // no direct push to main. Release-please-pushed tags are unaffected
     // (branch protection applies to refs/heads/main, not refs/tags/*).

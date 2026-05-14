@@ -1,5 +1,5 @@
 /**
- * Atomic write-temp-then-rename helper (DAR-923).
+ * Atomic write-temp-then-rename helper.
  *
  * Multi-process safety primitive used by `MemoryStore` for every `.md` and
  * `.embedding` write. The helper:

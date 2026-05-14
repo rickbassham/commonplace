@@ -1,10 +1,10 @@
 /**
- * In-memory adjacency list + dangling-edge detection (DAR-926).
+ * In-memory adjacency list + dangling-edge detection.
  *
- * `MemoryGraph` indexes the typed graph fields exposed by DAR-925
+ * `MemoryGraph` indexes the typed graph fields exposed by `memory.ts`
  * (`relations[]` and `supersedes[]`) plus a representable `mentions` edge
- * type that DAR-927 will plug into. It is consumed by `MemoryStore`
- * (DAR-916), which:
+ * type for body-mention extraction. It is consumed by `MemoryStore`,
+ * which:
  *
  *   - calls `rebuild(entries)` once per `scan()`
  *   - calls `add(entry)` once per `save(entry)`
@@ -37,17 +37,23 @@
  *
  * # Self-edges
  *
- * DAR-925 already rejects self-edges at parse time. The graph asserts the
- * same invariant defensively: callers that bypass `readMemory` (e.g. tests,
- * future incremental APIs) can't introduce a self-edge silently.
+ * The memory parser already rejects self-edges at parse time. The graph
+ * asserts the same invariant defensively: callers that bypass `readMemory`
+ * (e.g. tests, future incremental APIs) can't introduce a self-edge
+ * silently.
  *
  * # Out of scope
  *
  *   - Cycle detection or rejection. Cycles are allowed and only tracked.
- *   - Centrality / PageRank (DAR-931).
- *   - Traversal / path queries (DAR-932).
- *   - The `[[name]]` mention extractor (DAR-927). This module exposes
- *     `addMentionsEdge` so DAR-927 can plug in without schema changes.
+ *   - Centrality / PageRank. The connectedness boost in `memory_search`
+ *     reads `inbound()` and computes its score directly; this module
+ *     intentionally does not own a centrality primitive.
+ *   - Traversal / path queries are surfaced by the `memory_graph` /
+ *     `memory_path` handlers, which call into this module's adjacency
+ *     accessors.
+ *   - The `[[name]]` mention extractor lives in `./mentions.ts`. This
+ *     module exposes `addMentionsEdge` so the extractor can plug in
+ *     without schema changes.
  */
 
 import type { Relation, RelationType } from './memory.js';
@@ -56,7 +62,7 @@ import type { Relation, RelationType } from './memory.js';
  * Edge type union. `RelationType` is the four authored types
  * (`related-to`, `builds-on`, `contradicts`, `child-of`); `'supersedes'`
  * comes from the `supersedes[]` frontmatter field; `'mentions'` is reserved
- * for DAR-927's body-tokenizer output.
+ * for the body-tokenizer output.
  */
 export type EdgeType = RelationType | 'supersedes' | 'mentions';
 
@@ -81,8 +87,8 @@ export interface DanglingEdge {
 
 /**
  * Minimum shape the graph needs from a memory: its name plus the two
- * authored graph fields. `MemoryEntry` (DAR-916) and `Memory` (DAR-925)
- * both satisfy this -- the graph never reads body, vector, or sha.
+ * authored graph fields. `MemoryEntry` and `Memory` both satisfy this --
+ * the graph never reads body, vector, or sha.
  */
 export interface GraphMemory {
   name: string;
@@ -134,8 +140,8 @@ export class MemoryGraph {
    * does not resolve to a loaded memory.
    *
    * Optional `mentions` lets the caller supply pre-extracted mention edges
-   * (DAR-927) that get folded into the graph BEFORE the dangling pass, so a
-   * single `onDangling` invocation reports both authored and
+   * that get folded into the graph BEFORE the dangling pass, so a single
+   * `onDangling` invocation reports both authored and
    * mention-derived dangling edges. Each entry is `{ from, to }` with
    * `from` referring to a loaded memory and `to` an extracted target name
    * (which may or may not resolve to a loaded memory).
@@ -267,8 +273,8 @@ export class MemoryGraph {
   }
 
   /**
-   * Incrementally add a single authored edge to the graph (DAR-928). Used by
-   * the `memory_link` handler when it appends an edge to an already-loaded
+   * Incrementally add a single authored edge to the graph. Used by the
+   * `memory_link` handler when it appends an edge to an already-loaded
    * source memory's frontmatter -- a full `add(memory)` would throw because
    * the memory is already present, and a `rebuild()` would be wasteful.
    *
@@ -305,7 +311,7 @@ export class MemoryGraph {
   }
 
   /**
-   * Incrementally remove a single authored edge from the graph (DAR-928).
+   * Incrementally remove a single authored edge from the graph.
    * Used by the `memory_unlink` handler when an edge is dropped from a
    * source memory's frontmatter.
    *
@@ -361,8 +367,8 @@ export class MemoryGraph {
   /**
    * Add a `mentions` edge from one loaded memory to another. The edge is
    * stored alongside authored edges and shows up in `outbound`/`inbound`
-   * results. DAR-927 will own the body-tokenizer that decides which
-   * mentions to add; this method is the integration point.
+   * results. The body-tokenizer in `./mentions.ts` decides which mentions
+   * to add; this method is the integration point.
    */
   public addMentionsEdge(args: { from: string; to: string }): void {
     if (args.from === args.to) {
