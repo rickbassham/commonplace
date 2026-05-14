@@ -37,7 +37,7 @@ export const SERVER_NAME = 'commonplace';
  * invariant tests (`tests/version-sync.test.ts`) fail loudly if drift
  * ever sneaks in.
  */
-export const SERVER_VERSION = '0.2.1'; // x-release-please-version
+export const SERVER_VERSION = '0.3.0'; // x-release-please-version
 
 export interface CreateServerOptions {
   /**

@@ -5,6 +5,20 @@ All notable changes to `commonplace-mcp` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0](https://github.com/rickbassham/commonplace/compare/v0.2.1...v0.3.0) (2026-05-14)
+
+
+### Added
+
+* **release:** guard against spurious BREAKING CHANGES section (DAR-989) ([#42](https://github.com/rickbassham/commonplace/issues/42)) ([bda917d](https://github.com/rickbassham/commonplace/commit/bda917d02f7cf739fc731a3f895316b118ec2ba5))
+* **release:** switch to release-please flow and enforce_admins (DAR-995) ([#44](https://github.com/rickbassham/commonplace/issues/44)) ([909a540](https://github.com/rickbassham/commonplace/commit/909a540763dc9739a89a0a860a90f1e49a76c302))
+
+
+### Fixed
+
+* **embedder:** clear cached pipeline promise on init failure (DAR-935) ([#43](https://github.com/rickbassham/commonplace/issues/43)) ([097469d](https://github.com/rickbassham/commonplace/commit/097469d4fd1832b366faf35ee939bec8676451db))
+* **release:** use bare v* tags in release-please so release.yml fires ([#46](https://github.com/rickbassham/commonplace/issues/46)) ([60d33cc](https://github.com/rickbassham/commonplace/commit/60d33ccb0db24105ade9ea5e32687ad5482ecd1e))
+
 ## [0.2.1](https://github.com/rickbassham/commonplace/compare/v0.2.0...v0.2.1) (2026-05-13)
 
 First published 0.2.x. v0.2.0 was tagged but never reached npm: the release workflow's test gate caught two pre-existing bugs in `tests/version-sync.test.ts` that only surfaced when the version actually moved off `0.1.0`.
