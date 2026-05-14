@@ -193,11 +193,14 @@ describe('ac-1: .release-please-manifest.json', () => {
     expect(() => readJson(releasePleaseManifestPath)).not.toThrow();
   });
 
-  it('.release-please-manifest.json pins the root package to 0.2.1', () => {
+  it('.release-please-manifest.json root package version mirrors package.json', () => {
     const manifest = readJson(releasePleaseManifestPath);
     expect(isObject(manifest)).toBe(true);
     if (!isObject(manifest)) return;
-    expect(manifest['.']).toBe('0.2.1');
+    const pkg = readJson('package.json');
+    expect(isObject(pkg)).toBe(true);
+    if (!isObject(pkg)) return;
+    expect(manifest['.']).toBe(pkg.version);
   });
 });
 
