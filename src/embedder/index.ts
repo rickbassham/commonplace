@@ -171,10 +171,30 @@ export class Embedder {
    * what gives us the AC-3 guarantee: two concurrent `embed()` calls on a
    * fresh Embedder both observe the same in-flight promise, so the
    * underlying `pipeline()` factory is invoked exactly once.
+   *
+   * If the in-flight promise rejects (e.g. a transient HuggingFace hub
+   * failure on the very first load), we clear `#pipelinePromise` so the
+   * next `embed()` call retries the load instead of replaying the cached
+   * rejection forever (DAR-935). The clearing is attached via a `.catch()`
+   * side-effect on a local reference rather than reassigning the field
+   * before returning, so concurrent callers that already grabbed the same
+   * promise still observe the same rejection -- they share one failed
+   * init, then the next *new* embed() call gets a fresh attempt.
    */
   #getPipeline(): Promise<FeatureExtractionPipeline> {
     if (this.#pipelinePromise === null) {
-      this.#pipelinePromise = pipeline('feature-extraction', this.modelId);
+      const p = pipeline('feature-extraction', this.modelId);
+      this.#pipelinePromise = p;
+      // On rejection, drop the cached promise so the next embed() retries.
+      // Only clear if the field still points at *this* promise, in case a
+      // future code path ever races a reset. The `.catch()` swallows the
+      // rejection only on this internal handler -- callers awaiting the
+      // returned promise still observe the original error.
+      p.catch(() => {
+        if (this.#pipelinePromise === p) {
+          this.#pipelinePromise = null;
+        }
+      });
     }
     return this.#pipelinePromise;
   }

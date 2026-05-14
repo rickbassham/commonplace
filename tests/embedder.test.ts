@@ -182,6 +182,83 @@ describe('ac-4: pooling cls + normalize true', () => {
 });
 
 // -------------------------------------------------------------------------
+// DAR-935: clear cached pipeline promise on init failure
+//
+// The DAR-912 contract caches the in-flight pipeline *promise* to give the
+// AC-3 "single shared init" guarantee. That cache must be cleared when the
+// promise rejects, otherwise every subsequent embed() on the same Embedder
+// replays the same rejection forever. These tests cover the failure-then-
+// retry path; the success-path ac-1/ac-3/ac-5 contract tests above already
+// cover the "unchanged on success" half of the contract.
+// -------------------------------------------------------------------------
+
+describe('DAR-935: init failure clears cached pipeline promise', () => {
+  it('after a successful first embed(), a second embed() on the same Embedder does not call the pipeline factory again (factory invoked exactly once across multiple successful embed() calls)', async () => {
+    pipelineMock.mockResolvedValue(makeFakePipeline(768));
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+    await e.embed('one');
+    await e.embed('two');
+    await e.embed('three');
+    expect(pipelineMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('after a successful first embed(), the resolved pipeline callable from the first load is the same callable used to produce the vector on subsequent embed() calls (no re-init occurs)', async () => {
+    const fake = makeFakePipeline(768);
+    pipelineMock.mockResolvedValue(fake as never);
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+    await e.embed('one');
+    await e.embed('two');
+    // The same fake callable was used for both embed() calls -- proves the
+    // pipeline instance is reused rather than re-initialised.
+    expect(fake).toHaveBeenCalledTimes(2);
+    expect(pipelineMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('when the pipeline factory rejects on the first embed() call, the second embed() call invokes the pipeline factory again (factory call count goes from 1 to 2) rather than re-yielding the prior rejection without calling the factory', async () => {
+    pipelineMock.mockRejectedValueOnce(new Error('transient hub failure'));
+    pipelineMock.mockResolvedValueOnce(makeFakePipeline(768) as never);
+
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+    await expect(e.embed('first')).rejects.toThrow('transient hub failure');
+    expect(pipelineMock).toHaveBeenCalledTimes(1);
+
+    await e.embed('second');
+    expect(pipelineMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('when the pipeline factory rejects on the first embed() call and a second embed() call succeeds, that second call resolves to a Float32Array using the freshly-loaded pipeline (recovery is observable end-to-end, not just via the spy)', async () => {
+    pipelineMock.mockRejectedValueOnce(new Error('transient hub failure'));
+    pipelineMock.mockResolvedValueOnce(makeFakePipeline(768) as never);
+
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+    await expect(e.embed('first')).rejects.toThrow();
+    const v = await e.embed('second');
+    expect(v).toBeInstanceOf(Float32Array);
+    expect(v.length).toBe(768);
+  });
+
+  it('embed() rejects with the exact error thrown by the pipeline factory on a failing first load (error identity/message preserved, not wrapped into a different error)', async () => {
+    const original = new Error('boom: hub unreachable');
+    pipelineMock.mockRejectedValueOnce(original);
+
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+    // Identity preserved: the rejected value is the same Error object the
+    // factory threw, not a wrapped/replaced error.
+    await expect(e.embed('first')).rejects.toBe(original);
+  });
+
+  it('after a failing first embed(), a subsequent embed() invokes the pipeline factory exactly one additional time (total factory invocations = 2 across the failure + retry sequence)', async () => {
+    pipelineMock.mockRejectedValueOnce(new Error('boom'));
+    pipelineMock.mockResolvedValueOnce(makeFakePipeline(768) as never);
+
+    const e = new Embedder('Xenova/bge-base-en-v1.5');
+    await expect(e.embed('first')).rejects.toThrow('boom');
+    await e.embed('second');
+    expect(pipelineMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// -------------------------------------------------------------------------
 // ac-5: dim populated from known-models map or after first embed
 // -------------------------------------------------------------------------
 
