@@ -1,10 +1,9 @@
 /**
- * DAR-912: type-level guard that `Embedder.modelId` and `Embedder.dim` are
+ * Type-level guard that `Embedder.modelId` and `Embedder.dim` are
  * declared `readonly`. This file is not a runtime test -- it participates
  * in `tsc --noEmit` (and therefore `make typecheck`). The
  * `// @ts-expect-error` markers below FAIL the build if either property
- * becomes assignable, which is exactly the readonly contract required by
- * AC-1.
+ * becomes assignable, which is the readonly contract required.
  *
  * The test runner does not execute this file; it is only here so the
  * compiler sees the intentionally-erroneous assignments.

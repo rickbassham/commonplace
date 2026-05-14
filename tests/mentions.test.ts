@@ -1,12 +1,9 @@
 /**
- * DAR-927 contract tests -- pure tokenizer (`extractMentions`).
- *
- * Behavioral tests for the `[[name]]` body-mention extractor. Test names
- * mirror the contract envelope on DAR-927 (round 1, approved).
+ * Contract tests -- pure tokenizer (`extractMentions`).
  *
  * The tokenizer is a pure function over a markdown body string. It returns
  * unique mention names in first-occurrence order, restricting matches to the
- * same `^[a-z0-9_]+$` rule used by memory file names (DAR-911 / DAR-925).
+ * same `^[a-z0-9_]+$` rule used by memory file names.
  */
 
 import { describe, expect, it } from 'vitest';

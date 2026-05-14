@@ -196,7 +196,7 @@ deliberately not part of `make test`:
   the release workflow consumes (also unit-tested in
   `tests/derive-dist-tag.test.ts`).
 - `scripts/reproduce-cold-start-race.sh` -- destructive
-  reproduction of the DAR-955 transformers.js cold-cache race (clears
+  reproduction of the transformers.js cold-cache race (clears
   the model cache and races two concurrent embedder loads; expects at
   least one to fail). Run only when investigating a regression of the
   same class. Cost: ~440 MB redownload.

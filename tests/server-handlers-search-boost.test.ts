@@ -1,12 +1,12 @@
 /**
- * DAR-931 unit tests: connectedness boost in `memory_search` ranking.
+ * Unit tests: connectedness boost in `memory_search` ranking.
  *
  * Covers the env-resolver for `COMMONPLACE_CONNECTEDNESS_BOOST`, the
  * additive `alpha * log(1 + inbound_count)` boost applied to each direct
  * cosine hit before sort/slice, the edge-type filter (boost ignores
  * `mentions` and `supersedes` inbound edges), the wiring into the handler
- * factory and bin, and the composition with DAR-930 one-hop expansion
- * (expanded neighbors decay the BOOSTED direct-hit score).
+ * factory and bin, and the composition with one-hop expansion (expanded
+ * neighbors decay the BOOSTED direct-hit score).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -461,7 +461,7 @@ describe('ac-2: boost calculation skips mentions and supersedes edges by default
     expect(f2?.score).toBeCloseTo(roundScore(1.0 + alpha * Math.log(1 + 1)), 5);
   });
 
-  it("when the per-scope MemoryGraph is undefined, memory_search returns scores equal to raw cosine (no boost applied) and does not throw -- preserves the DAR-930 'optional graph' contract", async () => {
+  it("when the per-scope MemoryGraph is undefined, memory_search returns scores equal to raw cosine (no boost applied) and does not throw -- preserves the 'optional graph' contract", async () => {
     const embedder = makeProgrammableEmbedder();
     const store = new MemoryStore({ dir: tmp, embedder });
     const graph = new MemoryGraph();
@@ -736,7 +736,7 @@ describe('ac-5: README documents the formula, rationale, env var, and expansion 
     expect(readme).toMatch(/non-negative|negative|invalid/i);
   });
 
-  it('README.md notes the interaction with DAR-930 one-hop expansion: expanded neighbors decay the BOOSTED direct-hit score', async () => {
+  it('README.md notes the interaction with one-hop expansion: expanded neighbors decay the BOOSTED direct-hit score', async () => {
     const { readFileSync } = await import('node:fs');
     const readme = readFileSync(join(__dirname, '..', 'README.md'), 'utf8');
     expect(readme).toMatch(/boosted/i);

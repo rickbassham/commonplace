@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Regenerate the DAR-933 fixture corpus snapshot files
+ * Regenerate the graph CLI fixture corpus snapshot files
  * (`tests/fixtures/graph/<case>.mermaid` and `.dot`) from the spec JSONs
  * in the same directory. Run once at fixture-add time; in CI the snapshot
  * tests compare against these committed files.
  *
  * Imports the live TypeScript sources via `tsx` -- no `make build` is
  * required before running. (Earlier revisions imported from `dist/`,
- * which silently broke when the build was stale; see DAR-933 review f-3.)
+ * which silently broke when the build was stale.)
  *
  * Usage: pnpm exec tsx scripts/dar933-generate-fixtures.mjs
  */

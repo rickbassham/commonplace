@@ -1,11 +1,10 @@
 /**
- * DAR-927 contract tests -- MemoryStore wiring.
+ * Contract tests -- MemoryStore wiring for body-mention extraction.
  *
  * Behavioral tests that exercise the integration of `extractMentions` into
  * `MemoryStore.scan` and `MemoryStore.save`: each extracted name becomes one
  * `mentions` edge in the configured `MemoryGraph`, gated by the env var
- * `COMMONPLACE_EXTRACT_MENTIONS` (default on). Test names mirror the
- * contract envelope on DAR-927 (round 1, approved).
+ * `COMMONPLACE_EXTRACT_MENTIONS` (default on).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -245,8 +244,8 @@ describe('ac-5: idempotence (integration)', () => {
 describe('ac-6: contentSha invariance', () => {
   it("contentSha(memory) from src/store/memory.ts is unchanged by this PR's diff: the implementation does not modify the contentSha hashing inputs in response to extracted mentions", () => {
     // Structural invariance check: the hash inputs are exactly
-    // `(type, name, description, body)`. The DAR-927 implementation must
-    // not mix extracted mention output into the hash. Compare
+    // `(type, name, description, body)`. The mention extractor must
+    // not mix its output into the hash. Compare
     // `contentSha` of a memory with mention tokens against `contentSha`
     // of the same canonical-fields set computed independently.
     const m: Memory = {

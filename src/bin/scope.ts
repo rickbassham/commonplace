@@ -1,5 +1,5 @@
 /**
- * Scope detection for the commonplace MCP server (DAR-924).
+ * Scope detection for the commonplace MCP server.
  *
  * The server may load up to two `MemoryStore` instances: a user-level store
  * (always loaded) and a project-level store (loaded only if a project root is
@@ -9,8 +9,7 @@
  * # Detection priority (env > roots > cwd > none)
  *
  *   1. `COMMONPLACE_PROJECT_DIR` -- explicit override; always wins. The path
- *      need not exist yet (the project store auto-creates on first save per
- *      DAR-924 ac-3).
+ *      need not exist yet; the project store auto-creates on first save.
  *   2. MCP `roots/list` response -- the first `file://` root in the response
  *      resolves to `<root>/.commonplace/memory`. Non-`file://` roots are
  *      skipped. If the request rejects (client doesn't advertise the
@@ -22,8 +21,8 @@
  * # User store
  *
  * The user store is unconditionally located. `COMMONPLACE_USER_DIR` overrides
- * `~/.commonplace/memory`. The deprecated `COMMONPLACE_MEMORY_DIR` (DAR-919)
- * is recognised for back-compat: when set AND `COMMONPLACE_USER_DIR` is not,
+ * `~/.commonplace/memory`. The deprecated `COMMONPLACE_MEMORY_DIR` is
+ * recognised for back-compat: when set AND `COMMONPLACE_USER_DIR` is not,
  * it's used as the user dir and a deprecation warning is emitted to stderr.
  *
  * # Out of scope for this module
@@ -49,12 +48,12 @@ export const ENV_USER_DIR = 'COMMONPLACE_USER_DIR';
 /**
  * Env var name for the project-level memory directory. When set, takes
  * priority over `roots/list` and cwd detection. The path need not exist on
- * disk (it's auto-created on first project-scoped save per DAR-924 ac-3).
+ * disk; it's auto-created on first project-scoped save.
  */
 export const ENV_PROJECT_DIR = 'COMMONPLACE_PROJECT_DIR';
 
 /**
- * Deprecated env var from the DAR-919 single-store wiring. When set and
+ * Deprecated env var from the single-store wiring. When set and
  * {@link ENV_USER_DIR} is not, it's treated as an alias for
  * {@link ENV_USER_DIR} and a stderr warning is emitted.
  */

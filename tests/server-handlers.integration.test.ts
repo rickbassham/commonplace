@@ -1,10 +1,10 @@
 /**
- * DAR-919 integration tests: end-to-end MCP server with real CRUD handlers
- * over an in-memory transport pair.
+ * Integration tests: end-to-end MCP server with real CRUD handlers over
+ * an in-memory transport pair.
  *
  * Spins up a real `Server` (via `createServer`) wired with a real
- * `MemoryStore` (DAR-916) backed by a tmp directory and a stub embedder,
- * and a real `Client` connected via `InMemoryTransport.createLinkedPair()`.
+ * `MemoryStore` backed by a tmp directory and a stub embedder, and a
+ * real `Client` connected via `InMemoryTransport.createLinkedPair()`.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -104,8 +104,8 @@ const callJSON = async (
 // ac-1: registration over the transport
 // --------------------------------------------------------------------------
 
-describe('ac-1: createServer wires real DAR-919 handlers', () => {
-  it("createServer wires real DAR-919 handlers by default for memory_save, memory_list, memory_delete (CallTool does not surface 'not implemented' for those three names)", async () => {
+describe('ac-1: createServer wires real CRUD handlers', () => {
+  it("createServer wires real CRUD handlers by default for memory_save, memory_list, memory_delete (CallTool does not surface 'not implemented' for those three names)", async () => {
     const h = await setupHarness();
     try {
       // memory_list with no args should succeed
@@ -123,7 +123,7 @@ describe('ac-1: createServer wires real DAR-919 handlers', () => {
     }
   });
 
-  it('ListTools over the in-memory transport still returns the eight expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path) with non-empty descriptions and object inputSchemas after DAR-919 wiring', async () => {
+  it('ListTools over the in-memory transport returns the eight expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path) with non-empty descriptions and object inputSchemas', async () => {
     const h = await setupHarness();
     try {
       const result = await h.client.listTools();
@@ -147,7 +147,7 @@ describe('ac-1: createServer wires real DAR-919 handlers', () => {
     }
   });
 
-  it('memory_search is wired to the real DAR-920 handler when a store is supplied; calling it through the transport returns a non-error CallToolResult whose payload has the documented `{ matches, query, totalScanned }` envelope', async () => {
+  it('memory_search is wired to the real search handler when a store is supplied; calling it through the transport returns a non-error CallToolResult whose payload has the documented `{ matches, query, totalScanned }` envelope', async () => {
     const h = await setupHarness();
     try {
       const result = await callJSON(h.client, 'memory_search', { query: 'x' });
@@ -263,7 +263,7 @@ describe('ac-3: list filtering and frontmatter shape', () => {
         name: 'one',
         type: 'reference',
         description: 'd',
-        // DAR-924: list entries now carry a `scope` tag so callers can tell
+        // List entries now carry a `scope` tag so callers can tell
         // user vs project memories apart. With only a user store wired, the
         // tag is always 'user'.
         scope: 'user',
@@ -375,7 +375,7 @@ describe('ac-4: handler responses serialise to MCP text content blocks', () => {
       const first = content[0];
       if (!isTextContent(first)) throw new Error('content[0] not text');
       const parsed: unknown = JSON.parse(first.text);
-      // DAR-924: delete result now carries the `scope` tag identifying the
+      // Delete result now carries the `scope` tag identifying the
       // store the memory was removed from.
       expect(parsed).toEqual({ deleted: 'gone', scope: 'user' });
     } finally {

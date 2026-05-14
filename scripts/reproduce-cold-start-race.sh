@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DAR-955 cold-start race reproduction (maintainer-only diagnostic).
+# Cold-start race reproduction (maintainer-only diagnostic).
 #
 # Triggers the race that motivated tests/global-setup.ts: when two
 # vitest workers concurrently load transformers.js with a cold model

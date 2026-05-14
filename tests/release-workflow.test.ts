@@ -1,11 +1,11 @@
 /**
- * DAR-960 contract tests: release workflow YAML structure.
+ * Contract tests: release workflow YAML structure.
  *
  * Verifies the release workflow at `.github/workflows/release.yml` and the
  * release-process docs in `CONTRIBUTING.md`. Mirrors the structural-assertion
- * pattern used in `tests/ci-workflow.test.ts` (DAR-914): we parse the YAML
- * with the `yaml` package and assert structural properties of the committed
- * artifact rather than executing it against the live GitHub repo.
+ * pattern used in `tests/ci-workflow.test.ts`: we parse the YAML with the
+ * `yaml` package and assert structural properties of the committed artifact
+ * rather than executing it against the live GitHub repo.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -584,7 +584,7 @@ describe('ac-9: contributor docs - release process', () => {
 
   it('the release docs describe a single bump-and-tag step that produces both the version bump and the annotated tag together', () => {
     const { body } = loadReleaseDoc();
-    // The release-please flow (DAR-995) collapses bump + tag into one
+    // The release-please flow collapses bump + tag into one
     // action: merging the rolling `chore(main): release X.Y.Z` PR
     // commits the version bump AND pushes the annotated tag in one
     // operation (no split manual steps).
@@ -594,7 +594,7 @@ describe('ac-9: contributor docs - release process', () => {
 
   it('the release docs describe how the `v<version>` tag reaches GitHub and that the release workflow fires from the tag push', () => {
     const { body } = loadReleaseDoc();
-    // DAR-995: the maintainer no longer runs `git push --follow-tags`.
+    // Under release-please, the maintainer no longer runs `git push --follow-tags`.
     // Merging the release-please-maintained PR causes release-please to
     // push the annotated tag, which fires `.github/workflows/release.yml`.
     // Accept either the legacy manual-push wording or the release-please
@@ -615,7 +615,7 @@ describe('ac-9: contributor docs - release process', () => {
   });
 });
 
-describe('ac-11: workflow YAML structure assertions (mirroring DAR-914)', () => {
+describe('ac-11: workflow YAML structure assertions (mirroring the CI workflow tests)', () => {
   it('a vitest test file exists that loads .github/workflows/release.yml via the `yaml` package and asserts structural properties', () => {
     // This file is that test file -- its existence is asserted by the
     // test runner finding and executing it. The presence of the import

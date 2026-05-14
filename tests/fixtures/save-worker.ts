@@ -1,5 +1,5 @@
 /**
- * Child-process worker used by the DAR-923 multi-process stress + crash tests
+ * Child-process worker used by the multi-process stress + crash tests
  * (ac-5, ac-6, ac-7). The worker constructs a MemoryStore with a stub
  * embedder (so child processes do not load transformers.js) and performs
  * one of three modes driven by argv:

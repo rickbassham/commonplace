@@ -1,5 +1,5 @@
 /**
- * DAR-919 unit tests: real handlers for memory_save, memory_list, memory_delete.
+ * Unit tests: real handlers for memory_save, memory_list, memory_delete.
  *
  * These cover the in-process handler surface only -- input validation,
  * inputSchema shape, store dispatch, and return value structure. End-to-end
@@ -66,7 +66,7 @@ const findDef = (defs: readonly ToolDefinition[], name: string): ToolDefinition 
 // --------------------------------------------------------------------------
 
 describe('ac-1: tool registration with real handlers', () => {
-  it('buildToolDefinitions returns a definition for memory_save, memory_list, and memory_delete whose handler is NOT the not-implemented stub when DAR-919 handlers are wired', async () => {
+  it('buildToolDefinitions returns a definition for memory_save, memory_list, and memory_delete whose handler is NOT the not-implemented stub when real handlers are wired', async () => {
     const store = makeStore();
     const handlers = createDefaultHandlers({ store });
     const defs = buildToolDefinitions(handlers);

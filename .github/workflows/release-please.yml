@@ -1,4 +1,4 @@
-# DAR-995: release-please-driven release-PR flow.
+# Release-please-driven release-PR flow.
 #
 # Runs on every push to `main` and asks `googleapis/release-please-action`
 # to either open/refresh a `chore(main): release X.Y.Z` PR (when there
@@ -19,7 +19,7 @@
 #
 # This workflow does NOT publish. The human gate on merging the release
 # PR is the feature; auto-publish on every merge to main is explicitly
-# out of scope (see DAR-995 issue body, "Out of scope").
+# out of scope.
 name: Release Please
 
 on:

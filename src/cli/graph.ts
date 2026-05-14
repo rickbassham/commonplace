@@ -1,5 +1,5 @@
 /**
- * Graph visualization CLI (DAR-933) — exposes
+ * Graph visualization CLI — exposes
  *
  *   `commonplace graph <name> [--depth N] [--types T,T] [--direction d] [--format f] [--scope s]`
  *
@@ -23,9 +23,8 @@
  * `--scope user|project|both` maps to the underlying handler's `scope`
  * argument. The handler's `scope` type today is `'user' | 'project'`;
  * `--scope both` maps to `undefined` (i.e. "let the handler search both
- * stores and pick whichever holds the name"). That contract is documented
- * in the DAR-933 envelope's explicit-non-goals (we are not widening the
- * `Scope` type just to fit this CLI flag).
+ * stores and pick whichever holds the name"). We deliberately do NOT
+ * widen the `Scope` type just to fit this CLI flag.
  */
 
 import { existsSync } from 'node:fs';
@@ -58,7 +57,7 @@ import { USAGE, USAGE_GRAPH_LINE } from './migrate.js';
  * the graph module without reaching across into `migrate.ts`. The
  * canonical declaration lives in `migrate.ts` (where `USAGE` is composed)
  * to avoid a circular import; this re-export preserves the single source
- * of truth (DAR-961 review f-1 / DAR-933 review f-1).
+ * of truth.
  */
 export { USAGE_GRAPH_LINE };
 
@@ -374,10 +373,9 @@ export const parseGraphArgs = (argv: readonly string[]): ParsedGraphArgs => {
  * Build a usage_error result. The message body includes BOTH the
  * graph-specific `--help` text and the dispatcher-level `USAGE` constant
  * so the error surface lists every subcommand the operator could have
- * meant. This matches the DAR-961 review f-1 single-source-of-truth
- * pattern: the dispatcher's USAGE is the canonical list, and any
- * subcommand-level usage error renders it verbatim alongside its own
- * detailed help.
+ * meant. This follows the single-source-of-truth pattern: the
+ * dispatcher's USAGE is the canonical list, and any subcommand-level
+ * usage error renders it verbatim alongside its own detailed help.
  */
 const usageError = (msg: string): ParsedGraphArgs => ({
   kind: 'usage_error',

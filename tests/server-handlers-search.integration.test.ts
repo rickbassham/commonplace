@@ -1,10 +1,10 @@
 /**
- * DAR-920 integration tests: end-to-end MCP server with the real memory_search
+ * Integration tests: end-to-end MCP server with the real memory_search
  * handler over an in-memory transport pair.
  *
  * Spins up a real `Server` (via `createServer`) wired with a real
- * `MemoryStore` (DAR-916/DAR-917) backed by a tmp directory and a programmable
- * stub embedder, and a real `Client` connected via
+ * `MemoryStore` backed by a tmp directory and a programmable stub
+ * embedder, and a real `Client` connected via
  * `InMemoryTransport.createLinkedPair()`.
  */
 
@@ -138,8 +138,8 @@ const callJSON = async (
 // ac-1: registration over the transport
 // --------------------------------------------------------------------------
 
-describe('ac-1: createServer wires real DAR-920 memory_search handler', () => {
-  it('ListTools over the in-memory MCP transport still returns the eight expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path) with non-empty descriptions and an object inputSchema after DAR-920 wiring', async () => {
+describe('ac-1: createServer wires real memory_search handler', () => {
+  it('ListTools over the in-memory MCP transport returns the eight expected tool names (memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path) with non-empty descriptions and an object inputSchema', async () => {
     const h = await setupHarness();
     try {
       const result = await h.client.listTools();
@@ -163,7 +163,7 @@ describe('ac-1: createServer wires real DAR-920 memory_search handler', () => {
     }
   });
 
-  it("CallTool with name 'memory_search' over the in-memory MCP transport dispatches to the DAR-920 handler (response is a non-error CallToolResult, not an error containing 'not implemented')", async () => {
+  it("CallTool with name 'memory_search' over the in-memory MCP transport dispatches to the search handler (response is a non-error CallToolResult, not an error containing 'not implemented')", async () => {
     const h = await setupHarness();
     try {
       const result = await callJSON(h.client, 'memory_search', { query: 'anything' });

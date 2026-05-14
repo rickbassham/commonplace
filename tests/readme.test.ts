@@ -8,10 +8,10 @@
  *    reads, must appear somewhere in the README. If a property is renamed
  *    or removed, the test fails until the README catches up.
  *
- * 2. Verify the verbatim install commands the publish smoke test
- *    (DAR-921) depends on are present. The publish smoke test executes
- *    these strings exactly; if either drifts in the README, users will
- *    follow stale instructions.
+ * 2. Verify the verbatim install commands the publish smoke test depends
+ *    on are present. The publish smoke test executes these strings
+ *    exactly; if either drifts in the README, users will follow stale
+ *    instructions.
  *
  * Everything else about README quality (concept blurb, prose, section
  * ordering, emoji-free, License/Contributing presence) is a review-time
@@ -29,7 +29,7 @@ const repoRoot = join(__dirname, '..');
 const readmePath = join(repoRoot, 'README.md');
 const readme = (): string => readFileSync(readmePath, 'utf8');
 
-describe('README install commands (depended on by DAR-921 publish smoke test)', () => {
+describe('README install commands (depended on by the publish smoke test)', () => {
   it('contains the verbatim `npm i -g commonplace-mcp` command', () => {
     expect(readme()).toMatch(/\bnpm\s+i\s+-g\s+commonplace-mcp\b/);
   });

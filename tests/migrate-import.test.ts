@@ -1,5 +1,5 @@
 /**
- * DAR-961 contract tests for the auto-migration importer:
+ * Contract tests for the auto-migration importer:
  *
  *   - `commonplace migrate` (no args) detects Claude Code project-memory
  *     directories at `~/.claude/projects/*\/memory/` and reports counts
@@ -10,8 +10,6 @@
  *   - Conflict policy is skip-and-report (default), preserving existing
  *     target files byte-identical.
  *   - `--dry-run` reports what would be imported without writing.
- *
- * Test names mirror the approved contract envelope on DAR-961.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -120,7 +118,7 @@ describe('ac-1: detection (`commonplace migrate` with no args)', () => {
     expect(detail.warnings).toEqual([]);
   });
 
-  it('detectImportSourcesDetailed surfaces a warning when a project-memory dir cannot be enumerated, and detection still returns the readable sources (DAR-961 review f-4)', () => {
+  it('detectImportSourcesDetailed surfaces a warning when a project-memory dir cannot be enumerated, and detection still returns the readable sources', () => {
     if (process.platform === 'win32') return; // POSIX-mode test
     if (process.getuid?.() === 0) return; // root bypasses chmod
 
@@ -293,7 +291,7 @@ describe('ac-3: conflict policy (skip + report)', () => {
     expect(result.skipped[0]?.reason).toMatch(/already exists/i);
   });
 
-  it('cross-project same-name collision: imports from the first project dir, skips the second with a reason that explicitly identifies the prior source dir (DAR-961 review f-2)', async () => {
+  it('cross-project same-name collision: imports from the first project dir, skips the second with a reason that explicitly identifies the prior source dir', async () => {
     // Two sibling Claude Code project-memory dirs each ship an
     // `architecture.md`. The first is imported; the second must be
     // reported as a within-run cross-project collision -- NOT as an
@@ -529,7 +527,7 @@ describe('argv parsing for the new migrate modes', () => {
     expect(parsed.kind).toBe('usage_error');
   });
 
-  it('parseMigrateArgs preserves the legacy `migrate <dir>` path (DAR-918) unchanged', () => {
+  it('parseMigrateArgs preserves the legacy `migrate <dir>` path unchanged', () => {
     const parsed = parseMigrateArgs(['migrate', '/tmp/foo']);
     expect(parsed.kind).toBe('ok');
     if (parsed.kind === 'ok' && parsed.mode === 'scan') {

@@ -1,8 +1,6 @@
 /**
- * DAR-918 contract tests for `runMigrate` programmatic API and the
- * argv-parsing wrapper.
- *
- * Test names mirror the approved contract envelope on DAR-918.
+ * Contract tests for `runMigrate` programmatic API and the argv-parsing
+ * wrapper.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -178,7 +176,7 @@ describe('ac-2: summary fields', () => {
     expect(result.fresh).toBe(0);
   });
 
-  it('runMigrate on a directory whose sidecars are all already valid reports fresh=N and embedded=reembedded=0 (DAR-918 review f-1: `fresh` surfaces unchanged-entry count directly)', async () => {
+  it('runMigrate on a directory whose sidecars are all already valid reports fresh=N and embedded=reembedded=0 (`fresh` surfaces unchanged-entry count directly)', async () => {
     const embedder = makeStubEmbedder();
     writeMemoryFile(tmp, makeMemory('alpha'));
     writeMemoryFile(tmp, makeMemory('beta'));
@@ -195,7 +193,7 @@ describe('ac-2: summary fields', () => {
     expect(second.loaded).toBe(2);
   });
 
-  it('runMigrate in dry-run mode reports `fresh` independently of `loaded` (DAR-918 review f-1: dry-run `loaded` only counts entries placed in memory, so subtraction can go negative -- `fresh` does not)', async () => {
+  it('runMigrate in dry-run mode reports `fresh` independently of `loaded` (dry-run `loaded` only counts entries placed in memory, so subtraction can go negative -- `fresh` does not)', async () => {
     const embedder = makeStubEmbedder();
     // Two .md files, neither has a sidecar. In dry-run, scan() doesn't
     // embed them, so they don't go into the in-memory array, and `loaded`
@@ -426,7 +424,7 @@ describe('ac-5: orphan cleanup', () => {
 // -------------------------------------------------------------------------
 
 describe('ac-6: --prune-dangling combined with embed pass', () => {
-  it('runMigrate with pruneDangling=true on the DAR-926 fixture still removes dangling relations[] entries from .md frontmatter (regression)', async () => {
+  it('runMigrate with pruneDangling=true on the dangling-relations fixture still removes dangling relations[] entries from .md frontmatter (regression)', async () => {
     const embedder = makeStubEmbedder();
     writeMemory(join(tmp, 'a.md'), {
       ...makeMemory('a'),
@@ -483,7 +481,7 @@ describe('ac-7: argv parsing', () => {
     }
   });
 
-  it('parseMigrateArgs accepts `migrate` with no args as detection mode (DAR-961: bare `migrate` reports detected sources without writing)', () => {
+  it('parseMigrateArgs accepts `migrate` with no args as detection mode (bare `migrate` reports detected sources without writing)', () => {
     const parsed = parseMigrateArgs(['migrate']);
     expect(parsed.kind).toBe('ok');
     if (parsed.kind === 'ok') {
@@ -592,7 +590,7 @@ describe('ac-8: mixed-state fixture', () => {
     // reembed counts capturing the action breakdown. The contract test
     // asserts those action counts (embedded=1, reembedded=1, orphaned=1)
     // explicitly; the "loaded=2" reading is now surfaced directly via
-    // `fresh` (DAR-918 review f-1) rather than reconstructed by subtraction.
+    // `fresh` rather than reconstructed by subtraction.
     expect(result.embedded).toBe(1);
     expect(result.reembedded).toBe(1);
     expect(result.orphaned).toBe(1);

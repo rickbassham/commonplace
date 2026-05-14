@@ -1,8 +1,8 @@
 /**
- * DAR-924 unit tests: dual-store, scope-aware handlers.
+ * Unit tests: dual-store, scope-aware handlers.
  *
- * Covers ac-3 (project store auto-create on first save), ac-4 (search merge
- * across two stores), and the scope routing pieces of save / list / delete.
+ * Covers project store auto-create on first save, search merge across two
+ * stores, and the scope routing pieces of save / list / delete.
  * Spawned-bin coverage for the same behaviours lives in
  * `server-bin-scope.integration.test.ts`.
  */
@@ -69,7 +69,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 // ac-3: project store auto-create on first save
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-3: project store auto-create on first save', () => {
+describe('project store auto-create on first save', () => {
   it('project store directory does NOT exist before the first memory_save({ scope: "project" }) call when env points at a fresh path', async () => {
     const embedder = makeStubEmbedder();
     const userStore = new MemoryStore({ dir: userTmp, embedder });
@@ -163,7 +163,7 @@ describe('DAR-924 ac-3: project store auto-create on first save', () => {
 // ac-4: search merges across two stores
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-4: search merges across two stores', () => {
+describe('search merges across two stores', () => {
   // We use a deterministic synthetic embedder that scores by string match, so
   // we can predictably arrange "store A wins one slot, store B wins one slot".
   // The dimensionality must match between user and project stores' embedders.
@@ -393,7 +393,7 @@ describe('DAR-924 ac-4: search merges across two stores', () => {
 // list / delete scope routing
 // --------------------------------------------------------------------------
 
-describe('DAR-924 list and delete scope routing', () => {
+describe('list and delete scope routing', () => {
   it('memory_list returns scope-tagged entries from both stores when both are present', async () => {
     const embedder = makeStubEmbedder();
     const userStore = new MemoryStore({ dir: userTmp, embedder });
@@ -488,7 +488,7 @@ describe('DAR-924 list and delete scope routing', () => {
 // ac-5 wiring shape: createDefaultHandlers signature
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-5: handler factory signature accepts { userStore, projectStore? }', () => {
+describe('handler factory signature accepts { userStore, projectStore? }', () => {
   it('createDefaultHandlers accepts { userStore, projectStore? } and dispatches scope-aware', async () => {
     // Importing here to keep the test self-contained; the runtime check is
     // that calling the factory with the new shape returns a working handler

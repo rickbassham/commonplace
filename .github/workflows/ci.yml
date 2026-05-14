@@ -1,9 +1,8 @@
-# DAR-914: PR-gating CI for commonplace.
+# PR-gating CI for commonplace.
 #
 # All build/test logic is delegated to Makefile targets so CI uses the
 # same entrypoints as local devs and the dev-workflow plugin.
-# `make audit` is intentionally non-blocking for v0.1; revisit before
-# v1.0 (DAR-914 acceptance criteria).
+# `make audit` is intentionally non-blocking for v0.1; revisit before v1.0.
 name: CI
 
 on:

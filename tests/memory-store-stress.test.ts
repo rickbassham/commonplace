@@ -1,5 +1,5 @@
 /**
- * DAR-923 contract tests for multi-process stress + crash safety:
+ * Contract tests for multi-process stress + crash safety:
  *
  *   - ac-5: 4 child processes each saving 50 distinct memories produce
  *     200 valid (.md, .embedding) pairs with no errors and no corruption.

@@ -1,9 +1,9 @@
 /**
- * Binary `.embedding` sidecar format (DAR-910).
+ * Binary `.embedding` sidecar format.
  *
  * Each memory `.md` file pairs with a binary sidecar carrying the embedding
- * vector and just enough header metadata for the consumer (DAR-916) to
- * detect staleness automatically:
+ * vector and just enough header metadata for the consumer to detect
+ * staleness automatically:
  *
  * - **content edits** — `content_sha` no longer matches the source `.md`.
  * - **model swaps**   — `model_id` no longer matches the configured model.
@@ -31,8 +31,8 @@
  *
  * This module owns ONLY the wire format: pure `Buffer`-in / `Buffer`-out
  * encode and decode. Filesystem I/O (atomic writes, locks, directory scan)
- * lives in DAR-916. Computing `content_sha` from markdown content lives in
- * DAR-911 (`src/store/memory.ts`). This module accepts `contentSha` as an
+ * lives in `./memory-store.ts`. Computing `content_sha` from markdown
+ * content lives in `./memory.ts`. This module accepts `contentSha` as an
  * opaque 64-char lowercase hex string.
  *
  * The format is little-endian only by design (issue spec). All currently

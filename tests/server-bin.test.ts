@@ -1,5 +1,5 @@
 /**
- * DAR-909 ac-4 tests: bin entry contract.
+ * Bin entry contract tests.
  *
  * Static portion: package.json declares a `commonplace-mcp` bin pointing at a
  * built JS file under dist/ that begins with a Node shebang and is executable.
@@ -122,7 +122,7 @@ describe('ac-4 (runtime): bin entry on stdio', () => {
 });
 
 // --------------------------------------------------------------------------
-// DAR-913: env-var resolution for COMMONPLACE_MODEL and COMMONPLACE_DEFAULT_LIMIT
+// Env-var resolution for COMMONPLACE_MODEL and COMMONPLACE_DEFAULT_LIMIT
 // --------------------------------------------------------------------------
 
 /**
@@ -173,7 +173,7 @@ const bootHarness = async (options: {
   };
 };
 
-describe('DAR-913 ac-1: bootServer reads COMMONPLACE_MODEL and constructs the Embedder with it', () => {
+describe('bootServer reads COMMONPLACE_MODEL and constructs the Embedder with it', () => {
   let userTmp: string;
   beforeEach(() => {
     userTmp = mkdtempSync(join(tmpdir(), 'dar913-boot-'));
@@ -236,7 +236,7 @@ describe('DAR-913 ac-1: bootServer reads COMMONPLACE_MODEL and constructs the Em
   });
 });
 
-describe('DAR-913 ac-3: env-var documentation in README + bin top-of-file comment', () => {
+describe('env-var documentation in README + bin top-of-file comment', () => {
   it('README.md documents COMMONPLACE_MODEL with its default (Xenova/bge-base-en-v1.5) and effect', () => {
     const readme = readFileSync(join(repoRoot, 'README.md'), 'utf8');
     expect(readme).toContain('COMMONPLACE_MODEL');
@@ -263,7 +263,7 @@ describe('DAR-913 ac-3: env-var documentation in README + bin top-of-file commen
     expect(block.toLowerCase()).toMatch(/memory_search|limit|top-k/);
   });
 
-  it('src/bin/commonplace-mcp.ts top-of-file comment lists COMMONPLACE_MODEL and COMMONPLACE_DEFAULT_LIMIT alongside the existing DAR-924 vars', () => {
+  it('src/bin/commonplace-mcp.ts top-of-file comment lists COMMONPLACE_MODEL and COMMONPLACE_DEFAULT_LIMIT alongside the existing memory-dir vars', () => {
     const binSource = readFileSync(join(repoRoot, 'src/bin/commonplace-mcp.ts'), 'utf8');
     // Find the first comment block (the file's top-of-file JSDoc). Bin
     // entries start with the shebang then the module comment; we slice
@@ -279,7 +279,7 @@ describe('DAR-913 ac-3: env-var documentation in README + bin top-of-file commen
   });
 });
 
-describe('DAR-913 ac-5: bootServer does NOT pre-validate COMMONPLACE_MODEL', () => {
+describe('bootServer does NOT pre-validate COMMONPLACE_MODEL', () => {
   let userTmp: string;
   beforeEach(() => {
     userTmp = mkdtempSync(join(tmpdir(), 'dar913-boot-unknown-'));
@@ -304,8 +304,8 @@ describe('DAR-913 ac-5: bootServer does NOT pre-validate COMMONPLACE_MODEL', () 
   });
 });
 
-describe('DAR-913 default-limit defaults', () => {
-  it('DEFAULT_LIMIT is 5 (matches DAR-917 store-layer default)', () => {
+describe('default-limit defaults', () => {
+  it('DEFAULT_LIMIT is 5 (matches store-layer default)', () => {
     expect(DEFAULT_LIMIT).toBe(5);
   });
 });

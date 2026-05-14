@@ -1,5 +1,5 @@
 /**
- * DAR-909 unit tests: tool registry + handler stubs (ac-1, ac-2, ac-3).
+ * Unit tests: tool registry + handler stubs.
  *
  * These cover the in-process surface only -- registration, ListTools schema
  * shape, CallTool name dispatch, and the unknown-name error. The end-to-end

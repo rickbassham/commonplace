@@ -1,5 +1,5 @@
 /**
- * DAR-924 ac-6 spawned-bin integration tests.
+ * Spawned-bin integration tests for the dual-store scope contract.
  *
  * Spawns the built `commonplace-mcp` bin under varying scope configurations
  * (env / cwd / none) and verifies the dual-store behaviour end-to-end:
@@ -15,7 +15,7 @@
  *     without scope is rejected, delete with scope removes one side.
  *
  * Slow on purpose: the bin loads transformers.js model weights. We rely on
- * the cold-start preload in `tests/global-setup.ts` (DAR-955) so the file
+ * the cold-start preload in `tests/global-setup.ts` so the file
  * cache is warm before workers fork.
  */
 
@@ -165,7 +165,7 @@ afterAll(() => {
 // User-only mode (no COMMONPLACE_PROJECT_DIR, no cwd marker)
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-6: user-only mode', () => {
+describe('user-only mode', () => {
   it('memory_save / list / delete / search all succeed against the user store', async () => {
     // Spawn from a cwd that has no `.commonplace/memory` so detection
     // resolves to user-only.
@@ -236,7 +236,7 @@ describe('DAR-924 ac-6: user-only mode', () => {
 // Project mode via COMMONPLACE_PROJECT_DIR
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-6: project mode via COMMONPLACE_PROJECT_DIR', () => {
+describe('project mode via COMMONPLACE_PROJECT_DIR', () => {
   it('both stores load on boot; saving to each scope writes to the correct directory; memory_list returns scope-tagged entries from both', async () => {
     const h = await spawnHarness({ userDir, projectDir });
     try {
@@ -322,7 +322,7 @@ describe('DAR-924 ac-6: project mode via COMMONPLACE_PROJECT_DIR', () => {
 // Project mode via cwd
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-6: project mode via cwd', () => {
+describe('project mode via cwd', () => {
   it('spawning the bin with cwd containing .commonplace/memory detects the project root and behaves equivalently to env-var mode for save/list/search smoke', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'dar924-cwd-'));
     try {
@@ -367,7 +367,7 @@ describe('DAR-924 ac-6: project mode via cwd', () => {
 // Same name in both scopes
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-6: same memory name saved in both scopes', () => {
+describe('same memory name saved in both scopes', () => {
   it('memory_list returns two entries, each tagged with its scope', async () => {
     const h = await spawnHarness({ userDir, projectDir });
     try {
@@ -456,7 +456,7 @@ describe('DAR-924 ac-6: same memory name saved in both scopes', () => {
 // Project store auto-create on first save (ac-3 spawned-bin coverage)
 // --------------------------------------------------------------------------
 
-describe('DAR-924 ac-3 (bin): project store directory does not exist until first save', () => {
+describe('bin: project store directory does not exist until first save', () => {
   it('first memory_save({ scope: "project" }) creates the directory recursively when env points at a fresh path', async () => {
     const fresh = join(projectDir, 'never-created', 'nested');
     expect(existsSync(fresh)).toBe(false);
@@ -465,7 +465,7 @@ describe('DAR-924 ac-3 (bin): project store directory does not exist until first
       // The dir should still not exist (boot-time scan handles missing
       // dirs gracefully).
       // Note: depending on timing the dir may have been created during
-      // boot's `await projectStore.scan()`. Per DAR-924 ac-3, the
+      // boot's `await projectStore.scan()`. Per the lazy-create contract, the
       // contract is that the dir exists after the first save -- not that
       // it stays missing through boot. We assert the post-save state.
 

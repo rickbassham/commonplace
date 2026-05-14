@@ -1,5 +1,5 @@
 /**
- * DAR-928 bin integration test: spawn the built `commonplace-mcp` bin and
+ * Bin integration test: spawn the built `commonplace-mcp` bin and
  * exercise memory_link / memory_unlink end-to-end via real MCP stdio
  * framing. This proves:
  *
@@ -41,7 +41,7 @@ function readBinPath(): string {
   return join(repoRoot, entry);
 }
 
-describe('DAR-928 bin integration: spawned bin with MemoryGraph wired in', () => {
+describe('bin integration: spawned bin with MemoryGraph wired in', () => {
   const binPath = readBinPath();
   let memoryDir: string;
   let client: Client;

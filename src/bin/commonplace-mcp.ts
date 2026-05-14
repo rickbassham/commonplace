@@ -14,25 +14,25 @@
  *
  * # Environment variables
  *
- *   COMMONPLACE_USER_DIR        user-level memory dir (DAR-924)
+ *   COMMONPLACE_USER_DIR        user-level memory dir
  *                               (default: ~/.commonplace/memory)
- *   COMMONPLACE_PROJECT_DIR     project-level memory dir (DAR-924); explicit
- *                               override for env > roots > cwd > none
- *   COMMONPLACE_MEMORY_DIR      deprecated alias for COMMONPLACE_USER_DIR
- *                               (DAR-924); stderr deprecation warning on use
- *   COMMONPLACE_MODEL           embedding model id passed to transformers.js
- *                               (DAR-913); default Xenova/bge-base-en-v1.5
+ *   COMMONPLACE_PROJECT_DIR     project-level memory dir; explicit override
+ *                               for env > roots > cwd > none
+ *   COMMONPLACE_MEMORY_DIR      deprecated alias for COMMONPLACE_USER_DIR;
+ *                               stderr deprecation warning on use
+ *   COMMONPLACE_MODEL           embedding model id passed to transformers.js;
+ *                               default Xenova/bge-base-en-v1.5
  *   COMMONPLACE_DEFAULT_LIMIT   default top-k for memory_search when the
- *                               caller omits `limit` (DAR-913); default 5,
- *                               must be a positive integer
+ *                               caller omits `limit`; default 5, must be a
+ *                               positive integer
  *   COMMONPLACE_EXPANSION_DECAY multiplicative score for one-hop graph
- *                               expanded neighbors in memory_search
- *                               (DAR-930); default 0.7, must be in (0, 1]
+ *                               expanded neighbors in memory_search;
+ *                               default 0.7, must be in (0, 1]
  *   COMMONPLACE_CONNECTEDNESS_BOOST  alpha for the additive
  *                               `alpha * log(1 + inbound_count)`
  *                               connectedness boost in memory_search
- *                               ranking (DAR-931); default 0.02, must be
- *                               a finite non-negative number (0 disables)
+ *                               ranking; default 0.02, must be a finite
+ *                               non-negative number (0 disables)
  *
  * # Detection priority for the project store
  *

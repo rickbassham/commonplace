@@ -1,11 +1,7 @@
 /**
- * DAR-926 contract tests.
- *
- * Behavioral tests for the `MemoryGraph` class -- an in-memory adjacency
+ * Contract tests for the `MemoryGraph` class -- an in-memory adjacency
  * structure built from the `relations[]` and `supersedes[]` frontmatter
- * graph fields (DAR-925) layered over the `MemoryStore` entries (DAR-916).
- *
- * Test names mirror the contract envelope on DAR-926 (round 1, approved).
+ * graph fields layered over the `MemoryStore` entries.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -370,11 +366,11 @@ describe('ac-5: dangling detection and supersede', () => {
     expect(g.isSuperseded('does_not_exist')).toBe(false);
   });
 
-  it("graph asserts (throws) when a memory's relations[] contains an entry whose to equals the memory's own name, since DAR-925 already rejects self-edges at parse time", () => {
+  it("graph asserts (throws) when a memory's relations[] contains an entry whose to equals the memory's own name, since the memory parser already rejects self-edges at parse time", () => {
     const g = new MemoryGraph();
     expect(() =>
       g.rebuild([
-        // bypass DAR-925 parse-time check by constructing the GraphMemory
+        // bypass the parser's parse-time check by constructing the GraphMemory
         // directly -- the graph asserts the invariant for safety.
         mem('self', { relations: [{ to: 'self', type: 'related-to' }] }),
       ]),

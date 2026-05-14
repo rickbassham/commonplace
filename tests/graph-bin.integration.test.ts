@@ -1,5 +1,5 @@
 /**
- * DAR-933 ac-1 / ac-3 / ac-6 spawned-bin coverage: prove the built
+ * Spawned-bin coverage: prove the built
  * `commonplace` bin dispatches the `graph` subcommand and produces a
  * mermaid / json / dot rendering for a fixture memory dir.
  *
@@ -53,7 +53,7 @@ const makeMemory = (name: string, body = `body of ${name}`): Memory => ({
   body,
 });
 
-describe('DAR-933: spawned `commonplace graph` bin', () => {
+describe('spawned `commonplace graph` bin', () => {
   const binPath = readBinPath();
   let userDir: string;
 

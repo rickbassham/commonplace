@@ -2,13 +2,12 @@
  * Vitest globalSetup: serially warm the transformers.js model cache for the
  * embedder used by the spawned-bin and embedder integration tests.
  *
- * # Why this exists (DAR-955 root cause)
+ * # Why this exists
  *
- * The DAR-919 spawned-bin integration test was flaky on cold-cache
- * `make test` runs. Surface symptoms varied:
+ * The spawned-bin integration test was flaky on cold-cache `make test`
+ * runs. Surface symptoms varied:
  *
- *   - `MCP error -32000: Connection closed` (the bot review report on
- *     PR #15 / DAR-929), and
+ *   - `MCP error -32000: Connection closed`, and
  *   - a non-error CallToolResult with isError: true whose payload read
  *     `Load model from .../onnx/model.onnx failed:Protobuf parsing failed.`
  *
@@ -38,17 +37,16 @@
  * # Skip switch
  *
  * `COMMONPLACE_SKIP_MODEL_PRELOAD=1` bypasses the warm-up. This exists for
- * the deterministic-reproduction test (DAR-955 ac-1): clearing the cache
- * and setting this env var lets you re-trigger the original race in a
- * controlled way without manual intervention in the test runner.
+ * the deterministic-reproduction test: clearing the cache and setting this
+ * env var lets you re-trigger the original race in a controlled way
+ * without manual intervention in the test runner.
  *
  * # Scope
  *
  * Only this test infrastructure changes. The bin (`src/bin/commonplace-mcp.ts`)
  * and the production embedder/store are untouched. The fix is the minimum
- * needed to eliminate the race in the test environment, per DAR-955's
- * scope-boundary contract ("minimal harness/bin changes needed to fix the
- * race").
+ * needed to eliminate the race in the test environment (minimal
+ * harness/bin changes needed to fix the race).
  */
 
 import { Embedder } from '../src/embedder/index.js';

@@ -1,5 +1,5 @@
 /**
- * DAR-908 contract integration tests.
+ * Scaffolding contract integration tests.
  *
  * These shell out to `make` and assert exit codes / stdout for the
  * required targets.
@@ -44,7 +44,7 @@ describe('ac-8: build pipeline', () => {
     expect(existsSync(join(repoRoot, 'dist/index.js'))).toBe(true);
   });
 
-  it('running `node dist/index.js` after build prints a usage message and exits non-zero (DAR-918 repurposed the bin into the `commonplace` CLI dispatcher; bare invocation now requires a subcommand)', () => {
+  it('running `node dist/index.js` after build prints a usage message and exits non-zero (the bin is the `commonplace` CLI dispatcher; bare invocation requires a subcommand)', () => {
     const res = spawnSync('node', ['dist/index.js'], {
       cwd: repoRoot,
       encoding: 'utf8',

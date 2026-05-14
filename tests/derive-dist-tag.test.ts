@@ -1,5 +1,5 @@
 /**
- * DAR-960 contract tests: dist-tag derivation script.
+ * Contract tests: dist-tag derivation script.
  *
  * The script lives at `scripts/derive-dist-tag.sh`. It reads a version
  * string (the package version stripped of the leading `v` from the git

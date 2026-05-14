@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Bin entry: the `commonplace` CLI dispatcher (DAR-918, extended by DAR-961).
+ * Bin entry: the `commonplace` CLI dispatcher.
  *
  * Subcommand surface (single source of truth: `USAGE` in
  * `src/cli/migrate.ts`):
@@ -10,10 +10,10 @@
  *   `commonplace migrate <dir>`                (rebuild sidecars for an existing memory dir;
  *                                              --dry-run / --prune-dangling supported)
  *
- * The legacy DAR-918 path (rebuild sidecars for an existing dir) and the
- * DAR-961 detection / import paths share this dispatcher; the bare-bin
- * usage message and the parser usage_error message are rendered from the
- * same exported `USAGE` constant so the two cannot drift.
+ * The rebuild-sidecars-for-an-existing-dir path and the detection / import
+ * paths share this dispatcher; the bare-bin usage message and the parser
+ * usage_error message are rendered from the same exported `USAGE` constant
+ * so the two cannot drift.
  *
  * # Bin convention
  *
@@ -25,9 +25,8 @@
  *     server. Stdout is reserved for JSON-RPC framing.
  *
  * The two bins are deliberately split so the MCP server's framing channel
- * is never polluted by CLI output. Adding new subcommands (e.g. a future
- * `commonplace graph` per DAR-933) extends THIS file; the MCP bin stays
- * single-purpose.
+ * is never polluted by CLI output. Adding new subcommands (e.g. `commonplace
+ * graph`) extends THIS file; the MCP bin stays single-purpose.
  *
  * Running with no arguments prints a usage message to stderr and exits
  * non-zero so an operator who runs `commonplace` by mistake learns the
@@ -44,15 +43,14 @@ async function main(): Promise<number> {
   if (argv.length === 0) {
     // Use the same canonical USAGE constant the parser renders on
     // usage_error, so the bare-bin first impression matches the
-    // parser-error message verbatim (DAR-961 review f-1, extended by
-    // DAR-933 to include the graph subcommand).
+    // parser-error message verbatim.
     process.stderr.write(`commonplace: missing subcommand.\n${USAGE}\n`);
     return 2;
   }
 
-  // DAR-933: dispatch the `graph` subcommand to its own main entry. The
-  // dispatch happens BEFORE `parseMigrateArgs` so `graph` is not reported
-  // as an "unknown subcommand" by the migrate parser.
+  // Dispatch the `graph` subcommand to its own main entry. The dispatch
+  // happens BEFORE `parseMigrateArgs` so `graph` is not reported as an
+  // "unknown subcommand" by the migrate parser.
   if (argv[0] === 'graph') {
     const result = await graphMain({
       argv,

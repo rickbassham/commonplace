@@ -1,6 +1,6 @@
 /**
- * DAR-909 integration tests: end-to-end MCP server over an in-memory transport
- * pair (ac-5 in-process handshake, ac-6 mock-client ListTools/CallTool).
+ * Integration tests: end-to-end MCP server over an in-memory transport
+ * pair (in-process handshake, mock-client ListTools/CallTool).
  *
  * These run a real MCP `Server` (the same one the bin entry uses) connected
  * to a real MCP `Client` via `InMemoryTransport.createLinkedPair()`. They
@@ -44,7 +44,7 @@ function isTextContent(value: unknown): value is TextContent {
   return value.type === 'text' && typeof value.text === 'string';
 }
 
-describe('DAR-909 MCP server integration', () => {
+describe('MCP server integration', () => {
   let client: Client;
   let close: () => Promise<void>;
 

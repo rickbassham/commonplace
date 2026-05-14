@@ -1,5 +1,5 @@
 /**
- * DAR-918 ac-7: spawn the built `commonplace` bin with the `migrate`
+ * Spawn the built `commonplace` bin with the `migrate`
  * subcommand and assert that:
  *
  *   - `migrate <dir>` against a fixture directory produces the expected
@@ -59,7 +59,7 @@ const makeMemory = (name: string, body = `body of ${name}`): Memory => ({
   body,
 });
 
-describe('DAR-918 ac-7: spawned `commonplace migrate` bin', () => {
+describe('spawned `commonplace migrate` bin', () => {
   const binPath = readBinPath();
   let tmp: string;
 
@@ -112,7 +112,7 @@ describe('DAR-918 ac-7: spawned `commonplace migrate` bin', () => {
     expect(res.stdout).toMatch(/embedded:\s+2/);
   }, 180_000);
 
-  it('spawning the bin with `migrate --from claude-code` against a fixture HOME imports two compatible files and writes both `.md` and `.embedding` files into COMMONPLACE_USER_DIR (DAR-961 ac-2 integration)', () => {
+  it('spawning the bin with `migrate --from claude-code` against a fixture HOME imports two compatible files and writes both `.md` and `.embedding` files into COMMONPLACE_USER_DIR', () => {
     // Lay down ~/.claude/projects/<slug>/memory/{alpha,bravo}.md inside
     // the fixture HOME.
     const fixtureHome = mkdtempSync(join(tmpdir(), 'dar961-bin-home-'));
@@ -146,7 +146,7 @@ describe('DAR-918 ac-7: spawned `commonplace migrate` bin', () => {
     }
   }, 180_000);
 
-  it('spawning the bin with `migrate` and no positional argument runs detection mode (DAR-961) and exits 0 with a stdout summary', () => {
+  it('spawning the bin with `migrate` and no positional argument runs detection mode and exits 0 with a stdout summary', () => {
     // Point HOME at an empty tmp dir so detection finds zero sources --
     // this asserts the detect-mode path works end-to-end through the
     // built bin without depending on the user's real `~/.claude/`.
