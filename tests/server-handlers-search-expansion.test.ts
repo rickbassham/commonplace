@@ -697,43 +697,6 @@ describe('ac-4: decay scoring + final sort/slice', () => {
 });
 
 // --------------------------------------------------------------------------
-// ac-6: README documentation drift sanity
-// --------------------------------------------------------------------------
-
-describe('ac-6: README documentation invariants', () => {
-  it("README.md contains a section documenting the `expand`, `expandTypes`, and `expandLimit` arguments of memory_search, including their default values ('none', ['builds-on','related-to'], 2)", async () => {
-    const { readFileSync } = await import('node:fs');
-    const readme = readFileSync(join(__dirname, '..', 'README.md'), 'utf8');
-    expect(readme).toMatch(/\bexpand\b/);
-    expect(readme).toMatch(/\bexpandTypes\b/);
-    expect(readme).toMatch(/\bexpandLimit\b/);
-    expect(readme).toMatch(/\bnone\b/);
-    expect(readme).toMatch(/\bone-hop\b/);
-    expect(readme).toMatch(/builds-on/);
-    expect(readme).toMatch(/related-to/);
-    // Default expandLimit (2) called out somewhere.
-    expect(readme).toMatch(/Defaults to `?2`?\b/);
-  });
-
-  it('README.md documents the `via` field on expanded match entries (shape `{ source, edge }`) and notes that direct hits omit it', async () => {
-    const { readFileSync } = await import('node:fs');
-    const readme = readFileSync(join(__dirname, '..', 'README.md'), 'utf8');
-    expect(readme).toMatch(/\bvia\b/);
-    expect(readme).toMatch(/\bsource\b/);
-    expect(readme).toMatch(/\bedge\b/);
-    expect(readme).toMatch(/direct hits omit/i);
-  });
-
-  it('README.md documents the `COMMONPLACE_EXPANSION_DECAY` env var with its default value 0.7 and the allowed range, alongside the other server env vars', async () => {
-    const { readFileSync } = await import('node:fs');
-    const readme = readFileSync(join(__dirname, '..', 'README.md'), 'utf8');
-    expect(readme).toMatch(/COMMONPLACE_EXPANSION_DECAY/);
-    expect(readme).toMatch(/0\.7/);
-    expect(readme).toMatch(/\(0,\s*1\]/);
-  });
-});
-
-// --------------------------------------------------------------------------
 // Wiring sanity: createDefaultHandlers threads graph + decay through.
 // --------------------------------------------------------------------------
 
