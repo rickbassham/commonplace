@@ -33,6 +33,11 @@
  *                               connectedness boost in memory_search
  *                               ranking; default 0.02, must be a finite
  *                               non-negative number (0 disables)
+ *   COMMONPLACE_NO_UPDATE_CHECK opt-out for the startup npm-registry
+ *                               version check; when set to `1` or `true`
+ *                               the check is skipped entirely (no
+ *                               network call, no log line). Default is
+ *                               unset (check runs on every spawn).
  *
  * # Detection priority for the project store
  *

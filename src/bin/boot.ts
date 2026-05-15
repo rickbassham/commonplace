@@ -35,8 +35,9 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 import { Embedder } from '../embedder/index.js';
-import { createServer, installCallToolHandler } from '../server/server.js';
+import { createServer, installCallToolHandler, SERVER_VERSION } from '../server/server.js';
 import { createDefaultHandlers } from '../server/tools.js';
+import { checkForUpdates } from '../server/update-check.js';
 import { MemoryGraph } from '../store/graph.js';
 import { MemoryStore, type Embedder as EmbedderShape } from '../store/memory-store.js';
 import {
@@ -188,6 +189,17 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
 
   // Step 5: connect first so the transport is ready to issue requests.
   await server.connect(options.transport);
+
+  // Step 5b: fire the npm-registry version check. Fire-and-forget --
+  // the call is intentionally NOT awaited so a slow/offline registry
+  // cannot block boot or any MCP request. `checkForUpdates` swallows
+  // every error internally; we still attach a defensive `.catch` so an
+  // unexpected synchronous-then-async rejection does not surface as an
+  // unhandled promise rejection in the Node process.
+  void checkForUpdates({
+    currentVersion: SERVER_VERSION,
+    env: options.env,
+  }).catch(() => {});
 
   // Step 6+7: ask the client for its roots, then re-detect scope using the
   // response. The env-only initial detection above is fine for the user
