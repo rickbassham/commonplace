@@ -66,8 +66,11 @@ function isOptedOut(env: NodeJS.ProcessEnv): boolean {
  * Three-part semver comparator. Returns >0 when `a` is newer than `b`,
  * <0 when `a` is older, and 0 when they are equal. Pre-release and build
  * metadata are intentionally stripped before comparison -- the registry's
- * `latest` dist-tag never carries a pre-release suffix, and any
- * pre-release the user pinned themselves is opted-out territory.
+ * `latest` dist-tag is the only consumer, and `latest` never carries a
+ * pre-release suffix. A user running e.g. `0.4.0-beta.1` will therefore
+ * compare as equal to a registry `latest` of `0.4.0` and see no advisory;
+ * pre-release ordering is intentionally not modeled. Pre-release users
+ * who want a different policy can opt out via `COMMONPLACE_NO_UPDATE_CHECK`.
  *
  * Returns `null` when either input is not a parseable `MAJOR.MINOR.PATCH`
  * triple -- callers treat that as "skip the comparison" rather than throw.

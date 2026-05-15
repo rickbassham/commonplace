@@ -35,9 +35,10 @@ Code sessions and the four memory tools become available.
 
 The recommended Claude Code (or any MCP-client) config invokes the server
 through `npx -y commonplace-mcp` rather than a globally-installed binary.
-`npx` resolves the package from the npm registry and caches it for 24
-hours by default, so each new MCP-server spawn naturally floats to the
-latest published version without any manual `npm install -g` step:
+`npx` resolves the package from the npm registry and reuses the local npm
+cache (subject to the registry's `max-age` / `etag` revalidation), so each
+new MCP-server spawn naturally floats to the latest published version
+without any manual `npm install -g` step:
 
 ```jsonc
 // .claude/mcp.json (or your client's equivalent)
