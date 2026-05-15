@@ -5,6 +5,18 @@ All notable changes to `commonplace-mcp` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0](https://github.com/rickbassham/commonplace/compare/v0.4.0...v0.5.0) (2026-05-15)
+
+
+### Added
+
+* **server:** add prescriptive "when to save what" block to MCP instructions (DAR-1013) ([#57](https://github.com/rickbassham/commonplace/issues/57)) ([eacf546](https://github.com/rickbassham/commonplace/commit/eacf546812b47dff9d6bd41641003ff26ce4d526))
+
+
+### Fixed
+
+* **release:** supply repo to gh workflow run in release-please dispatch (DAR-1012) ([#55](https://github.com/rickbassham/commonplace/issues/55)) ([5562efd](https://github.com/rickbassham/commonplace/commit/5562efd275d4b6dc7245652b77a91e9f9c46ebfc))
+
 ## [0.4.0](https://github.com/rickbassham/commonplace/compare/v0.3.0...v0.4.0) (2026-05-15)
 
 
