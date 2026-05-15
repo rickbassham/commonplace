@@ -24,6 +24,11 @@ interface ServerInternals {
 function readInstructions(server: unknown): string {
   if (typeof server !== 'object' || server === null) return '';
   const internals = server as ServerInternals;
+  // Guard against the MCP SDK renaming its private `_instructions` field.
+  // Without this assertion, a rename would silently yield `''` and quietly
+  // pass tests that only check `not.toContain(...)`. Surfacing `undefined`
+  // here turns that failure mode into a loud, obvious test failure.
+  expect(internals._instructions).toBeDefined();
   return internals._instructions ?? '';
 }
 
