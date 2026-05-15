@@ -121,6 +121,164 @@ describe('ac-1: release-please workflow file', () => {
   });
 });
 
+/**
+ * DAR-1012: the "Dispatch release workflow on new tag" step must supply
+ * the repo to `gh workflow run` so it does not depend on a local `.git`
+ * directory in the runner workspace. Either form is acceptable:
+ *   - pass `-R`/`--repo` followed by `${{ github.repository }}` on the
+ *     `run:` line, OR
+ *   - declare `GH_REPO: ${{ github.repository }}` in the step's `env:`
+ *     block (gh CLI honours `GH_REPO` automatically).
+ *
+ * These tests parse the workflow YAML structurally (via the `yaml`
+ * package) and assert one of the two accepted fixes is present.
+ */
+const githubRepositoryExpr = '${{ github.repository }}';
+
+/** Locate the dispatch step inside a parsed release-please.yml mapping. */
+const findDispatchStep = (wf: Record<string, unknown>): Record<string, unknown> | undefined => {
+  const jobs = wf.jobs;
+  if (!isObject(jobs)) return undefined;
+  for (const job of Object.values(jobs)) {
+    if (!isObject(job)) continue;
+    const steps = job.steps;
+    if (!Array.isArray(steps)) continue;
+    for (const s of steps) {
+      if (!isObject(s)) continue;
+      const run = typeof s.run === 'string' ? s.run : '';
+      // The dispatch step is the one invoking `gh workflow run release.yml`.
+      if (/\bgh\s+workflow\s+run\s+release\.yml\b/.test(run)) return s;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Predicate matching either accepted fix on a parsed dispatch step.
+ * Encapsulated so the same logic can run against in-memory mutations
+ * during the negative-case test below.
+ */
+const dispatchStepSuppliesRepo = (step: Record<string, unknown>): boolean => {
+  const run = typeof step.run === 'string' ? step.run : '';
+  const env = isObject(step.env) ? step.env : {};
+  // -R / --repo flag form: must be followed by the github.repository
+  // expression (either bare or quoted).
+  const flagForm = /(?:-R|--repo)\s+["']?\$\{\{\s*github\.repository\s*\}\}["']?/.test(run);
+  // GH_REPO env-var form: gh CLI honours this automatically.
+  const envForm = env.GH_REPO === githubRepositoryExpr;
+  return flagForm || envForm;
+};
+
+describe('DAR-1012: release-please.yml dispatch step supplies repo to `gh workflow run`', () => {
+  it('release-please.yml dispatch step either passes `-R`/`--repo` followed by `${{ github.repository }}` to `gh workflow run` OR declares `GH_REPO: ${{ github.repository }}` in its `env` block', () => {
+    const wf = loadReleasePleaseYml();
+    const step = findDispatchStep(wf);
+    expect(step, 'expected a dispatch step running `gh workflow run release.yml`').toBeDefined();
+    if (!step) return;
+    expect(
+      dispatchStepSuppliesRepo(step),
+      'dispatch step must supply repo via `-R`/`--repo` flag or `GH_REPO` env var',
+    ).toBe(true);
+  });
+
+  it('release-please.yml dispatch step preserves `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` in its `env` block unchanged', () => {
+    const wf = loadReleasePleaseYml();
+    const step = findDispatchStep(wf);
+    expect(step).toBeDefined();
+    if (!step) return;
+    const env = step.env;
+    expect(isObject(env), 'dispatch step must declare an `env` block').toBe(true);
+    if (!isObject(env)) return;
+    expect(env.GH_TOKEN).toBe('${{ secrets.GITHUB_TOKEN }}');
+  });
+
+  it('release-please.yml dispatch step\'s `run:` value still invokes `gh workflow run release.yml --ref "$TAG_NAME"` (the existing dispatch command is preserved)', () => {
+    const wf = loadReleasePleaseYml();
+    const step = findDispatchStep(wf);
+    expect(step).toBeDefined();
+    if (!step) return;
+    const run = typeof step.run === 'string' ? step.run : '';
+    // The existing command shape must be preserved: `gh workflow run
+    // release.yml --ref "$TAG_NAME"`. Allow additional flags (-R/--repo)
+    // anywhere on the line, but the core invocation and --ref reference
+    // to TAG_NAME must remain.
+    expect(run).toMatch(/\bgh\s+workflow\s+run\s+release\.yml\b/);
+    expect(run).toMatch(/--ref\s+"?\$TAG_NAME"?/);
+  });
+
+  it('a vitest test file under `tests/` loads `.github/workflows/release-please.yml` via the `yaml` package (not raw substring matching on the file text) and locates the dispatch step structurally', () => {
+    // This file is that test file. Structural loading is exercised by
+    // `loadReleasePleaseYml()` (which calls `parseYaml`) and the dispatch
+    // step is located by walking the parsed `jobs.<name>.steps` array via
+    // `findDispatchStep()` -- not by substring-matching the raw YAML text.
+    expect(exists('tests/release-please.test.ts')).toBe(true);
+    const wf = loadReleasePleaseYml();
+    expect(isObject(wf)).toBe(true);
+    const step = findDispatchStep(wf);
+    expect(step, 'dispatch step must be locatable structurally').toBeDefined();
+  });
+
+  it("the drift-check test fails when the dispatch step's `env` block lacks `GH_REPO` AND its `run:` lacks `-R`/`--repo` followed by the repo expression (verified by mutating an in-memory copy of the parsed YAML and re-running the assertion)", () => {
+    const wf = loadReleasePleaseYml();
+    const step = findDispatchStep(wf);
+    expect(step).toBeDefined();
+    if (!step) return;
+    // Build an in-memory mutation that strips both accepted fixes:
+    // - clone the step's env without GH_REPO
+    // - strip any `-R`/`--repo <expr>` flag from the run line
+    const originalEnv = isObject(step.env) ? step.env : {};
+    const mutatedEnv: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(originalEnv)) {
+      if (k === 'GH_REPO') continue;
+      mutatedEnv[k] = v;
+    }
+    const originalRun = typeof step.run === 'string' ? step.run : '';
+    const mutatedRun = originalRun.replace(
+      /\s+(?:-R|--repo)\s+["']?\$\{\{\s*github\.repository\s*\}\}["']?/g,
+      '',
+    );
+    const mutated: Record<string, unknown> = { ...step, env: mutatedEnv, run: mutatedRun };
+    expect(
+      dispatchStepSuppliesRepo(mutated),
+      'mutation that removes both fixes must be detected as a regression',
+    ).toBe(false);
+  });
+
+  it('the drift-check test passes when only the `GH_REPO` env-var fix is present (no `-R`/`--repo` flag on the run line)', () => {
+    // Synthesise an in-memory step with the env-var fix only.
+    const syntheticEnvOnly: Record<string, unknown> = {
+      env: {
+        GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+        GH_REPO: '${{ github.repository }}',
+        TAG_NAME: '${{ steps.release.outputs.tag_name }}',
+      },
+      run: 'gh workflow run release.yml --ref "$TAG_NAME"',
+    };
+    expect(dispatchStepSuppliesRepo(syntheticEnvOnly)).toBe(true);
+  });
+
+  it('the drift-check test passes when only the `-R`/`--repo` flag fix is present (no `GH_REPO` in the env block)', () => {
+    // Synthesise an in-memory step with the flag fix only.
+    const syntheticFlagOnly: Record<string, unknown> = {
+      env: {
+        GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+        TAG_NAME: '${{ steps.release.outputs.tag_name }}',
+      },
+      run: 'gh workflow run release.yml -R "${{ github.repository }}" --ref "$TAG_NAME"',
+    };
+    expect(dispatchStepSuppliesRepo(syntheticFlagOnly)).toBe(true);
+    // Also accept --repo as the long-form variant.
+    const longForm: Record<string, unknown> = {
+      env: {
+        GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+        TAG_NAME: '${{ steps.release.outputs.tag_name }}',
+      },
+      run: 'gh workflow run release.yml --repo "${{ github.repository }}" --ref "$TAG_NAME"',
+    };
+    expect(dispatchStepSuppliesRepo(longForm)).toBe(true);
+  });
+});
+
 describe('ac-1: release-please-config.json', () => {
   it('release-please-config.json exists and parses as valid JSON', () => {
     expect(exists(releasePleaseConfigPath)).toBe(true);
