@@ -241,10 +241,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   // roots-only project store surface on the next session, per the
   // documented "computed once at process startup" contract.
   let projectStore: MemoryStore | null = initialProjectStore;
-  if (
-    finalScope.projectDir !== null &&
-    finalScope.projectDir !== initialScope.projectDir
-  ) {
+  if (finalScope.projectDir !== null && finalScope.projectDir !== initialScope.projectDir) {
     const projectGraph = new MemoryGraph();
     projectStore = new MemoryStore({
       dir: finalScope.projectDir,

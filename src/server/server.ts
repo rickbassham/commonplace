@@ -98,11 +98,14 @@ export const PINNED_HEADING = '## Pinned memories';
  * Render a single pinned-memory entry as one line of the recall pack.
  * Shape: `- [scope/type] name -- description`.
  */
-function renderPinnedLine(scope: Scope, entry: {
-  name: string;
-  type: string;
-  description: string;
-}): string {
+function renderPinnedLine(
+  scope: Scope,
+  entry: {
+    name: string;
+    type: string;
+    description: string;
+  },
+): string {
   return `- [${scope}/${entry.type}] ${entry.name} -- ${entry.description}`;
 }
 
