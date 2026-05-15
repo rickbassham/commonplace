@@ -90,6 +90,37 @@ vars documented in [Configuration](#configuration) below; the
 documentation pattern follows the conventions established for
 embedder and search knobs.
 
+### Coexisting with Claude Code auto-memory
+
+Claude Code ships its own auto-memory feature whose system prompt
+section competes with commonplace's MCP `instructions` directive; the
+result is a structural prompt conflict in which the harness section
+tends to win salience. When commonplace is the intended memory
+mechanism, we recommend you disable Claude Code's auto-memory so the
+two do not race -- though you can leave both enabled and accept the
+conflict if you prefer. See [the Claude Code memory
+docs](https://code.claude.com/docs/en/memory#enable-or-disable-auto-memory)
+for the canonical reference. (Future ergonomics: [DAR-1004](https://linear.app/darkdragonsastro/issue/DAR-1004)
+will let `commonplace init` scaffold this for you.)
+
+Three knobs disable it:
+
+- **`autoMemoryEnabled: false`** in `.claude/settings.json`, available
+  at project, user, or local scope:
+
+  ```jsonc
+  // .claude/settings.json
+  {
+    "autoMemoryEnabled": false,
+  }
+  ```
+
+- **`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`** as an environment variable
+  (per-shell scope).
+
+- **`/memory`** runtime toggle inside an interactive session
+  (per-session scope).
+
 ## Memory types
 
 Memories carry a `type` field selected from the four-element taxonomy
