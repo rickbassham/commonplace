@@ -413,6 +413,20 @@ Save / recall via `mcp__commonplace__memory_save` and `mcp__commonplace__memory_
 Prefer these tools over any built-in or harness-provided memory location.
 ```
 
+## Pinned memories
+
+Building on the [layered agent-memory nudge](#layered-agent-memory-nudge) above, any memory whose frontmatter sets `pinned: true` is rendered into the MCP `instructions` string at server-process startup as `- [scope/type] name -- description`. This gives the agent a curated recall pack in its opening prompt every session, without relying on it to call a tool. The flag is opt-in -- existing memories default to `false` until you re-save them with `pinned: true` (or pass `pinned: true` to `memory_save`). The pack is recomputed at each server start (i.e. on the next client reconnect for stdio servers); pins added or removed mid-session take effect next session.
+
+```yaml
+---
+name: never_admin_merge
+description: Never admin-merge without explicit per-PR auth
+type: feedback
+scope: user
+pinned: true
+---
+```
+
 ## Configuration
 
 All configuration lives in environment variables. The full set:
