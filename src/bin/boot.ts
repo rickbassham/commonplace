@@ -173,19 +173,41 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   });
   await userStore.scan();
 
-  // Step 3+4: wire handlers WITHOUT a project store yet. roots/list
-  // happens after server.connect, so the project store -- if any -- is
-  // only known after the round-trip completes. `defaultLimit` is the
-  // resolved `COMMONPLACE_DEFAULT_LIMIT` value; the search handler uses it
-  // when the caller omits `limit`.
+  // If the initial scope (env / cwd, pre-roots/list) already names a
+  // project dir, scan it now so the pinned-memories recall pack can
+  // surface project-scope pins in the MCP `instructions` string at
+  // connect time. Roots-only project stores are still wired later
+  // (post-connect), but their pins surface only on the next session.
+  let initialProjectStore: MemoryStore | null = null;
+  let initialProjectGraph: MemoryGraph | null = null;
+  if (initialScope.projectDir !== null) {
+    initialProjectGraph = new MemoryGraph();
+    initialProjectStore = new MemoryStore({
+      dir: initialScope.projectDir,
+      embedder,
+      graph: initialProjectGraph,
+    });
+    await initialProjectStore.scan();
+  }
+
+  // Step 3+4: wire handlers with whatever stores are known now. A
+  // roots-only project store, if any, is wired post-connect below.
+  // `defaultLimit` is the resolved `COMMONPLACE_DEFAULT_LIMIT` value;
+  // the search handler uses it when the caller omits `limit`.
   const handlers = createDefaultHandlers({
     userStore,
+    projectStore: initialProjectStore ?? undefined,
     graph: userGraph,
+    projectGraph: initialProjectGraph ?? undefined,
     defaultLimit,
     expansionDecay,
     connectednessBoost,
   });
-  const server = createServer({ handlers });
+  const server = createServer({
+    handlers,
+    userStore,
+    projectStore: initialProjectStore ?? undefined,
+  });
 
   // Step 5: connect first so the transport is ready to issue requests.
   await server.connect(options.transport);
@@ -212,13 +234,17 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
     cwd: options.cwd,
   });
 
-  // Step 8: if a project root was detected, construct the project store
-  // and re-bind the server's handler map so subsequent CallTool requests
-  // see both stores. The project store is NOT mkdir'd up front -- the
-  // contract is auto-create on first save, so user-only sessions that
-  // happen to share a cwd with a marker dir don't side-effect.
-  let projectStore: MemoryStore | null = null;
-  if (finalScope.projectDir !== null) {
+  // Step 8: if the final scope names a project dir that we didn't already
+  // wire pre-connect, construct it now and re-bind the server's handler
+  // map so subsequent CallTool requests see both stores. The recall pack
+  // already in `instructions` is fixed at this point -- pins from a
+  // roots-only project store surface on the next session, per the
+  // documented "computed once at process startup" contract.
+  let projectStore: MemoryStore | null = initialProjectStore;
+  if (
+    finalScope.projectDir !== null &&
+    finalScope.projectDir !== initialScope.projectDir
+  ) {
     const projectGraph = new MemoryGraph();
     projectStore = new MemoryStore({
       dir: finalScope.projectDir,
