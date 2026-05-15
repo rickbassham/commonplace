@@ -31,6 +31,65 @@ second registers it with Claude Code as an MCP server named
 `commonplace`. After both commands complete, restart any running Claude
 Code sessions and the four memory tools become available.
 
+## Installing & invoking commonplace-mcp
+
+The recommended Claude Code (or any MCP-client) config invokes the server
+through `npx -y commonplace-mcp` rather than a globally-installed binary.
+`npx` resolves the package from the npm registry and reuses the local npm
+cache (subject to the registry's `max-age` / `etag` revalidation), so each
+new MCP-server spawn naturally floats to the latest published version
+without any manual `npm install -g` step:
+
+```jsonc
+// .claude/mcp.json (or your client's equivalent)
+{
+  "mcpServers": {
+    "commonplace": {
+      "command": "npx",
+      "args": ["-y", "commonplace-mcp"],
+    },
+  },
+}
+```
+
+To pin a specific version (deterministic across spawns), append
+`@<semver>` -- for example, `npx -y commonplace-mcp@0.3.0`:
+
+```jsonc
+{
+  "mcpServers": {
+    "commonplace": {
+      "command": "npx",
+      "args": ["-y", "commonplace-mcp@0.3.0"],
+    },
+  },
+}
+```
+
+### Startup version-check
+
+On every server-process startup, after the MCP connection is
+established, commonplace-mcp performs a single non-blocking version
+check against the public npm registry
+(`https://registry.npmjs.org/commonplace-mcp/latest`). When a newer
+version is available, a single advisory line is written to **stderr** of
+the form `commonplace-mcp X.Y.Z is running; newer version A.B.C is
+available. ...`. MCP clients (Claude Code among them) surface server
+stderr to the operator, so the notice appears alongside any other server
+logs.
+
+The check is fire-and-forget: a registry timeout, DNS failure, or
+malformed response produces no log line and no error -- the server never
+fails to start because of it. The hard timeout is 1.5 seconds.
+
+Set `COMMONPLACE_NO_UPDATE_CHECK=1` (or `=true`) in your MCP-client
+config to skip the version check entirely -- no network call, no log
+line, fully opt-out. Any other value (including empty string) leaves
+the check enabled. This sits alongside the other `COMMONPLACE_*` env
+vars documented in [Configuration](#configuration) below; the
+documentation pattern follows the conventions established for
+embedder and search knobs.
+
 ## Memory types
 
 Memories carry a `type` field selected from the four-element taxonomy
@@ -367,6 +426,7 @@ All configuration lives in environment variables. The full set:
 | `COMMONPLACE_DEFAULT_LIMIT`       | `5`                       | Default top-k for `memory_search` when the caller omits `limit`. Must be a positive integer; invalid values cause the bin to exit at boot rather than silently coercing.                                                                                                                                    |
 | `COMMONPLACE_EXPANSION_DECAY`     | `0.7`                     | Multiplicative score applied to one-hop graph-expanded neighbors of a direct `memory_search` hit. Must be a finite number in `(0, 1]`; invalid values cause the bin to exit at boot rather than silently coercing.                                                                                          |
 | `COMMONPLACE_CONNECTEDNESS_BOOST` | `0.02`                    | Alpha for the additive `alpha * log(1 + inbound_count)` connectedness boost applied to `memory_search` ranking. Must be a finite non-negative number; set to `0` to disable the boost and recover v0.1 ranking. Negative or non-numeric values cause the bin to exit at boot rather than silently coercing. |
+| `COMMONPLACE_NO_UPDATE_CHECK`     | (unset)                   | When set to `1` or `true`, the startup npm-registry version check is skipped entirely (no network call, no log line). Any other value (including empty string) leaves the check enabled. Opt-out only; the default is to perform the check. See [Startup version-check](#startup-version-check).            |
 
 ## Memory format
 

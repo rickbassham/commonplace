@@ -66,6 +66,7 @@ describe('README/code drift: env vars', () => {
     'COMMONPLACE_DEFAULT_LIMIT',
     'COMMONPLACE_EXPANSION_DECAY',
     'COMMONPLACE_CONNECTEDNESS_BOOST',
+    'COMMONPLACE_NO_UPDATE_CHECK',
   ];
 
   it('every COMMONPLACE_* env var the bin reads appears in README.md', () => {
@@ -73,6 +74,35 @@ describe('README/code drift: env vars', () => {
     for (const name of REQUIRED_ENV_VARS) {
       expect(body, `${name} not documented in README`).toMatch(new RegExp(`\\b${name}\\b`));
     }
+  });
+});
+
+describe('README install + version-check section (DAR-1006)', () => {
+  it('README contains the verbatim string `npx -y commonplace-mcp` (recommended floating-latest invocation)', () => {
+    expect(readme()).toContain('npx -y commonplace-mcp');
+  });
+
+  it('README contains a pin-a-version example matching `npx -y commonplace-mcp@<semver>` (e.g. `npx -y commonplace-mcp@0.3.0`)', () => {
+    expect(readme()).toMatch(/npx\s+-y\s+commonplace-mcp@\d+\.\d+\.\d+/);
+  });
+
+  it('README documents the `COMMONPLACE_NO_UPDATE_CHECK` env var and its opt-out semantics', () => {
+    const body = readme();
+    expect(body).toContain('COMMONPLACE_NO_UPDATE_CHECK');
+    const idx = body.indexOf('COMMONPLACE_NO_UPDATE_CHECK');
+    expect(idx).toBeGreaterThan(-1);
+    // The section nearby must describe what the variable does (opt-out
+    // semantics: "skip", "disable", or "opt-out" of the version check).
+    const block = body.slice(idx, idx + 400).toLowerCase();
+    expect(block).toMatch(/skip|disable|opt[- ]?out|no\s+network/);
+  });
+
+  it('README mentions the startup version-check behavior (a stderr line when a newer version is on npm)', () => {
+    const body = readme().toLowerCase();
+    // Must mention both "version" (the check itself) and "stderr" (the
+    // channel) somewhere -- the install section calls out the behaviour.
+    expect(body).toMatch(/version[\s-]?check|version\s+update|newer\s+version/);
+    expect(body).toMatch(/stderr/);
   });
 });
 
