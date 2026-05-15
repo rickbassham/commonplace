@@ -5,6 +5,15 @@ All notable changes to `commonplace-mcp` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0](https://github.com/rickbassham/commonplace/compare/v0.3.0...v0.4.0) (2026-05-15)
+
+
+### Added
+
+* **server:** add MCP instructions and Agent memory framing (DAR-965) ([#50](https://github.com/rickbassham/commonplace/issues/50)) ([84ef124](https://github.com/rickbassham/commonplace/commit/84ef124704c6f3ed869f1ea38a7e2e4a6fe1d027))
+* **server:** startup version check and npx invocation docs (DAR-1006) ([#52](https://github.com/rickbassham/commonplace/issues/52)) ([e98ee3a](https://github.com/rickbassham/commonplace/commit/e98ee3a73271cc741e62efb5e3eeaefccacc21a4))
+* surface pinned memories in MCP instructions at session start (DAR-1003) ([#53](https://github.com/rickbassham/commonplace/issues/53)) ([b1206cb](https://github.com/rickbassham/commonplace/commit/b1206cb79d2a59ca466bcf177684c39a89788e36))
+
 ## [0.3.0](https://github.com/rickbassham/commonplace/compare/v0.2.1...v0.3.0) (2026-05-14)
 
 
