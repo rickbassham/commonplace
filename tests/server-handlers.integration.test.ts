@@ -267,6 +267,9 @@ describe('ac-3: list filtering and frontmatter shape', () => {
         // user vs project memories apart. With only a user store wired, the
         // tag is always 'user'.
         scope: 'user',
+        // List entries echo the pinned frontmatter flag so the agent can
+        // see what is pinned without reading bodies.
+        pinned: false,
       });
       expect('body' in entry).toBe(false);
     } finally {
@@ -274,20 +277,25 @@ describe('ac-3: list filtering and frontmatter shape', () => {
     }
   });
 
-  it('mock-client memory_save followed by an immediate memory_save with the same name returns an MCP error result (isError=true) whose message contains the duplicate name', async () => {
+  it('mock-client memory_save followed by an immediate memory_save with the same name updates the entry in place (no error)', async () => {
     const h = await setupHarness();
     try {
-      const args = {
+      const first = await callJSON(h.client, 'memory_save', {
         name: 'dupe_name',
         type: 'reference',
-        description: 'd',
+        description: 'first',
         body: 'b',
-      };
-      const first = await callJSON(h.client, 'memory_save', args);
+      });
       expect(first.isError).toBe(false);
-      const second = await callJSON(h.client, 'memory_save', args);
-      expect(second.isError).toBe(true);
-      expect(second.text).toContain('dupe_name');
+      const second = await callJSON(h.client, 'memory_save', {
+        name: 'dupe_name',
+        type: 'reference',
+        description: 'second',
+        body: 'b',
+      });
+      expect(second.isError).toBe(false);
+      const parsed = JSON.parse(second.text) as { saved: { description: string } };
+      expect(parsed.saved.description).toBe('second');
     } finally {
       await h.close();
     }

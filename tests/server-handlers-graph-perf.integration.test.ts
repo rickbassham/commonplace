@@ -39,6 +39,7 @@ const buildSyntheticCorpus = (
       body: `body ${i}`,
       relations,
       supersedes: [],
+      pinned: false,
       vector: new Float32Array(0),
       contentSha: 'x',
       modelId: 'stub',

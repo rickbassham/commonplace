@@ -431,7 +431,7 @@ export const serializeMemory = (memory: Memory): string => {
     fmObject.supersedes = supersedes;
   }
   // `pinned: true` is emitted; `pinned: false` (the default) is omitted so
-  // files that never opt in stay byte-identical to the pre-DAR-1003 form.
+  // files that never opt in stay byte-identical to the legacy form.
   if (memory.pinned === true) {
     fmObject.pinned = true;
   }

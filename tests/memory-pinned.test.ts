@@ -61,7 +61,7 @@ body
   it('readMemory defaults the `pinned` field to `false` when the key is absent from frontmatter', () => {
     const md = `---
 name: pin_absent
-description: pre-DAR-1003 file with no pinned key
+description: pre-existing file with no pinned key
 type: feedback
 ---
 body
@@ -118,7 +118,7 @@ describe('ac-1: writeMemory round-trips and omits pinned when false', () => {
     expect(after).toBe(before);
   });
 
-  it('writeMemory omits the `pinned` key entirely when the in-memory value is `false`, keeping pre-DAR-1003 files byte-identical', () => {
+  it('writeMemory omits the `pinned` key entirely when the in-memory value is `false`, keeping pre-existing files byte-identical', () => {
     const p1 = join(tmp, 'no-pinned.md');
     writeMemory(p1, {
       name: 'np',
