@@ -67,6 +67,30 @@ export const SERVER_INSTRUCTIONS =
   'this server is where memories should live so they are searchable, ' +
   'scoped, and linkable across sessions.';
 
+/**
+ * Prescriptive "when to save what" block appended after
+ * {@link SERVER_INSTRUCTIONS} and before the dynamic pinned-memories
+ * recall pack. Names the four memory types (`user`, `feedback`,
+ * `project`, `reference`) and gives a one-line "save when..." trigger
+ * plus a brief example per type so agents have an actionable nudge
+ * about which type to save under, not just which tool to call.
+ *
+ * The block is bounded to 400..800 characters (asserted by
+ * `tests/server-instructions-when-to-save.test.ts`) to keep the
+ * system-prompt cost predictable while staying salient against the
+ * harness's longer auto-memory section.
+ */
+export const WHEN_TO_SAVE_INSTRUCTIONS =
+  'Memory types and when to save under each:\n' +
+  '- `user`: save when you discover a cross-project workflow rule or personal coding preference. ' +
+  'Example: "Prefer pnpm over npm in all projects."\n' +
+  '- `feedback`: save when the user corrects an action, naming choice, or process. ' +
+  'Example: "Don\'t admin-merge PRs without explicit per-PR approval."\n' +
+  '- `project`: save when learning a fact specific to this codebase. ' +
+  'Example: "Embeddings are stored as .embedding sidecars next to .md files."\n' +
+  '- `reference`: save when capturing durable external facts, links, or API shapes. ' +
+  'Example: "MCP SDK transports live at @modelcontextprotocol/sdk/client/*."';
+
 export interface CreateServerOptions {
   /**
    * Optional handler map. Defaults to the not-implemented stubs in
@@ -162,9 +186,15 @@ export function createServer(options: CreateServerOptions = {}): Server {
 
   // Build the dynamic recall pack from any wired stores' pinned memories.
   // When no pins exist (or no stores are wired) the pack is the empty
-  // string and the instructions stay byte-equal to the static prefix.
+  // string and the instructions are SERVER_INSTRUCTIONS followed by the
+  // prescriptive when-to-save block only.
   const recallPack = buildRecallPack(options.userStore, options.projectStore);
-  const instructions = SERVER_INSTRUCTIONS + recallPack;
+  // Three-section assembly: static nudge -> when-to-save block ->
+  // optional pinned recall pack. The when-to-save block always appears
+  // so the prescriptive "which type" nudge reaches every session; the
+  // recall pack appears only when at least one non-superseded pinned
+  // memory exists.
+  const instructions = SERVER_INSTRUCTIONS + '\n\n' + WHEN_TO_SAVE_INSTRUCTIONS + recallPack;
 
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },

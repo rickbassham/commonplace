@@ -158,7 +158,7 @@ describe('ac-4: createServer renders recall pack into instructions', () => {
 });
 
 describe('ac-5: recall pack omitted when zero pinned memories', () => {
-  it('createServer against stores with zero pinned memories emits instructions byte-equal to SERVER_INSTRUCTIONS (no heading, no trailing whitespace stub)', async () => {
+  it('createServer against stores with zero pinned memories emits instructions that begin with SERVER_INSTRUCTIONS and contain no `## Pinned memories` heading', async () => {
     const userStore = makeStore(tmpUser);
     await userStore.scan();
     await userStore.save({
@@ -171,7 +171,11 @@ describe('ac-5: recall pack omitted when zero pinned memories', () => {
     await projectStore.scan();
     const server = createServer({ userStore, projectStore });
     const instr = readInstructions(server);
-    expect(instr).toBe(SERVER_INSTRUCTIONS);
+    // Per DAR-1013, the assembled instructions always contain the
+    // when-to-save block after SERVER_INSTRUCTIONS. The recall pack is
+    // still omitted entirely when no pinned memories exist.
+    expect(instr.startsWith(SERVER_INSTRUCTIONS)).toBe(true);
+    expect(instr).not.toMatch(/##\s+Pinned memories/);
   });
 });
 

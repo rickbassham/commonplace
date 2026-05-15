@@ -26,7 +26,11 @@ describe('ac-1: createServer passes a non-empty `instructions` to the MCP Server
     const observed = readInstructions(server);
     expect(typeof observed).toBe('string');
     expect(observed?.trim().length ?? 0).toBeGreaterThan(0);
-    expect(observed).toBe(SERVER_INSTRUCTIONS);
+    // Per DAR-1013, the assembled `instructions` string now contains the
+    // SERVER_INSTRUCTIONS prefix followed by a prescriptive when-to-save
+    // block (and optionally a pinned-memories recall pack). Assert the
+    // prefix invariant rather than byte-equality.
+    expect(observed?.startsWith(SERVER_INSTRUCTIONS)).toBe(true);
   });
 });
 
