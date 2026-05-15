@@ -19,6 +19,7 @@ import {
   type ListToolsResult,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import type { MemoryStore } from '../store/memory-store.js';
 import {
   buildToolDefinitions,
   callTool,
@@ -26,6 +27,7 @@ import {
   listTools as listToolsResponse,
   type ToolHandlerMap,
 } from './tools.js';
+import type { Scope } from './handlers.js';
 
 /** Server name advertised in the initialize handshake. */
 export const SERVER_NAME = 'commonplace';
@@ -72,6 +74,76 @@ export interface CreateServerOptions {
    * a real handler pass a populated map here.
    */
   handlers?: ToolHandlerMap;
+  /**
+   * Optional user-scope store. When supplied, every loaded entry with
+   * `pinned: true` (and not superseded within the store) is rendered into
+   * the MCP `instructions` recall pack at construction time.
+   *
+   * Must be scanned before being passed -- `createServer()` reads from
+   * the in-memory entry list (`store.all()`) and does not trigger a scan.
+   */
+  userStore?: MemoryStore;
+  /**
+   * Optional project-scope store. Same contract as {@link userStore};
+   * project entries are tagged `[project/<type>]` in the rendered pack.
+   * Omitted in user-only mode.
+   */
+  projectStore?: MemoryStore;
+}
+
+/** Heading rendered above the pinned-memories recall pack. */
+export const PINNED_HEADING = '## Pinned memories';
+
+/**
+ * Render a single pinned-memory entry as one line of the recall pack.
+ * Shape: `- [scope/type] name -- description`.
+ */
+function renderPinnedLine(
+  scope: Scope,
+  entry: {
+    name: string;
+    type: string;
+    description: string;
+  },
+): string {
+  return `- [${scope}/${entry.type}] ${entry.name} -- ${entry.description}`;
+}
+
+/**
+ * Build the pinned-memories recall pack appended to {@link SERVER_INSTRUCTIONS}
+ * at server-process startup. Returns the empty string when no pinned,
+ * non-superseded memories exist across the supplied stores -- callers must
+ * concatenate the prefix unconditionally so a zero-pin session sees the
+ * static nudge byte-for-byte.
+ *
+ * Supersede semantics mirror `memory_list` / `memory_search`: a pinned
+ * memory whose name appears in another loaded memory's `supersedes[]`
+ * within the same store is excluded from the pack.
+ */
+function buildRecallPack(
+  userStore: MemoryStore | undefined,
+  projectStore: MemoryStore | undefined,
+): string {
+  const lines: string[] = [];
+  const collect = (store: MemoryStore | undefined, scope: Scope): void => {
+    if (store === undefined) return;
+    const entries = store.all();
+    const superseded = new Set<string>();
+    for (const e of entries) {
+      for (const target of e.supersedes) {
+        superseded.add(target);
+      }
+    }
+    for (const entry of entries) {
+      if (entry.pinned !== true) continue;
+      if (superseded.has(entry.name)) continue;
+      lines.push(renderPinnedLine(scope, entry));
+    }
+  };
+  collect(userStore, 'user');
+  collect(projectStore, 'project');
+  if (lines.length === 0) return '';
+  return `\n\n${PINNED_HEADING}\n${lines.join('\n')}`;
 }
 
 /**
@@ -88,6 +160,12 @@ export function createServer(options: CreateServerOptions = {}): Server {
   const definitions = buildToolDefinitions(handlers);
   const listToolsPayload = listToolsResponse(definitions);
 
+  // Build the dynamic recall pack from any wired stores' pinned memories.
+  // When no pins exist (or no stores are wired) the pack is the empty
+  // string and the instructions stay byte-equal to the static prefix.
+  const recallPack = buildRecallPack(options.userStore, options.projectStore);
+  const instructions = SERVER_INSTRUCTIONS + recallPack;
+
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
@@ -98,9 +176,11 @@ export function createServer(options: CreateServerOptions = {}): Server {
       },
       // Clients that surface server-provided instructions in their
       // system prompt see this paragraph and apply the agent-memory
-      // framing without any per-project configuration. Static; no
-      // runtime substitution.
-      instructions: SERVER_INSTRUCTIONS,
+      // framing without any per-project configuration. The static
+      // SERVER_INSTRUCTIONS prefix is followed by an optional
+      // dynamically-rendered recall pack listing every non-superseded
+      // pinned memory across all wired stores.
+      instructions,
     },
   );
 

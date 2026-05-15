@@ -320,6 +320,11 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           description:
             "Which store to write to. 'user' (default) saves under COMMONPLACE_USER_DIR. 'project' saves under the detected project store; rejects with a clear error if no project store is wired.",
         },
+        pinned: {
+          type: 'boolean',
+          description:
+            "When true, this memory's name + description are surfaced in the MCP server's startup `instructions` recall pack. Defaults to false on a new memory; on an update with `pinned` omitted, the prior on-disk value is preserved.",
+        },
       },
       required: ['name', 'type', 'description', 'body'],
     },

@@ -172,6 +172,12 @@ export interface MemoryListResult {
     description: string;
     /** Which store this entry came from. */
     scope: Scope;
+    /**
+     * Mirrors the frontmatter `pinned` flag. `true` for entries the user has
+     * pinned for surfacing in the startup recall pack; `false` (the default
+     * for files that omit the key) otherwise.
+     */
+    pinned: boolean;
   }>;
 }
 
@@ -401,6 +407,7 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
     const description = requireString(args, 'description', 'memory_save');
     const body = requireString(args, 'body', 'memory_save');
     const scope = validateScope(args.scope, 'memory_save') ?? 'user';
+    const pinnedArg = validateBoolean(args.pinned, 'pinned', 'memory_save');
 
     if (scope === 'project' && projectStore === undefined) {
       throw new Error(
@@ -409,8 +416,18 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
     }
 
     const target = scope === 'project' ? projectStore! : userStore;
-    const memory: Memory = { name, type, description, body };
-    await target.save(memory);
+    // Preserve-on-update for `pinned`: when the caller omits the field on an
+    // existing memory, the prior on-disk value carries forward. When the
+    // memory is new, the default is `false`.
+    let pinned: boolean;
+    if (pinnedArg !== undefined) {
+      pinned = pinnedArg;
+    } else {
+      const prior = target.all().find((e) => e.name === name);
+      pinned = prior?.pinned === true;
+    }
+    const memory: Memory = { name, type, description, body, pinned };
+    await target.upsert(memory);
 
     // Path is reconstructed here rather than returned by the store so the
     // store's on-disk layout stays an implementation detail.
@@ -480,6 +497,7 @@ export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
         type: entry.type,
         description: entry.description,
         scope: sc,
+        pinned: entry.pinned,
       })),
     };
   };

@@ -141,6 +141,12 @@ export interface MemoryEntry {
   relations: Relation[];
   /** Names of memories this one supersedes. */
   supersedes: string[];
+  /**
+   * Whether this memory is surfaced in the MCP server's startup
+   * `instructions` recall pack. Defaults to `false` for files that do
+   * not set the key.
+   */
+  pinned: boolean;
   /** L2-normalised CLS-pooled embedding vector. */
   vector: Float32Array;
   /** sha256 hex digest of the canonical content (`contentSha`). */
@@ -521,6 +527,7 @@ export class MemoryStore {
         body: memory.body,
         relations: memory.relations,
         supersedes: memory.supersedes,
+        pinned: memory.pinned,
         vector,
         contentSha: sha,
         modelId: this.#embedder.modelId,
@@ -660,6 +667,7 @@ export class MemoryStore {
         body: memory.body,
         relations: memory.relations ?? [],
         supersedes: memory.supersedes ?? [],
+        pinned: memory.pinned === true,
         vector,
         contentSha: sha,
         modelId: this.#embedder.modelId,
@@ -724,6 +732,89 @@ export class MemoryStore {
       out.push({ from: entry.name, to: target });
     }
     return out;
+  }
+
+  /**
+   * Insert-or-update a memory by name. Mirrors {@link save} for fresh names
+   * and rewrites the on-disk `.md` (and re-embeds when `contentSha` changes)
+   * for existing names. Used by the `memory_save` MCP handler so callers
+   * can flip `pinned` (or revise body / description / type) on an existing
+   * entry without an explicit `memory_delete` round-trip.
+   *
+   * When the entry already exists and only `pinned` differs from disk (i.e.
+   * `contentSha` is unchanged), the cached vector is reused -- no embedder
+   * call -- and only the `.md` is rewritten. When other fields differ, the
+   * memory is re-embedded and the sidecar is rewritten.
+   *
+   * Returns `'created'` when a new entry was added; `'updated'` when an
+   * existing entry was rewritten.
+   */
+  public async upsert(memory: Memory): Promise<'created' | 'updated'> {
+    const { name } = memory;
+    const idx = this.#entries.findIndex((e) => e.name === name);
+    if (idx === -1) {
+      await this.save(memory);
+      return 'created';
+    }
+
+    const mdPath = join(this.#dir, `${name}.md`);
+    const sidecarPath = join(this.#dir, `${name}.embedding`);
+    const prior = this.#entries[idx]!;
+    const newSha = contentSha(memory);
+
+    await mkdir(this.#dir, { recursive: true });
+    const release = await acquireNameLock(this.#dir, name);
+    try {
+      const mdBytes = Buffer.from(serializeMemory(memory), 'utf8');
+      await atomicWrite(mdPath, mdBytes);
+
+      let vector = prior.vector;
+      if (newSha !== prior.contentSha) {
+        vector = await this.#embedder.embed(memory.body);
+        const buf = encodeSidecar({
+          modelId: this.#embedder.modelId,
+          dim: this.#embedder.dim,
+          contentSha: newSha,
+          vector,
+        });
+        await atomicWrite(sidecarPath, buf);
+      }
+
+      const nextRelations = memory.relations ?? prior.relations;
+      const nextSupersedes = memory.supersedes ?? prior.supersedes;
+      const updated: MemoryEntry = {
+        name: memory.name,
+        description: memory.description,
+        type: memory.type,
+        body: memory.body,
+        relations: nextRelations,
+        supersedes: nextSupersedes,
+        pinned: memory.pinned === true,
+        vector,
+        contentSha: newSha,
+        modelId: this.#embedder.modelId,
+        dim: this.#embedder.dim,
+      };
+      this.#entries[idx] = updated;
+      if (this.#graph !== undefined) {
+        // Rebuild this entry's graph state by removing the prior edges and
+        // re-adding from the new entry. Cheaper than a full rebuild and
+        // matches the mutation surface of `linkEdge` / `unlinkEdge`.
+        this.#graph.remove(name);
+        this.#graph.add(updated);
+        for (const edge of this.#mentionsFor(updated)) {
+          this.#graph.addMentionsEdge(edge);
+        }
+      }
+      this.#refreshMtimeBaseline();
+    } finally {
+      try {
+        await release();
+      } catch {
+        // see save()'s release-swallow comment
+      }
+    }
+    return 'updated';
   }
 
   /**

@@ -160,12 +160,18 @@ describe('ac-2: memory_save handler validation', () => {
     await expect(handler({ ...goodArgs, body: undefined })).rejects.toThrow(/body/);
   });
 
-  it('memory_save handler rejects a duplicate `name` (entry already exists in the store) with a clear error message containing the offending name', async () => {
+  it('memory_save handler updates an existing entry in place when called with a duplicate `name` (no more `delete + save` round-trip required)', async () => {
     const store = makeStore();
     await store.scan();
     const handler = createMemorySaveHandler({ store });
     await handler({ ...goodArgs, name: 'dupe' });
-    await expect(handler({ ...goodArgs, name: 'dupe' })).rejects.toThrow(/dupe/);
+    const second = (await handler({
+      ...goodArgs,
+      name: 'dupe',
+      description: 'updated',
+    })) as { saved: { name: string; description: string } };
+    expect(second.saved.name).toBe('dupe');
+    expect(second.saved.description).toBe('updated');
   });
 });
 
