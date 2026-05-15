@@ -30,10 +30,13 @@ describe('MCP server instructions (integration)', () => {
     await close();
   });
 
-  it('the client observes the server-provided `instructions` string after initialize, byte-equal to SERVER_INSTRUCTIONS', () => {
+  it('the client observes the server-provided `instructions` string after initialize, beginning with SERVER_INSTRUCTIONS', () => {
     const observed = client.getInstructions();
     expect(typeof observed).toBe('string');
     expect(observed?.trim().length ?? 0).toBeGreaterThan(0);
-    expect(observed).toBe(SERVER_INSTRUCTIONS);
+    // Per DAR-1013, the assembled `instructions` now contains the
+    // SERVER_INSTRUCTIONS prefix followed by a prescriptive when-to-save
+    // block. Assert the prefix invariant rather than byte-equality.
+    expect(observed?.startsWith(SERVER_INSTRUCTIONS)).toBe(true);
   });
 });
