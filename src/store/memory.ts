@@ -78,6 +78,12 @@ export interface Memory {
   relations?: Relation[];
   /** Names of memories this one replaces. Excluded from `contentSha`. Defaults to `[]`. */
   supersedes?: string[];
+  /**
+   * Whether this memory should be surfaced in the MCP server's startup
+   * `instructions` recall pack. Optional on input; defaults to `false`.
+   * Excluded from `contentSha` -- toggling does not invalidate sidecars.
+   */
+  pinned?: boolean;
 }
 
 /**
@@ -90,6 +96,8 @@ export interface ReadMemory extends Memory {
   raw: string;
   relations: Relation[];
   supersedes: string[];
+  /** Always populated as a boolean -- defaults to `false` when absent on disk. */
+  pinned: boolean;
 }
 
 const isMemoryType = (v: unknown): v is MemoryType =>
@@ -219,6 +227,22 @@ const parseSupersedes = (raw: unknown): string[] => {
 };
 
 /**
+ * Parse + validate the optional `pinned` frontmatter field. Returns `false`
+ * when the field is absent. Throws when present but not a literal boolean
+ * (a YAML string `"true"`, a number `1`, etc. are all rejected so callers
+ * learn the type contract early).
+ */
+const parsePinned = (raw: unknown): boolean => {
+  if (raw === undefined) return false;
+  if (typeof raw !== 'boolean') {
+    throw new Error(
+      `memory frontmatter \`pinned\` must be a boolean (true or false); got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
  * Split a memory file's raw text into its frontmatter YAML and its body.
  *
  * Recognises the standard `---\n...\n---\n` (or `\r\n`) block at the very
@@ -291,6 +315,7 @@ export const readMemory = (path: string): ReadMemory => {
 
   const relations = parseRelations(parsed.relations);
   const supersedes = parseSupersedes(parsed.supersedes);
+  const pinned = parsePinned(parsed.pinned);
 
   for (const rel of relations) {
     if (rel.to === name) {
@@ -307,7 +332,7 @@ export const readMemory = (path: string): ReadMemory => {
     }
   }
 
-  return { name, description, type, body, raw, relations, supersedes };
+  return { name, description, type, body, raw, relations, supersedes, pinned };
 };
 
 /**
@@ -404,6 +429,11 @@ export const serializeMemory = (memory: Memory): string => {
   }
   if (supersedes.length > 0) {
     fmObject.supersedes = supersedes;
+  }
+  // `pinned: true` is emitted; `pinned: false` (the default) is omitted so
+  // files that never opt in stay byte-identical to the pre-DAR-1003 form.
+  if (memory.pinned === true) {
+    fmObject.pinned = true;
   }
 
   // `yaml.stringify` emits a trailing newline by default; the resulting YAML
