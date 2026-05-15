@@ -69,5 +69,12 @@ jobs:
         if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The release-please job has no `actions/checkout` step, so the
+          # runner workspace contains no `.git` directory. Without a repo
+          # hint, `gh workflow run` aborts with `fatal: not a git
+          # repository`. The `gh` CLI honours `GH_REPO` automatically,
+          # which keeps the `run:` value short and matches the existing
+          # env-block style for `GH_TOKEN` / `TAG_NAME`.
+          GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ steps.release.outputs.tag_name }}
         run: gh workflow run release.yml --ref "$TAG_NAME"
