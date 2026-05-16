@@ -14,7 +14,7 @@
  */
 
 import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   MEMORY_TYPES,
@@ -29,7 +29,7 @@ import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchHit, SearchOptions } from '../store/memory-store.js';
 import type { EdgeType, MemoryGraph } from '../store/graph.js';
 import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from './defaults.js';
-import { detectScope } from '../bin/scope.js';
+import { detectScope, isHomedirOrAncestor } from '../bin/scope.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
 /**
@@ -2099,22 +2099,19 @@ export const createMemoryBootstrapHandler = (env: BootstrapEnvironment): ToolHan
           'memory_bootstrap_project_store: no project root detected. The upward walk from cwd found no `.git/` or `.commonplace/` marker before reaching $HOME, and no `COMMONPLACE_PROJECT_DIR` env-var override was set. To remediate: (a) set `COMMONPLACE_PROJECT_DIR` to an explicit project directory and retry, (b) `git init` the workspace (or create a `.commonplace/` marker directory) so the walk finds a marker, or (c) pass an explicit `path` argument to this tool naming the directory to use as the project root.',
         );
       }
-      // `detected.projectDir` is `<root>/.commonplace/memory`; recover the
-      // root by stripping the conventional suffix. We compare against the
-      // suffix literal so an env override whose value doesn't end in the
-      // suffix (the env-var path is used verbatim) still works.
+      // `detected.projectDir` is `<root>/.commonplace/memory` for the
+      // cwd-walk branch. Recover the root with separator-agnostic dirname
+      // composition. For env overrides the value is used verbatim (the
+      // env-var path may not follow the conventional suffix layout), so we
+      // report the memory dir itself as the root.
       const memoryDir = detected.projectDir;
-      const suffix = `${'.commonplace'}/${'memory'}`;
-      if (memoryDir.endsWith(`/${suffix}`) || memoryDir.endsWith(`\\${suffix}`)) {
-        projectRoot = memoryDir.slice(0, -(suffix.length + 1));
-      } else {
-        // Env override: treat the value as the literal project memory
-        // dir and synthesize a logical "root" by stripping the dir
-        // segment when possible; otherwise report the memory dir itself
-        // as the root (the directory the operator named).
+      if (detected.source === 'env') {
         projectRoot = memoryDir;
+        source = 'env';
+      } else {
+        projectRoot = dirname(dirname(memoryDir));
+        source = 'cwd';
       }
-      source = detected.source === 'env' ? 'env' : 'cwd';
     }
 
     // Create `<root>/.commonplace/memory` if missing. For the path-override
@@ -2143,20 +2140,4 @@ export const createMemoryBootstrapHandler = (env: BootstrapEnvironment): ToolHan
       source,
     };
   };
-};
-
-/**
- * `isHomedirOrAncestor` -- module-private mirror of the same predicate in
- * `src/bin/scope.ts`. Used by the bootstrap handler to gate the explicit
- * `path` override (which bypasses {@link detectScope}'s built-in walk
- * guard). Kept in lockstep with the scope-module version; the bootstrap
- * path's test coverage (ac-5) is the regression gate against drift.
- */
-const isHomedirOrAncestor = (candidate: string, homedir: string): boolean => {
-  if (candidate === homedir) return true;
-  // Match either POSIX or Windows path separators -- the bootstrap handler
-  // is exercised on both.
-  const sep = candidate.includes('\\') && !candidate.includes('/') ? '\\' : '/';
-  const candidateWithSep = candidate.endsWith(sep) ? candidate : candidate + sep;
-  return homedir.startsWith(candidateWithSep);
 };
