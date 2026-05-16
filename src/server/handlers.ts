@@ -135,9 +135,11 @@ const resolveStores = (
 };
 
 /**
- * Validate the optional `scope` argument. `undefined` is allowed and
- * returns `undefined`; anything else must be one of the two literals in
- * {@link SCOPES}. Errors list the allowed values.
+ * Validate the optional `scope` argument on read-side handlers. `undefined`
+ * is allowed and returns `undefined`; anything else must be one of the two
+ * literals in {@link SCOPES}. Errors list the allowed values. Write-side
+ * handlers (`memory_save`) require an explicit scope and use
+ * {@link requireScope} instead.
  */
 const isScope = (v: unknown): v is Scope =>
   typeof v === 'string' && (SCOPES as readonly string[]).includes(v);

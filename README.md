@@ -140,11 +140,12 @@ filter.
 
 ## Tool reference
 
-All four tools accept a `scope: 'user' | 'project'` argument that
+All memory tools accept a `scope: 'user' | 'project'` argument that
 selects which store to read from or write to. On `memory_save`, `scope`
 is **required** -- the agent must make an explicit user-vs-project
 decision on every save. On the read-side tools (`memory_search`,
-`memory_list`, `memory_delete`, and the graph tools), `scope` remains
+`memory_list`, `memory_delete`, and the graph tools `memory_link`,
+`memory_unlink`, `memory_graph`, `memory_path`), `scope` remains
 optional and acts as a filter; when omitted, reads merge across both
 stores.
 
