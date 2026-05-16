@@ -61,7 +61,7 @@ describe('DAR-958 / AC-1: no projectStore non-null assertion remains', () => {
 });
 
 describe('DAR-958 / AC-2: no `as` coercions added in src/server/handlers.ts on this branch', () => {
-  it('git diff origin/main..HEAD -- src/server/handlers.ts shows zero added lines containing the word `as`', () => {
+  it('git diff origin/main..HEAD -- src/server/handlers.ts shows zero added lines containing the word `as`', (ctx) => {
     // Resolve the merge base so the diff reflects only this branch's
     // contribution, even when the local `origin/main` ref has moved on.
     let mergeBase: string;
@@ -70,9 +70,8 @@ describe('DAR-958 / AC-2: no `as` coercions added in src/server/handlers.ts on t
         encoding: 'utf8',
       }).trim();
     } catch {
-      // Fall back to `origin/main` itself; if neither exists, the test can
-      // legitimately bail since AC-2 only applies once the branch is
-      // diff-able against main.
+      // Fall back to `origin/main` itself; if neither exists the diff call
+      // below will fail and the test will skip honestly via `ctx.skip()`.
       mergeBase = 'origin/main';
     }
 
@@ -82,7 +81,10 @@ describe('DAR-958 / AC-2: no `as` coercions added in src/server/handlers.ts on t
         encoding: 'utf8',
       });
     } catch {
-      // If git is unavailable or the diff fails, skip rather than false-fail.
+      // If git is unavailable or the diff fails (e.g. shallow clone without
+      // origin/main on CI), skip the test rather than silently passing --
+      // vacuous passes hide tooling problems.
+      ctx.skip();
       return;
     }
 
