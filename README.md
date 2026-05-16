@@ -406,6 +406,30 @@ Example call:
 }
 ```
 
+### memory_bootstrap_project_store
+
+Bootstrap a project-scope memory store on the running MCP connection
+without reconnecting. Use this when `memory_save` with
+`scope: 'project'` fails with a `NO_PROJECT_STORE` error -- see
+[Bootstrap on approval](#bootstrap-on-approval-rewiring-a-project-store-mid-session)
+for the agent-driven flow.
+
+Input schema:
+
+| Argument        | Type    | Required | Description                                                                                                                                                                                                                                                     |
+| --------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `userConfirmed` | boolean | required | Must be exactly `true`. Truthy-but-not-strict values (the string `"true"`, the number `1`, `{}`, etc.) are rejected without coercion so an agent cannot bootstrap a project store without surfacing the request to the user.                                    |
+| `path`          | string  | optional | Explicit project root directory. When set, detection (the upward `.git/`/`.commonplace/` walk) is skipped and `<path>/.commonplace/memory` is used as the project store directory. The path must not equal `$HOME` or be an ancestor of `$HOME` (safety check). |
+
+Example call:
+
+```jsonc
+// memory_bootstrap_project_store
+{
+  "userConfirmed": true,
+}
+```
+
 ## Memory scopes
 
 Commonplace loads up to two memory stores side by side:
@@ -445,6 +469,72 @@ The project store is selected by the first matching step in this list:
    marker.
 4. None of the above -- user-only mode. Saves with `scope: 'project'`
    are rejected with a clear error.
+
+### Bootstrap on approval: rewiring a project store mid-session
+
+When an agent calls `memory_save` with `scope: 'project'` and the server
+is running in user-only mode, the call fails with a structured error
+carrying a stable machine-readable marker. The agent can recognise the
+marker, confirm with the user, and invoke a dedicated bootstrap tool
+that creates `<root>/.commonplace/memory` and re-binds the server's
+handler map on the same MCP connection -- no `/mcp` reconnect required.
+
+**The error.** The `CallToolResult` from the failing save returns:
+
+- `isError: true`
+- `structuredContent.code === "NO_PROJECT_STORE"` -- the stable token
+  the agent should match on (no regex on the prose message).
+- a text-content block that names `memory_bootstrap_project_store` so a
+  human reading the error gets actionable guidance.
+
+**The handshake.** On seeing `NO_PROJECT_STORE`, the agent should ask
+the user to confirm before doing anything. The bootstrap tool requires
+`userConfirmed: true` strictly (truthy-but-not-strict values like the
+string `"true"`, the number `1`, or `{}` are rejected without
+coercion) so the agent cannot silently create directories on the
+user's filesystem.
+
+**The tool.** After confirmation, the agent calls:
+
+```jsonc
+{
+  "name": "memory_bootstrap_project_store",
+  "arguments": { "userConfirmed": true },
+}
+```
+
+The tool re-runs the same project-root detection as boot (upward walk
+from `process.cwd()` for `.git/` or `.commonplace/`, stopping at
+`$HOME` exclusive), creates `<root>/.commonplace/memory` if missing,
+constructs a project `MemoryStore`, and re-binds the server's
+`CallTool` handler map. The next `memory_save({ scope: 'project' })`
+on the same MCP connection succeeds and writes the file under the
+newly-wired project store.
+
+**Path override.** If the workspace has no `.git/` or `.commonplace/`
+marker but the operator wants a project store anyway, pass an explicit
+`path`:
+
+```jsonc
+{
+  "name": "memory_bootstrap_project_store",
+  "arguments": {
+    "userConfirmed": true,
+    "path": "/abs/path/to/workspace",
+  },
+}
+```
+
+The `path` override still has to pass the `$HOME`-exclusive safety
+check -- bootstrap refuses paths equal to or above `$HOME` so it
+cannot clobber `~/.commonplace/memory` (your user store) or wire a
+project store at a parent directory.
+
+**When detection fails.** If `userConfirmed: true` is supplied but no
+project root can be detected and no `path` override is given, the
+tool returns a clear error explaining the two remediation paths:
+setting `COMMONPLACE_PROJECT_DIR` or creating a `.git/` /
+`.commonplace/` marker (e.g. via `git init`).
 
 ## Layered agent-memory nudge
 

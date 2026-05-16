@@ -94,7 +94,7 @@ const setupHarness = async (
 // --------------------------------------------------------------------------
 
 describe('ac-1: tool registration', () => {
-  it("TOOL_NAMES includes 'memory_graph' and 'memory_path' (and still includes the six prior tool names)", async () => {
+  it("TOOL_NAMES includes 'memory_graph' and 'memory_path' (and still includes the six prior tool names plus the bootstrap tool)", async () => {
     const { TOOL_NAMES } = await import('../src/server/tools.js');
     expect([...TOOL_NAMES]).toEqual([
       'memory_search',
@@ -105,6 +105,7 @@ describe('ac-1: tool registration', () => {
       'memory_unlink',
       'memory_graph',
       'memory_path',
+      'memory_bootstrap_project_store',
     ]);
   });
 

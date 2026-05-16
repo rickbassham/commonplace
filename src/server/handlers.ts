@@ -13,6 +13,7 @@
  * name.
  */
 
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -28,7 +29,37 @@ import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchHit, SearchOptions } from '../store/memory-store.js';
 import type { EdgeType, MemoryGraph } from '../store/graph.js';
 import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from './defaults.js';
+import { detectScope } from '../bin/scope.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
+
+/**
+ * Error subclass that carries a stable, machine-readable token at the
+ * `code` field. The server's CallTool dispatcher (see `./server.ts`)
+ * recognises this class and surfaces the code on the `structuredContent`
+ * field of the {@link CallToolResult} so an agent can match on the
+ * failure mode without regex on the prose message.
+ *
+ * The literal `code` value is the contract surface; once published, it
+ * must not be renamed without bumping a major version. The human-readable
+ * `message` is allowed to evolve.
+ */
+export class CodedError extends Error {
+  override readonly name = 'CodedError';
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+/**
+ * Stable token surfaced on `structuredContent.code` when `memory_save`
+ * (or any other store-dispatching handler) is asked to write to the
+ * project store but no project store is wired. Agents match on this
+ * literal to decide whether to invoke `memory_bootstrap_project_store`.
+ */
+export const ERROR_CODE_NO_PROJECT_STORE = 'NO_PROJECT_STORE';
 
 /**
  * The two store scopes the server can address.
@@ -429,8 +460,9 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
     const pinnedArg = validateBoolean(args.pinned, 'pinned', 'memory_save');
 
     if (scope === 'project' && projectStore === undefined) {
-      throw new Error(
-        `memory_save: scope='project' requires a project store, but none was detected -- the server is running in user-only mode (no COMMONPLACE_PROJECT_DIR, no roots/list root, no cwd .commonplace/memory marker)`,
+      throw new CodedError(
+        ERROR_CODE_NO_PROJECT_STORE,
+        `memory_save: scope='project' requires a project store, but none was detected -- the server is running in user-only mode (no COMMONPLACE_PROJECT_DIR, no roots/list root, no cwd .commonplace/memory marker). To bootstrap a project store on this connection, ask the user to confirm and then call the \`memory_bootstrap_project_store\` tool with \`{ userConfirmed: true }\`. The error code \`${ERROR_CODE_NO_PROJECT_STORE}\` is also exposed on this result's structuredContent.code field.`,
       );
     }
 
@@ -1879,4 +1911,252 @@ const isReachable = (
     }
   }
   return false;
+};
+
+// --------------------------------------------------------------------------
+// memory_bootstrap_project_store handler
+//
+// Wires the agent-driven bootstrap-on-approval flow: when `memory_save` with
+// `scope: 'project'` fails with `NO_PROJECT_STORE`, the agent (after explicit
+// user confirmation) calls this tool to re-detect a project root, create the
+// `<root>/.commonplace/memory` directory, construct a project `MemoryStore`,
+// and re-bind the running server's CallTool handler map so subsequent
+// project-scope saves succeed on the same MCP connection.
+// --------------------------------------------------------------------------
+
+/**
+ * Factory for building a fresh project {@link MemoryStore} (and its
+ * accompanying {@link MemoryGraph}). Threaded through the bootstrap
+ * environment by the bin so the handler does not need to know the
+ * constructor shape of either class (avoiding a direct import that would
+ * be hard to stub in unit tests).
+ */
+export interface ProjectStoreFactory {
+  (dir: string): Promise<{ store: MemoryStore; graph: MemoryGraph }>;
+}
+
+/**
+ * Callback the bootstrap handler invokes once a fresh project store has
+ * been constructed and scanned. The bin supplies an implementation that
+ * rebuilds the {@link ToolHandlerMap} via `createDefaultHandlers` and calls
+ * `installCallToolHandler(server, handlers)` so subsequent CallTool requests
+ * see the new project store. Keeping this as a callback avoids a circular
+ * import between `handlers.ts` and `server.ts` (which already imports from
+ * `handlers.ts` for `CodedError`).
+ */
+export interface RebindHandlersCallback {
+  (projectStore: MemoryStore, projectGraph: MemoryGraph): void;
+}
+
+/**
+ * Environment supplied to {@link createMemoryBootstrapHandler}. Carries:
+ *
+ *   - The detection inputs (`env`, `cwd`, `homedir`) the handler hands to
+ *     {@link detectScope} so the project-root walk matches the boot path
+ *     exactly (no duplicate walk implementation).
+ *   - The {@link ProjectStoreFactory} the handler uses to build a fresh
+ *     project store once a root is resolved.
+ *   - The {@link RebindHandlersCallback} the handler invokes to swap the
+ *     server's CallTool handler map post-bootstrap.
+ *   - An optional `mkdir` probe so tests can intercept directory creation
+ *     without touching real disk.
+ */
+export interface BootstrapEnvironment {
+  /**
+   * Environment-variable snapshot threaded into {@link detectScope}. The
+   * bin passes `process.env`; tests pass a hand-built object.
+   */
+  env: NodeJS.ProcessEnv;
+  /**
+   * Working directory the cwd-walk starts from. The bin passes
+   * `process.cwd()`; tests pass a tmp dir.
+   */
+  cwd: string;
+  /**
+   * Home directory used to bound the upward walk and to enforce the
+   * $HOME-exclusive safety check on the explicit `path` override. The
+   * bin passes `os.homedir()`; tests pass a fake path.
+   */
+  homedir: string;
+  /**
+   * Factory that constructs a fresh project store and its graph for the
+   * resolved directory. The bin wires this so the store shares the
+   * existing {@link EmbedderShape} instance (the project store reuses the
+   * user store's embedder by contract).
+   */
+  createProjectStore: ProjectStoreFactory;
+  /**
+   * Called once the project store is constructed and scanned. The bin
+   * uses this to rebuild the CallTool handler map and call
+   * `installCallToolHandler` on the running server. Tests can supply a
+   * spy.
+   */
+  rebindHandlers: RebindHandlersCallback;
+  /**
+   * `mkdir -p` probe used to create the project memory directory before
+   * the store is constructed. Defaults to `node:fs/promises.mkdir(..., {
+   * recursive: true })`. Tests can override to intercept disk writes.
+   */
+  mkdir?: (path: string) => Promise<void>;
+}
+
+/** Return shape for a successful bootstrap. */
+export interface MemoryBootstrapResult {
+  /** The detected (or user-supplied) project root path. */
+  projectRoot: string;
+  /** The created project memory directory (`<projectRoot>/.commonplace/memory`). */
+  projectMemoryDir: string;
+  /** Which branch produced the project root: `'env'`, `'cwd'`, `'path'`. */
+  source: 'env' | 'cwd' | 'path';
+}
+
+/**
+ * Construct the `memory_bootstrap_project_store` handler. The handler is
+ * deliberately strict about its inputs:
+ *
+ *   - `userConfirmed` must be `=== true`. Truthy-but-not-strict-true values
+ *     (`'true'`, `1`, `{}`, etc.) are rejected so an agent cannot
+ *     bootstrap a project store without surfacing the request to the user.
+ *   - `path`, when supplied, must be a string. It bypasses the walk but
+ *     still has to pass the $HOME-exclusive safety check (the path must
+ *     not equal `$HOME` or be an ancestor of `$HOME`).
+ *
+ * On success the handler creates `<root>/.commonplace/memory` (no-op if it
+ * already exists), constructs the project store via the supplied factory,
+ * scans it, and calls the rebind callback to re-bind the server's
+ * CallTool handler map.
+ *
+ * Failures (no detection result; $HOME safety refusal; store construction
+ * throw) propagate as plain `Error`s through the CallTool dispatcher's
+ * standard `isError=true` envelope. The bootstrap path does NOT mint a
+ * fresh {@link CodedError} -- there is only one stable error code surface
+ * on this server today (`NO_PROJECT_STORE`, defined for `memory_save`),
+ * and bootstrap failures are operator-actionable from the human-readable
+ * message alone.
+ */
+export const createMemoryBootstrapHandler = (env: BootstrapEnvironment): ToolHandler => {
+  const mkdirProbe = env.mkdir ?? ((p: string) => mkdir(p, { recursive: true }).then(() => {}));
+  return async (rawArgs: ToolArguments): Promise<MemoryBootstrapResult> => {
+    const args = requireArgsObject(rawArgs, 'memory_bootstrap_project_store');
+    // Strict-true gate. We deliberately do NOT use `validateBoolean` here
+    // (which accepts both `true` and `false`) -- the AC requires
+    // rejection of any value that is not the literal boolean `true`.
+    if (!Object.prototype.hasOwnProperty.call(args, 'userConfirmed')) {
+      throw new Error(
+        'memory_bootstrap_project_store: field `userConfirmed` is required and must be strictly `true`',
+      );
+    }
+    if (args.userConfirmed !== true) {
+      throw new Error(
+        `memory_bootstrap_project_store: field \`userConfirmed\` must be strictly \`true\` (no truthy coercion); got ${JSON.stringify(args.userConfirmed)}`,
+      );
+    }
+
+    // Optional explicit path override. When set, detection is skipped but
+    // the $HOME-exclusive safety check still applies.
+    let pathOverride: string | undefined;
+    if (args.path !== undefined) {
+      if (typeof args.path !== 'string') {
+        throw new Error(
+          `memory_bootstrap_project_store: field \`path\` must be a string when supplied; got ${JSON.stringify(args.path)}`,
+        );
+      }
+      if (args.path.length === 0) {
+        throw new Error(
+          'memory_bootstrap_project_store: field `path` must be a non-empty string when supplied',
+        );
+      }
+      pathOverride = args.path;
+    }
+
+    let projectRoot: string;
+    let source: 'env' | 'cwd' | 'path';
+    if (pathOverride !== undefined) {
+      // Path override branch: enforce $HOME-exclusive safety, bypass walk.
+      if (isHomedirOrAncestor(pathOverride, env.homedir)) {
+        throw new Error(
+          `memory_bootstrap_project_store: refusing to bootstrap at ${JSON.stringify(pathOverride)} -- the $HOME-exclusive safety check rejects $HOME and any ancestor of $HOME (which would either clobber the user store at ~/.commonplace/memory or wire a project store at a parent directory)`,
+        );
+      }
+      projectRoot = pathOverride;
+      source = 'path';
+    } else {
+      // Detection branch: reuse the same scope.ts entry point boot.ts uses.
+      // Pass `roots: null` because roots/list has already happened during
+      // the initial boot; this bootstrap path only re-runs the env + cwd
+      // walk steps. The walk's own $HOME-exclusive guard makes the safety
+      // check redundant for the cwd branch, but env-supplied paths are
+      // not subject to it (matching the env override semantics) so the
+      // bin is expected to set COMMONPLACE_PROJECT_DIR with care.
+      const detected = detectScope({
+        env: env.env,
+        roots: null,
+        cwd: env.cwd,
+        homedir: env.homedir,
+      });
+      if (detected.projectDir === null) {
+        throw new Error(
+          'memory_bootstrap_project_store: no project root detected. The upward walk from cwd found no `.git/` or `.commonplace/` marker before reaching $HOME, and no `COMMONPLACE_PROJECT_DIR` env-var override was set. To remediate: (a) set `COMMONPLACE_PROJECT_DIR` to an explicit project directory and retry, (b) `git init` the workspace (or create a `.commonplace/` marker directory) so the walk finds a marker, or (c) pass an explicit `path` argument to this tool naming the directory to use as the project root.',
+        );
+      }
+      // `detected.projectDir` is `<root>/.commonplace/memory`; recover the
+      // root by stripping the conventional suffix. We compare against the
+      // suffix literal so an env override whose value doesn't end in the
+      // suffix (the env-var path is used verbatim) still works.
+      const memoryDir = detected.projectDir;
+      const suffix = `${'.commonplace'}/${'memory'}`;
+      if (memoryDir.endsWith(`/${suffix}`) || memoryDir.endsWith(`\\${suffix}`)) {
+        projectRoot = memoryDir.slice(0, -(suffix.length + 1));
+      } else {
+        // Env override: treat the value as the literal project memory
+        // dir and synthesize a logical "root" by stripping the dir
+        // segment when possible; otherwise report the memory dir itself
+        // as the root (the directory the operator named).
+        projectRoot = memoryDir;
+      }
+      source = detected.source === 'env' ? 'env' : 'cwd';
+    }
+
+    // Create `<root>/.commonplace/memory` if missing. For the path-override
+    // and cwd branches we synthesize the conventional layout; for env
+    // overrides whose value is already a full memory-dir path, we use it
+    // verbatim. The `mkdir -p` is idempotent so a pre-existing directory
+    // is a no-op.
+    let projectMemoryDir: string;
+    if (source === 'env') {
+      // env override branch: the env var names the memory dir directly.
+      projectMemoryDir = projectRoot;
+    } else {
+      projectMemoryDir = join(projectRoot, '.commonplace', 'memory');
+    }
+    await mkdirProbe(projectMemoryDir);
+
+    // Construct the project store + graph, scan it (no-op when the dir is
+    // empty), and rebind the handler map.
+    const { store, graph } = await env.createProjectStore(projectMemoryDir);
+    await store.scan();
+    env.rebindHandlers(store, graph);
+
+    return {
+      projectRoot,
+      projectMemoryDir,
+      source,
+    };
+  };
+};
+
+/**
+ * `isHomedirOrAncestor` -- module-private mirror of the same predicate in
+ * `src/bin/scope.ts`. Used by the bootstrap handler to gate the explicit
+ * `path` override (which bypasses {@link detectScope}'s built-in walk
+ * guard). Kept in lockstep with the scope-module version; the bootstrap
+ * path's test coverage (ac-5) is the regression gate against drift.
+ */
+const isHomedirOrAncestor = (candidate: string, homedir: string): boolean => {
+  if (candidate === homedir) return true;
+  // Match either POSIX or Windows path separators -- the bootstrap handler
+  // is exercised on both.
+  const sep = candidate.includes('\\') && !candidate.includes('/') ? '\\' : '/';
+  const candidateWithSep = candidate.endsWith(sep) ? candidate : candidate + sep;
+  return homedir.startsWith(candidateWithSep);
 };

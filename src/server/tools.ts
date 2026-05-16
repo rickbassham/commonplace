@@ -23,6 +23,7 @@ import {
   GRAPH_DIRECTIONS,
   GRAPH_EDGE_TYPES,
   SCOPES,
+  createMemoryBootstrapHandler,
   createMemoryDeleteHandler,
   createMemoryGraphHandler,
   createMemoryLinkHandler,
@@ -31,6 +32,7 @@ import {
   createMemorySaveHandler,
   createMemorySearchHandler,
   createMemoryUnlinkHandler,
+  type BootstrapEnvironment,
 } from './handlers.js';
 
 /** The exact tool names this server exposes, in registration order. */
@@ -43,6 +45,7 @@ export const TOOL_NAMES = [
   'memory_unlink',
   'memory_graph',
   'memory_path',
+  'memory_bootstrap_project_store',
 ] as const;
 
 /** Element type of {@link TOOL_NAMES}. */
@@ -171,6 +174,15 @@ export interface CreateDefaultHandlersOptions {
    * here.
    */
   connectednessBoost?: number;
+  /**
+   * Bootstrap-tool environment. When supplied, the
+   * `memory_bootstrap_project_store` tool is wired to a real handler that
+   * can detect a project root and re-bind the running server's handler map.
+   * When omitted, the tool falls back to the not-implemented stub -- useful
+   * for unit tests that exercise the registry's shape without a real
+   * server or filesystem.
+   */
+  bootstrapEnv?: BootstrapEnvironment;
 }
 
 /**
@@ -194,6 +206,7 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
       memory_unlink: notImplemented,
       memory_graph: notImplemented,
       memory_path: notImplemented,
+      memory_bootstrap_project_store: notImplemented,
     };
   }
   const handlerOpts = { userStore, projectStore };
@@ -218,6 +231,14 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     expansionDecay: options.expansionDecay,
     connectednessBoost: options.connectednessBoost,
   };
+  // The bootstrap handler is wired only when the caller supplied a
+  // `bootstrapEnv` (the bin does this; unit tests that exercise the
+  // registry's shape leave it unset and fall through to the
+  // not-implemented stub).
+  const bootstrap: ToolHandler =
+    options.bootstrapEnv === undefined
+      ? notImplemented
+      : createMemoryBootstrapHandler(options.bootstrapEnv);
   return {
     memory_search: createMemorySearchHandler(searchOpts),
     memory_save: createMemorySaveHandler(handlerOpts),
@@ -227,6 +248,7 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     memory_unlink: createMemoryUnlinkHandler(handlerOpts),
     memory_graph: createMemoryGraphHandler(graphOpts),
     memory_path: createMemoryPathHandler(graphOpts),
+    memory_bootstrap_project_store: bootstrap,
   };
 }
 
@@ -467,6 +489,26 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
         },
       },
       required: ['name'],
+    },
+  },
+  memory_bootstrap_project_store: {
+    description:
+      "Agent memory: Bootstrap a project-scope memory store on the running MCP connection. Use this after `memory_save` with `scope: 'project'` returns a `NO_PROJECT_STORE` error: confirm with the user that they want a project store created, then call this tool with `{ userConfirmed: true }`. The tool re-runs project-root detection (upward walk for `.git/` or `.commonplace/`, stopping at `$HOME` exclusive), creates `<root>/.commonplace/memory` if missing, and re-binds the server's handler map so subsequent project-scope saves succeed on the same connection. Pass an explicit `path` to override detection for a markerless directory; the path must not be `$HOME` or an ancestor of it. The handler rejects calls where `userConfirmed` is not strictly `true` (no truthy coercion).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        userConfirmed: {
+          type: 'boolean',
+          description:
+            'Must be exactly `true`. The handler rejects truthy-but-not-strict values (no coercion of `1`, `"true"`, etc.) so an agent cannot bootstrap a project store without surfacing the request to the user. The agent SHOULD only set this after explicit user confirmation.',
+        },
+        path: {
+          type: 'string',
+          description:
+            'Optional explicit project root directory. When set, detection is skipped and `<path>/.commonplace/memory` is used as the project store directory. The path must still pass the $HOME-exclusive safety check (it must not equal $HOME or any ancestor of $HOME).',
+        },
+      },
+      required: ['userConfirmed'],
     },
   },
   memory_path: {

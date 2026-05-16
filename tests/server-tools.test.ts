@@ -27,22 +27,23 @@ const EXPECTED_NAMES = [
   'memory_unlink',
   'memory_graph',
   'memory_path',
+  'memory_bootstrap_project_store',
 ] as const;
 
 describe('ac-1: tool registration', () => {
-  it('registers exactly eight tools whose names are memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path (set equality, no extras, no duplicates)', () => {
+  it('registers exactly nine tools whose names are memory_search, memory_save, memory_list, memory_delete, memory_link, memory_unlink, memory_graph, memory_path, memory_bootstrap_project_store (set equality, no extras, no duplicates)', () => {
     const defs = buildToolDefinitions();
     const names = defs.map((d) => d.name);
-    expect(names).toHaveLength(8);
-    expect(new Set(names).size).toBe(8); // no duplicates
+    expect(names).toHaveLength(9);
+    expect(new Set(names).size).toBe(9); // no duplicates
     expect(new Set(names)).toEqual(new Set(EXPECTED_NAMES));
   });
 
   it('exposes the tool registry via a typed module export so sibling issues can import it without going through the running server', () => {
     // Both the constant and the builder must be importable and typed.
-    expect(TOOL_NAMES).toEqual(EXPECTED_NAMES);
+    expect(new Set(TOOL_NAMES)).toEqual(new Set(EXPECTED_NAMES));
     const defs: readonly ToolDefinition[] = buildToolDefinitions();
-    expect(defs).toHaveLength(8);
+    expect(defs).toHaveLength(9);
     // Each entry has the structural fields sibling issues will rely on.
     for (const def of defs) {
       expect(typeof def.name).toBe('string');
@@ -54,9 +55,9 @@ describe('ac-1: tool registration', () => {
 });
 
 describe('ac-2: ListTools schema shape and stub rejection', () => {
-  it('ListTools response contains eight entries; each entry has a non-empty name, description, and inputSchema with type === "object"', () => {
+  it('ListTools response contains nine entries; each entry has a non-empty name, description, and inputSchema with type === "object"', () => {
     const result = listTools();
-    expect(result.tools).toHaveLength(8);
+    expect(result.tools).toHaveLength(9);
     for (const tool of result.tools) {
       expect(tool.name.length).toBeGreaterThan(0);
       expect(tool.description?.length ?? 0).toBeGreaterThan(0);
@@ -174,6 +175,7 @@ function makeSpiedHandlers(): {
     memory_unlink: make(),
     memory_graph: make(),
     memory_path: make(),
+    memory_bootstrap_project_store: make(),
   };
   const handlers: ToolHandlerMap = { ...spies };
   return { handlers, spies };
