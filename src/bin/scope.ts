@@ -6,7 +6,7 @@
  * detectable). This module owns the priority order for project-root
  * detection so the bin entry can stay declarative.
  *
- * # Detection priority (env > roots > cwd > none)
+ * # Detection priority (env > roots > cwd-walk > none)
  *
  *   1. `COMMONPLACE_PROJECT_DIR` -- explicit override; always wins. The path
  *      need not exist yet; the project store auto-creates on first save.
@@ -14,8 +14,17 @@
  *      resolves to `<root>/.commonplace/memory`. Non-`file://` roots are
  *      skipped. If the request rejects (client doesn't advertise the
  *      capability, or returns an error), we fall through.
- *   3. `process.cwd()` -- if `<cwd>/.commonplace/memory` exists on disk,
- *      that's the project store.
+ *   3. Upward walk from `process.cwd()` -- at each directory check for a
+ *      `.git/` or `.commonplace/` marker; the first match wins and the
+ *      project store path is `<dir>/.commonplace/memory`. The walk stops
+ *      at `os.homedir()` exclusive (with realpath normalization on both
+ *      sides) so `~/.commonplace/` is never matched as a project root and
+ *      a dotfile-as-git-repo home setup does not falsely identify `$HOME`
+ *      as a project. Ancestors of `$HOME` are likewise ineligible. The
+ *      walk also terminates at the filesystem root (parent === current)
+ *      without crossing into infinite recursion. The project memory
+ *      directory itself is auto-created on first project-scope save when
+ *      it does not yet exist.
  *   4. None of the above -- user-only mode (no project store constructed).
  *
  * # User store
@@ -34,9 +43,9 @@
  *     specifies detection "after init" only
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -61,9 +70,19 @@ export const ENV_DEPRECATED_MEMORY_DIR = 'COMMONPLACE_MEMORY_DIR';
 
 /**
  * Conventional name of the per-project memory directory. Looked up under a
- * detected project root (via `roots/list` or cwd).
+ * detected project root (via `roots/list` or cwd walk).
  */
 export const PROJECT_MEMORY_DIRNAME = '.commonplace/memory';
+
+/**
+ * Marker names accepted by the upward cwd walk. A directory that contains
+ * either of these is treated as a project root.
+ *
+ * `.git` is matched whether it is a directory (a normal clone) or a file
+ * (the `gitdir:` pointer used by git worktrees). The probe uses `existsSync`
+ * which accepts both, and that is desirable: a worktree IS a project root.
+ */
+export const PROJECT_MARKERS = ['.git', '.commonplace'] as const;
 
 /** Default user memory directory when no env override is set. */
 export const defaultUserDir = (): string => join(homedir(), '.commonplace', 'memory');
@@ -93,15 +112,30 @@ export interface ScopeDetectionInput {
    */
   roots: ReadonlyArray<RootEntry> | null;
   /**
-   * Working directory to consult for the cwd-marker fallback. Pass
-   * `process.cwd()` from the bin; tests pass a tmp dir.
+   * Working directory the cwd-walk starts from. Pass `process.cwd()` from
+   * the bin; tests pass a tmp dir.
    */
   cwd: string;
+  /**
+   * Home directory used to bound the upward walk. The walk stops before
+   * entering `homedir` (i.e. `homedir` itself and any ancestor of `homedir`
+   * are ineligible as project roots, regardless of markers). Pass
+   * `os.homedir()` from the bin; tests pass a fake path.
+   */
+  homedir: string;
   /**
    * Filesystem existence probe. Defaults to `node:fs.existsSync`. Tests can
    * override to avoid touching real paths.
    */
   exists?: (path: string) => boolean;
+  /**
+   * Realpath resolver used to normalize `cwd` and `homedir` before the
+   * upward walk so symlinked home directories (rare but real on macOS / CI
+   * runners) compare equal to their target. Defaults to
+   * `node:fs.realpathSync`; on `ENOENT` for either input we fall back to
+   * the unnormalized path. Tests can override to avoid touching real paths.
+   */
+  realpath?: (path: string) => string;
 }
 
 /** Result of {@link detectScope}. */
@@ -180,15 +214,90 @@ const projectDirFromRoots = (roots: ReadonlyArray<RootEntry>): string | null => 
 };
 
 /**
- * Detect the layered store configuration from the priority order:
- * env > roots > cwd > none. See module-level docs for the contract.
+ * Best-effort realpath: returns the resolver's output when it succeeds,
+ * otherwise the input path unchanged. The catch is unconditional: any
+ * resolver error (ENOENT for synthetic paths in unit tests, EACCES on
+ * sandboxed CI runners, etc.) falls back to the unnormalized path, which is
+ * the conservative choice.
+ */
+const safeRealpath = (resolver: (p: string) => string, path: string): string => {
+  try {
+    return resolver(path);
+  } catch {
+    return path;
+  }
+};
+
+/**
+ * Return true when `candidate` is `homedir` itself or an ancestor of
+ * `homedir`. Such directories are ineligible as project roots per ac-2:
+ * `$HOME` must never resolve to a project root, even if it (or one of its
+ * ancestors) contains a `.git/` or `.commonplace/` marker.
  *
- * Pure function: no I/O beyond the optional `exists` probe (used only for
- * the cwd-marker step). The user dir is always populated; the project dir
- * may be `null`.
+ * The check is path-string based and runs on realpath-normalized inputs so
+ * symlinked home directories compare equal to their target.
+ */
+const isHomedirOrAncestor = (candidate: string, normalizedHome: string): boolean => {
+  if (candidate === normalizedHome) return true;
+  // Ancestor check: `${candidate}${sep}` is a strict prefix of homedir's
+  // path. The trailing separator prevents matching e.g. `/foo` against
+  // `/foobar/...`.
+  const candidateWithSep = candidate.endsWith(sep) ? candidate : candidate + sep;
+  return normalizedHome.startsWith(candidateWithSep);
+};
+
+/**
+ * Walk upward from `cwd` looking for a `.git/` or `.commonplace/` marker.
+ * Stops at `homedir` exclusive (and at ancestors of `homedir`) and at the
+ * filesystem root. Returns the conventional `<dir>/.commonplace/memory`
+ * path on the first match, or `null` when no eligible marker is found.
+ */
+const projectDirFromCwdWalk = (
+  cwd: string,
+  homeDir: string,
+  exists: (path: string) => boolean,
+  realpath: (path: string) => string,
+): string | null => {
+  const normalizedHome = safeRealpath(realpath, homeDir);
+  let current = safeRealpath(realpath, cwd);
+
+  // Guard against an infinite loop when cwd === filesystem root and the
+  // termination check `parent === current` is the only thing that ends the
+  // walk. The loop body always either returns or advances `current` to
+  // its parent until parent === current.
+  while (true) {
+    if (isHomedirOrAncestor(current, normalizedHome)) {
+      // The candidate is $HOME or an ancestor of $HOME -- ineligible. We
+      // must stop the walk here without inspecting `current` for markers,
+      // because ac-6 demands cwd === $HOME return null even when $HOME
+      // contains a marker.
+      return null;
+    }
+    for (const marker of PROJECT_MARKERS) {
+      if (exists(join(current, marker))) {
+        return join(current, PROJECT_MEMORY_DIRNAME);
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      // Reached filesystem root without finding a marker.
+      return null;
+    }
+    current = parent;
+  }
+};
+
+/**
+ * Detect the layered store configuration from the priority order:
+ * env > roots > cwd-walk > none. See module-level docs for the contract.
+ *
+ * Pure-ish function: I/O is limited to the injectable `exists` and
+ * `realpath` probes (used only for the cwd-walk step). The user dir is
+ * always populated; the project dir may be `null`.
  */
 export function detectScope(input: ScopeDetectionInput): ScopeDetectionResult {
   const exists = input.exists ?? existsSync;
+  const realpath = input.realpath ?? realpathSync;
   const userResolved = resolveUserDir(input.env);
 
   // 1. Env override
@@ -215,12 +324,13 @@ export function detectScope(input: ScopeDetectionInput): ScopeDetectionResult {
     }
   }
 
-  // 3. cwd marker
-  const cwdMarker = join(input.cwd, PROJECT_MEMORY_DIRNAME);
-  if (exists(cwdMarker)) {
+  // 3. Upward walk from cwd, accepting .git or .commonplace as markers and
+  //    stopping at $HOME (exclusive) or the filesystem root.
+  const fromWalk = projectDirFromCwdWalk(input.cwd, input.homedir, exists, realpath);
+  if (fromWalk !== null) {
     return {
       userDir: userResolved.userDir,
-      projectDir: cwdMarker,
+      projectDir: fromWalk,
       source: 'cwd',
       usedDeprecatedMemoryDir: userResolved.usedDeprecatedMemoryDir,
     };

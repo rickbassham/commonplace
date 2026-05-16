@@ -44,7 +44,11 @@
  *   1. COMMONPLACE_PROJECT_DIR (explicit override; always wins)
  *   2. MCP `roots/list` response after init -- first file:// root resolves
  *      to `<root>/.commonplace/memory`
- *   3. process.cwd() -- if `<cwd>/.commonplace/memory` exists, use it
+ *   3. Upward walk from process.cwd() -- the first ancestor directory that
+ *      contains a `.git/` or `.commonplace/` marker is the project root and
+ *      `<root>/.commonplace/memory` becomes the project store path. The
+ *      walk stops at `$HOME` exclusive (and at the filesystem root); the
+ *      memory directory is auto-created on first project-scope save.
  *   4. None of the above -- user-only mode (no project store)
  *
  * The bin itself is a thin shell over {@link bootServer}: it constructs a
