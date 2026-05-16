@@ -3,6 +3,7 @@ name: commonplace_app_structure
 description: Source tree layout and key architectural facts for the commonplace MCP server
 type: project
 ---
+
 Commonplace is a local-first memory MCP server. Source is split by responsibility under `src/`.
 
 ## Directory layout
