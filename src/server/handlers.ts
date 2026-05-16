@@ -149,20 +149,41 @@ export interface HandlerOptions {
 }
 
 /**
- * Resolve {@link HandlerOptions} into the canonical
- * `{ userStore, projectStore? }` pair the handler bodies expect. Throws
- * when neither `store` nor `userStore` was supplied -- handlers cannot run
- * without at least the user store.
+ * Internal discriminated-union representation of the resolved stores. The
+ * handler factory's public {@link HandlerOptions} stays
+ * `{ userStore, projectStore? }`, but each factory normalises to this union
+ * once via {@link resolveStores} so use sites can `switch (stores.kind)`
+ * and the compiler discharges the `projectStore !== undefined` guard
+ * structurally -- removing the need for `projectStore` non-null assertions.
+ *
+ * Two shapes:
+ *
+ *   - `user-only` -- no project store wired (the legacy `{ store }` shape
+ *     and the dual shape with `projectStore` omitted both resolve here).
+ *   - `dual` -- both user and project stores are wired.
+ *
+ * Not exported: the union is an implementation detail of the handler
+ * bodies. Callers continue to pass {@link HandlerOptions}.
  */
-const resolveStores = (
-  opts: HandlerOptions,
-  toolName: string,
-): { userStore: MemoryStore; projectStore: MemoryStore | undefined } => {
+type ResolvedStores =
+  | { kind: 'user-only'; user: MemoryStore }
+  | { kind: 'dual'; user: MemoryStore; project: MemoryStore };
+
+/**
+ * Resolve {@link HandlerOptions} into the canonical {@link ResolvedStores}
+ * discriminated union the handler bodies expect. Throws when neither
+ * `store` nor `userStore` was supplied -- handlers cannot run without at
+ * least the user store.
+ */
+const resolveStores = (opts: HandlerOptions, toolName: string): ResolvedStores => {
   const userStore = opts.userStore ?? opts.store;
   if (userStore === undefined) {
     throw new Error(`${toolName}: handler factory requires a userStore (or legacy 'store') option`);
   }
-  return { userStore, projectStore: opts.projectStore };
+  if (opts.projectStore === undefined) {
+    return { kind: 'user-only', user: userStore };
+  }
+  return { kind: 'dual', user: userStore, project: opts.projectStore };
 };
 
 /**
@@ -448,7 +469,7 @@ const validateMemoryType = (raw: unknown, toolName: string): MemoryType => {
  * into the store's internals.
  */
 export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_save');
+  const stores = resolveStores(opts, 'memory_save');
   return async (rawArgs: ToolArguments): Promise<MemorySaveResult> => {
     const args = requireArgsObject(rawArgs, 'memory_save');
     const name = requireString(args, 'name', 'memory_save');
@@ -459,14 +480,21 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
     const scope = requireScope(args.scope, 'memory_save');
     const pinnedArg = validateBoolean(args.pinned, 'pinned', 'memory_save');
 
-    if (scope === 'project' && projectStore === undefined) {
-      throw new CodedError(
-        ERROR_CODE_NO_PROJECT_STORE,
-        `memory_save: scope='project' requires a project store, but none was detected -- the server is running in user-only mode (no COMMONPLACE_PROJECT_DIR, no roots/list root, no cwd .commonplace/memory marker). To bootstrap a project store on this connection, ask the user to confirm and then call the \`memory_bootstrap_project_store\` tool with \`{ userConfirmed: true }\`. The error code \`${ERROR_CODE_NO_PROJECT_STORE}\` is also exposed on this result's structuredContent.code field.`,
-      );
+    // Resolve the write target by narrowing on the stores' kind. For
+    // `scope: 'project'` saves the project store must be wired; otherwise
+    // surface the bootstrap error. For `scope: 'user'` either kind works.
+    let target: MemoryStore;
+    if (scope === 'project') {
+      if (stores.kind !== 'dual') {
+        throw new CodedError(
+          ERROR_CODE_NO_PROJECT_STORE,
+          `memory_save: scope='project' requires a project store, but none was detected -- the server is running in user-only mode (no COMMONPLACE_PROJECT_DIR, no roots/list root, no cwd .commonplace/memory marker). To bootstrap a project store on this connection, ask the user to confirm and then call the \`memory_bootstrap_project_store\` tool with \`{ userConfirmed: true }\`. The error code \`${ERROR_CODE_NO_PROJECT_STORE}\` is also exposed on this result's structuredContent.code field.`,
+        );
+      }
+      target = stores.project;
+    } else {
+      target = stores.user;
     }
-
-    const target = scope === 'project' ? projectStore! : userStore;
     // Preserve-on-update for `pinned`: when the caller omits the field on an
     // existing memory, the prior on-disk value carries forward. When the
     // memory is new, the default is `false`.
@@ -507,7 +535,9 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
  * corpus consistently across both tools.
  */
 export const createMemoryListHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_list');
+  const stores = resolveStores(opts, 'memory_list');
+  const userStore = stores.user;
+  const projectStore = stores.kind === 'dual' ? stores.project : undefined;
   return async (rawArgs: ToolArguments): Promise<MemoryListResult> => {
     const args = requireArgsObject(rawArgs, 'memory_list');
     let filter: MemoryType | undefined;
@@ -792,7 +822,9 @@ const applyBoost = (score: number, alpha: number, inboundCount: number): number 
  * edges in `match.relations`.
  */
 export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_search');
+  const stores = resolveStores(opts, 'memory_search');
+  const userStore = stores.user;
+  const projectStore = stores.kind === 'dual' ? stores.project : undefined;
   // Resolve the default top-k once at handler-construction time. When the
   // bin supplies one (resolved from `COMMONPLACE_DEFAULT_LIMIT`), it
   // wins; otherwise we fall back to the store-layer default so this
@@ -881,9 +913,18 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // expansion pass can find the right graph for each direct-hit scope
     // without re-walking the `targets` array per hit.
     const graphByScope = new Map<Scope, MemoryGraph | undefined>();
+    // Per-scope MemoryStore lookup. Mirrors `graphByScope` so the expansion
+    // pass and the projection pass can resolve "give me the store for the
+    // scope that produced this hit" without re-deriving it from the
+    // top-level `userStore`/`projectStore` -- which previously forced a
+    // non-null assertion at sites that statically only run when
+    // the project scope was queried (and therefore wired). The map is the
+    // structural narrowing the discriminated union enables.
+    const storeByScope = new Map<Scope, MemoryStore>();
 
     for (const target of targets) {
       graphByScope.set(target.scope, target.graph);
+      storeByScope.set(target.scope, target.store);
 
       const searchOpts: SearchOptions = {};
       if (callerLimit !== undefined) {
@@ -972,18 +1013,21 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     // expansion's `direct.score * expansionDecay` propagates the boost
     // through to expanded neighbors -- expanded entries decay the boosted
     // direct-hit score, not raw cosine.
-    interface Candidate {
-      kind: 'direct' | 'expanded';
-      name: string;
-      scope: Scope;
-      score: number;
-      // For direct candidates, the underlying SearchHit drives the
-      // projection. For expanded candidates, we need the entry separately
-      // (the graph doesn't carry it) plus the via metadata.
-      hit?: SearchHit;
-      entry?: MemoryEntry;
-      via?: { source: string; edge: EdgeType };
-    }
+    // `Candidate` is a discriminated union so the projection loop can
+    // narrow on `kind` and reach `hit`/`entry` without a non-null
+    // assertion. Direct candidates carry the underlying SearchHit; expanded
+    // candidates carry the resolved MemoryEntry plus the `via` metadata
+    // describing which direct hit's edge surfaced them.
+    type Candidate =
+      | { kind: 'direct'; name: string; scope: Scope; score: number; hit: SearchHit }
+      | {
+          kind: 'expanded';
+          name: string;
+          scope: Scope;
+          score: number;
+          entry: MemoryEntry;
+          via: { source: string; edge: EdgeType };
+        };
 
     const candidates: Candidate[] = boostedHits.map(({ hit, scope: sc, score }) => ({
       kind: 'direct',
@@ -1033,17 +1077,22 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
 
         // Lazy-build the per-scope name -> entry map on first use. The
         // store's `all()` is already an array reference; turning it into
-        // a map once per scope is the only allocation we need.
+        // a map once per scope is the only allocation we need. We read
+        // the per-scope store from `storeByScope` -- populated for every
+        // queried target above, so `direct.scope` (which can only be a
+        // scope we queried) is guaranteed present. The undefined branch
+        // is a "should never happen" invariant guard, paralleling the
+        // `supersededMap` check below (f-2).
         let entryMap = entriesByScope.get(direct.scope);
         if (entryMap === undefined) {
-          const corpus =
-            direct.scope === 'user'
-              ? userStore.all()
-              : projectStore !== undefined
-                ? projectStore.all()
-                : [];
+          const directStore = storeByScope.get(direct.scope);
+          if (directStore === undefined) {
+            throw new Error(
+              `internal invariant violated: storeByScope missing scope '${direct.scope}' during one-hop expansion`,
+            );
+          }
           const m = new Map<string, MemoryEntry>();
-          for (const e of corpus) m.set(e.name, e);
+          for (const e of directStore.all()) m.set(e.name, e);
           entryMap = m;
           entriesByScope.set(direct.scope, m);
         }
@@ -1123,9 +1172,9 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
     const limited = candidates.slice(0, sliceLimit);
 
     const matches: MemorySearchMatch[] = limited.map((c) => {
-      // `kind === 'direct'` always has `hit` set (we constructed it that
-      // way above); `kind === 'expanded'` always has `entry` set.
-      const memory = c.kind === 'direct' ? c.hit!.memory : c.entry!;
+      // `Candidate` is a discriminated union; narrow on `kind` so the
+      // compiler discharges the `hit`/`entry` access structurally.
+      const memory = c.kind === 'direct' ? c.hit.memory : c.entry;
       const projection: MemorySearchMatch = {
         name: memory.name,
         type: memory.type,
@@ -1135,7 +1184,7 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
         relations: memory.relations.map((r) => ({ to: r.to, type: r.type })),
         scope: c.scope,
       };
-      if (c.kind === 'expanded' && c.via !== undefined) {
+      if (c.kind === 'expanded') {
         projection.via = { source: c.via.source, edge: c.via.edge };
       }
       if (includeSuperseded) {
@@ -1151,9 +1200,17 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
           // `supersededBy` annotations on matches, so build it lazily here
           // for any scope we somehow missed (should not happen given the
           // current targets construction, but the lazy build keeps the
-          // invariant local).
-          const corpus = c.scope === 'user' ? userStore.all() : projectStore!.all();
-          supersededMap = buildSupersededMap(corpus);
+          // invariant local). Reads the per-scope store from
+          // `storeByScope` to discharge the project-store guard
+          // structurally; the undefined branch is the same "should never
+          // happen" invariant guard used in the expansion entryMap build.
+          const matchStore = storeByScope.get(c.scope);
+          if (matchStore === undefined) {
+            throw new Error(
+              `internal invariant violated: storeByScope missing scope '${c.scope}' during supersededBy projection`,
+            );
+          }
+          supersededMap = buildSupersededMap(matchStore.all());
           supersededByScope.set(c.scope, supersededMap);
         }
         const superseder = supersededMap.get(memory.name);
@@ -1193,15 +1250,17 @@ const countSupersededInCorpus = (
  * memory.
  */
 export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_delete');
+  const stores = resolveStores(opts, 'memory_delete');
   return async (rawArgs: ToolArguments): Promise<MemoryDeleteResult> => {
     const args = requireArgsObject(rawArgs, 'memory_delete');
     const name = requireString(args, 'name', 'memory_delete');
     const explicitScope = validateScope(args.scope, 'memory_delete');
 
-    // Determine which store(s) hold the name.
-    const inUser = userStore.all().some((e) => e.name === name);
-    const inProject = projectStore !== undefined && projectStore.all().some((e) => e.name === name);
+    // Determine which store(s) hold the name. `stores.kind === 'dual'`
+    // discharges the project-store guard structurally so the project
+    // membership check doesn't need a non-null assertion.
+    const inUser = stores.user.all().some((e) => e.name === name);
+    const inProject = stores.kind === 'dual' && stores.project.all().some((e) => e.name === name);
 
     let target: MemoryStore;
     let scope: Scope;
@@ -1210,15 +1269,15 @@ export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => 
       // exists in the other scope -- the underlying store rejects the
       // missing-name case with a message that names the offending memory.
       if (explicitScope === 'project') {
-        if (projectStore === undefined) {
+        if (stores.kind !== 'dual') {
           throw new Error(
             `memory_delete: scope='project' requires a project store, but none was detected -- the server is running in user-only mode`,
           );
         }
-        target = projectStore;
+        target = stores.project;
         scope = 'project';
       } else {
-        target = userStore;
+        target = stores.user;
         scope = 'user';
       }
     } else {
@@ -1230,14 +1289,18 @@ export const createMemoryDeleteHandler = (opts: HandlerOptions): ToolHandler => 
           `memory_delete: memory \`${name}\` exists in both 'user' and 'project' scopes; ambiguous without an explicit scope -- pass { name, scope: 'user' | 'project' } to disambiguate`,
         );
       }
-      if (inProject) {
-        target = projectStore!;
+      // `inProject` can only be true when `stores.kind === 'dual'`, but
+      // the type checker cannot connect those two booleans. Re-check on
+      // `stores.kind` so the narrowed `stores.project` access is type-safe
+      // without a non-null assertion.
+      if (stores.kind === 'dual' && inProject) {
+        target = stores.project;
         scope = 'project';
       } else {
         // Fall through to user store: either it lives there, or it's
         // missing entirely (the user store will surface the missing-name
         // error with the offending name).
-        target = userStore;
+        target = stores.user;
         scope = 'user';
       }
     }
@@ -1314,7 +1377,7 @@ const validateLinkType = (
  * `relations[]`, matching the documented tool behaviour.
  */
 export const createMemoryLinkHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_link');
+  const stores = resolveStores(opts, 'memory_link');
   return async (rawArgs: ToolArguments): Promise<MemoryLinkResult> => {
     const args = requireArgsObject(rawArgs, 'memory_link');
     const from = requireString(args, 'from', 'memory_link');
@@ -1328,7 +1391,7 @@ export const createMemoryLinkHandler = (opts: HandlerOptions): ToolHandler => {
     // project memory, and likewise for user. The caller can pass an
     // explicit scope; otherwise we fall back to whichever store holds
     // `from` (resolving ambiguity by erroring when both do).
-    const target = pickStoreForName(from, scope, userStore, projectStore, 'memory_link');
+    const target = pickStoreForName(from, scope, stores, 'memory_link');
 
     const result = await target.linkEdge({ from, to, type });
     return {
@@ -1353,7 +1416,7 @@ export const createMemoryLinkHandler = (opts: HandlerOptions): ToolHandler => {
  * having to interpret an error.
  */
 export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_unlink');
+  const stores = resolveStores(opts, 'memory_unlink');
   return async (rawArgs: ToolArguments): Promise<MemoryUnlinkResult> => {
     const args = requireArgsObject(rawArgs, 'memory_unlink');
     const from = requireString(args, 'from', 'memory_unlink');
@@ -1363,7 +1426,7 @@ export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => 
     const type = validateLinkType(args.type, 'memory_unlink');
     const scope = validateScope(args.scope, 'memory_unlink');
 
-    const target = pickStoreForName(from, scope, userStore, projectStore, 'memory_unlink');
+    const target = pickStoreForName(from, scope, stores, 'memory_unlink');
 
     const result = await target.unlinkEdge({ from, to, type });
     const out: MemoryUnlinkResult = {
@@ -1388,34 +1451,38 @@ export const createMemoryUnlinkHandler = (opts: HandlerOptions): ToolHandler => 
  *
  * Existing single-store callers pass no scope and have no project store
  * -- they fall through to the user store unchanged.
+ *
+ * Takes the {@link ResolvedStores} discriminated union so the project-store
+ * guard is discharged structurally (no non-null assertions).
  */
 const pickStoreForName = (
   name: string,
   explicitScope: Scope | undefined,
-  userStore: MemoryStore,
-  projectStore: MemoryStore | undefined,
+  stores: ResolvedStores,
   toolName: string,
 ): MemoryStore => {
   if (explicitScope === 'project') {
-    if (projectStore === undefined) {
+    if (stores.kind !== 'dual') {
       throw new Error(
         `${toolName}: scope='project' requires a project store, but none was detected -- the server is running in user-only mode`,
       );
     }
-    return projectStore;
+    return stores.project;
   }
   if (explicitScope === 'user') {
-    return userStore;
+    return stores.user;
   }
-  const inUser = userStore.all().some((e) => e.name === name);
-  const inProject = projectStore !== undefined && projectStore.all().some((e) => e.name === name);
-  if (inUser && inProject) {
-    throw new Error(
-      `${toolName}: memory \`${name}\` exists in both 'user' and 'project' scopes; ambiguous without an explicit scope -- pass scope: 'user' | 'project' to disambiguate`,
-    );
+  const inUser = stores.user.all().some((e) => e.name === name);
+  if (stores.kind === 'dual') {
+    const inProject = stores.project.all().some((e) => e.name === name);
+    if (inUser && inProject) {
+      throw new Error(
+        `${toolName}: memory \`${name}\` exists in both 'user' and 'project' scopes; ambiguous without an explicit scope -- pass scope: 'user' | 'project' to disambiguate`,
+      );
+    }
+    if (inProject) return stores.project;
   }
-  if (inProject) return projectStore!;
-  return userStore;
+  return stores.user;
 };
 
 // ===========================================================================
@@ -1593,14 +1660,13 @@ const validatePositiveInteger = (
 const pickStoreAndGraphForName = (
   name: string,
   explicitScope: Scope | undefined,
-  userStore: MemoryStore,
-  projectStore: MemoryStore | undefined,
+  stores: ResolvedStores,
   userGraph: MemoryGraph | undefined,
   projectGraph: MemoryGraph | undefined,
   toolName: string,
 ): { store: MemoryStore; graph: MemoryGraph | undefined; scope: Scope } => {
-  const store = pickStoreForName(name, explicitScope, userStore, projectStore, toolName);
-  const scope: Scope = store === userStore ? 'user' : 'project';
+  const store = pickStoreForName(name, explicitScope, stores, toolName);
+  const scope: Scope = store === stores.user ? 'user' : 'project';
   const graph = scope === 'user' ? userGraph : projectGraph;
   return { store, graph, scope };
 };
@@ -1620,7 +1686,7 @@ const pickStoreAndGraphForName = (
  * tool intentionally does not.
  */
 export const createMemoryGraphHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_graph');
+  const stores = resolveStores(opts, 'memory_graph');
   const userGraph = opts.userGraph;
   const projectGraph = opts.projectGraph;
   return async (rawArgs: ToolArguments): Promise<MemoryGraphResult> => {
@@ -1636,8 +1702,7 @@ export const createMemoryGraphHandler = (opts: HandlerOptions): ToolHandler => {
     const picked = pickStoreAndGraphForName(
       name,
       scope,
-      userStore,
-      projectStore,
+      stores,
       userGraph,
       projectGraph,
       'memory_graph',
@@ -1747,7 +1812,7 @@ export const createMemoryGraphHandler = (opts: HandlerOptions): ToolHandler => {
  * from === to").
  */
 export const createMemoryPathHandler = (opts: HandlerOptions): ToolHandler => {
-  const { userStore, projectStore } = resolveStores(opts, 'memory_path');
+  const stores = resolveStores(opts, 'memory_path');
   const userGraph = opts.userGraph;
   const projectGraph = opts.projectGraph;
   return async (rawArgs: ToolArguments): Promise<MemoryPathResult> => {
@@ -1768,8 +1833,7 @@ export const createMemoryPathHandler = (opts: HandlerOptions): ToolHandler => {
     const picked = pickStoreAndGraphForName(
       from,
       scope,
-      userStore,
-      projectStore,
+      stores,
       userGraph,
       projectGraph,
       'memory_path',
@@ -1809,21 +1873,31 @@ export const createMemoryPathHandler = (opts: HandlerOptions): ToolHandler => {
 
     // BFS. For each visited node we record the edge that reached it
     // (`parent`) so we can reconstruct the path on success. Depth is
-    // tracked per node so we can terminate cleanly on `depth-exceeded`.
+    // tracked on the queue entry itself so we don't need a second map
+    // lookup to read it -- which also removes the `parent.get(current)!`
+    // non-null assertion the previous shape required.
     interface ParentRef {
       from: string;
       edgeType: EdgeType;
-      depth: number;
     }
     const parent = new Map<string, ParentRef>();
-    parent.set(from, { from: '', edgeType: 'related-to', depth: 0 }); // sentinel
-    const queue: string[] = [from];
+    parent.set(from, { from: '', edgeType: 'related-to' }); // sentinel
+    interface QueueItem {
+      name: string;
+      depth: number;
+    }
+    const queue: QueueItem[] = [{ name: from, depth: 0 }];
     let found = false;
     let depthLimitHit = false;
 
     while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentDepth = parent.get(current)!.depth;
+      const item = queue.shift();
+      // `length > 0` guarantees `shift()` returned a value; the explicit
+      // guard discharges the `T | undefined` from the type system without
+      // a non-null assertion.
+      if (item === undefined) break;
+      const current = item.name;
+      const currentDepth = item.depth;
       if (currentDepth >= maxDepth) {
         // Don't expand past the depth bound. Track that we hit the bound
         // so we can return 'depth-exceeded' rather than 'unreachable'.
@@ -1836,13 +1910,12 @@ export const createMemoryPathHandler = (opts: HandlerOptions): ToolHandler => {
         parent.set(edge.to, {
           from: current,
           edgeType: edge.type,
-          depth: currentDepth + 1,
         });
         if (edge.to === to) {
           found = true;
           break;
         }
-        queue.push(edge.to);
+        queue.push({ name: edge.to, depth: currentDepth + 1 });
       }
       if (found) break;
     }
@@ -1867,10 +1940,20 @@ export const createMemoryPathHandler = (opts: HandlerOptions): ToolHandler => {
     }
 
     // Reconstruct the path by walking the parent chain backward from `to`.
+    // Every node enqueued during BFS had its `parent` entry set in the
+    // same step, so any node we reach here via the chain is guaranteed
+    // present in the map. The explicit `undefined` guard discharges the
+    // `Map.get` return type without a non-null assertion -- if it ever
+    // fired it would signal an invariant break (and we throw loudly).
     const path: MemoryGraphEdge[] = [];
     let cursor = to;
     while (cursor !== from) {
-      const p = parent.get(cursor)!;
+      const p = parent.get(cursor);
+      if (p === undefined) {
+        throw new Error(
+          `internal invariant violated: parent chain broken at '${cursor}' during memory_path reconstruction`,
+        );
+      }
       path.push({ from: p.from, to: cursor, type: p.edgeType });
       cursor = p.from;
     }
@@ -1901,7 +1984,11 @@ const isReachable = (
   const visited = new Set<string>([from]);
   const queue: string[] = [from];
   while (queue.length > 0) {
-    const current = queue.shift()!;
+    const current = queue.shift();
+    // `length > 0` guarantees `shift()` returned a value; the explicit
+    // guard discharges the `T | undefined` from the type system without
+    // a non-null assertion.
+    if (current === undefined) break;
     for (const edge of graph.outbound(current)) {
       if (allowedTypes !== null && !allowedTypes.has(edge.type)) continue;
       if (edge.to === to) return true;
