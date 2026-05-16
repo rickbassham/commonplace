@@ -937,23 +937,40 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
         searchOpts.threshold = threshold;
       }
 
+      // Build the supersede map BEFORE invoking `target.store.search` so we
+      // can size the per-store limit by `supersededMap.size` rather than by
+      // corpus size. Previous code (DAR-929 carry-forward) expanded the
+      // per-store limit to `max(desired, corpusSize)` -- effectively asking
+      // the store to rank the entire corpus on large stores. The supersede
+      // filter only needs enough headroom for `supersededCount` extra slots:
+      // even in the worst case where every superseded entry would otherwise
+      // make the top-k, `callerLimit + supersededCount` post-filter results
+      // suffice. (DAR-959.)
+      //
+      // The map is built unconditionally because downstream projection
+      // populates `supersededBy` on each match from this scope's map even
+      // when `includeSuperseded: true` -- the map's content is still needed,
+      // only the headroom expansion is gated on `!includeSuperseded`.
+      const allEntries = target.store.all();
+      const supersededMap = buildSupersededMap(allEntries);
+
       // Headroom for the supersede filter: when not including superseded
-      // entries, enlarge the store-side limit so the supersede pass leaves
-      // enough candidates.
-      if (!includeSuperseded) {
-        const corpusSize = target.store.all().length;
-        const desired = callerLimit ?? fallbackLimit;
-        const headroom = Math.max(desired, corpusSize);
-        if (callerLimit === undefined && corpusSize > fallbackLimit) {
-          searchOpts.limit = headroom;
-        } else if (callerLimit !== undefined && headroom > callerLimit) {
-          searchOpts.limit = headroom;
-        }
+      // entries AND the scope has any superseded entries, enlarge the
+      // store-side limit by exactly the count of superseded entries in this
+      // scope's corpus. The base is `callerLimit ?? fallbackLimit` so the
+      // store has enough post-filter candidates even when every superseded
+      // entry would have made the top-k.
+      //
+      // When `supersededMap.size === 0` we leave `searchOpts.limit` alone
+      // (i.e. equal to `callerLimit` when supplied, omitted otherwise) so the
+      // "omits unset SearchOptions fields" contract from the baseline search
+      // handler is preserved. When `includeSuperseded` is true the expansion
+      // is skipped entirely (no filter is applied downstream).
+      if (!includeSuperseded && supersededMap.size > 0) {
+        searchOpts.limit = (callerLimit ?? fallbackLimit) + supersededMap.size;
       }
 
       const hits = await target.store.search(query, searchOpts);
-      const allEntries = target.store.all();
-      const supersededMap = buildSupersededMap(allEntries);
       supersededByScope.set(target.scope, supersededMap);
 
       // Per-store totalScanned contribution. Mirrors the supersede-filter
