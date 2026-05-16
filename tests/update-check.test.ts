@@ -63,7 +63,13 @@ describe('ac-1: fires a GET against the npm registry, fire-and-forget, no disk c
       log: () => {},
     });
     // Verify no sidecar cache files materialized in common locations.
-    expect(existsSync(join(repoRoot, '.commonplace'))).toBe(false);
+    // We check specific cache-file paths rather than the .commonplace
+    // directory itself, because the repo legitimately contains
+    // .commonplace/memory/*.md (project-scope memories committed at the
+    // repo root); the assertion is about what checkForUpdates writes,
+    // not about whether .commonplace exists at all.
+    expect(existsSync(join(repoRoot, '.commonplace', 'update-check-cache'))).toBe(false);
+    expect(existsSync(join(repoRoot, '.commonplace', 'update-check-cache.json'))).toBe(false);
     expect(existsSync(join(repoRoot, '.commonplace-update-check'))).toBe(false);
     expect(existsSync(join(repoRoot, 'update-check-cache'))).toBe(false);
   });

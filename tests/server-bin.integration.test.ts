@@ -91,6 +91,12 @@ describe('bin integration: spawned bin with real Embedder + MemoryStore', () => 
       // The bin must inherit stderr so a boot failure is visible in test
       // output; stdin/stdout are owned by the transport for MCP framing.
       stderr: 'inherit',
+      // cwd is set to the per-test tmpdir to isolate the bin from any
+      // .commonplace/memory/ directory in the test process's cwd (e.g.
+      // the repo's own project-scope memories). Without this the bin's
+      // cwd-based project-store detection would pick up project memories
+      // committed to the repo and inflate memory_list counts.
+      cwd: memoryDir,
     });
     client = new Client({ name: 'dar919-bin-int', version: '0.0.0' });
     await client.connect(transport);
@@ -218,6 +224,7 @@ describe('bin integration: spawned bin honours COMMONPLACE_DEFAULT_LIMIT', () =>
         COMMONPLACE_DEFAULT_LIMIT: '2',
       } as Record<string, string>,
       stderr: 'inherit',
+      cwd: memoryDir,
     });
     client = new Client({ name: 'dar913-bin-int', version: '0.0.0' });
     await client.connect(transport);
@@ -297,6 +304,7 @@ describe('bin integration: spawned bin exercises one-hop expansion through the r
         COMMONPLACE_USER_DIR: memoryDir,
       } as Record<string, string>,
       stderr: 'inherit',
+      cwd: memoryDir,
     });
     client = new Client({ name: 'dar930-bin-int', version: '0.0.0' });
     await client.connect(transport);
@@ -458,6 +466,7 @@ describe('bin integration: spawned bin honours COMMONPLACE_CONNECTEDNESS_BOOST',
         COMMONPLACE_CONNECTEDNESS_BOOST: '0.5',
       } as Record<string, string>,
       stderr: 'inherit',
+      cwd: memoryDir,
     });
     client = new Client({ name: 'dar931-bin-int', version: '0.0.0' });
     await client.connect(transport);
