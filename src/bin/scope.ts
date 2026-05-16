@@ -75,8 +75,12 @@ export const ENV_DEPRECATED_MEMORY_DIR = 'COMMONPLACE_MEMORY_DIR';
 export const PROJECT_MEMORY_DIRNAME = '.commonplace/memory';
 
 /**
- * Marker directory names accepted by the upward cwd walk. A directory that
- * contains either of these is treated as a project root.
+ * Marker names accepted by the upward cwd walk. A directory that contains
+ * either of these is treated as a project root.
+ *
+ * `.git` is matched whether it is a directory (a normal clone) or a file
+ * (the `gitdir:` pointer used by git worktrees). The probe uses `existsSync`
+ * which accepts both, and that is desirable: a worktree IS a project root.
  */
 export const PROJECT_MARKERS = ['.git', '.commonplace'] as const;
 
@@ -211,9 +215,10 @@ const projectDirFromRoots = (roots: ReadonlyArray<RootEntry>): string | null => 
 
 /**
  * Best-effort realpath: returns the resolver's output when it succeeds,
- * otherwise the input path unchanged. The walk runs on candidate dirs that
- * may not exist (especially the synthetic homedir in unit tests), so we
- * must not throw on `ENOENT`.
+ * otherwise the input path unchanged. The catch is unconditional: any
+ * resolver error (ENOENT for synthetic paths in unit tests, EACCES on
+ * sandboxed CI runners, etc.) falls back to the unnormalized path, which is
+ * the conservative choice.
  */
 const safeRealpath = (resolver: (p: string) => string, path: string): string => {
   try {
