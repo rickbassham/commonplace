@@ -29,6 +29,7 @@
 
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
+import { homedir as osHomedir } from 'node:os';
 
 import { detectScope } from '../bin/scope.js';
 import {
@@ -433,8 +434,8 @@ export const graphMain = async (opts: GraphMainOptions): Promise<GraphMainResult
 
   // Resolve user + optional project dir from env / cwd. The CLI does not
   // perform an MCP `roots/list` round-trip (no transport here), so pass
-  // `roots: null` and rely on the env / cwd fallback chain.
-  const scope = detectScope({ env, roots: null, cwd });
+  // `roots: null` and rely on the env / cwd-walk fallback chain.
+  const scope = detectScope({ env, roots: null, cwd, homedir: osHomedir() });
 
   // Ensure the user dir exists; the project dir is best-effort (an
   // ENOENT here is fine — MemoryStore.scan handles missing directories).

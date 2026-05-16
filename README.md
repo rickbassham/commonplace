@@ -428,8 +428,16 @@ The project store is selected by the first matching step in this list:
 2. MCP `roots/list` response after init -- if the connected client
    advertises the `roots` capability and returns at least one `file://`
    root, the first such root resolves to `<root>/.commonplace/memory`.
-3. `process.cwd()` -- if `<cwd>/.commonplace/memory` already exists on
-   disk, that path is used as the project store.
+3. Upward walk from `process.cwd()` -- at each directory, check for a
+   `.git/` or `.commonplace/` marker; the first match is the project
+   root and `<root>/.commonplace/memory` becomes the project store.
+   The memory directory itself is created recursively on the first
+   project-scope save. The walk stops at `$HOME` exclusive: `$HOME`
+   and any ancestor of `$HOME` are ineligible as project roots even
+   if they contain `.git/` or `.commonplace/`, so `~/.commonplace/`
+   (your user store) never falsely identifies home as a project. The
+   walk also terminates at the filesystem root without finding a
+   marker.
 4. None of the above -- user-only mode. Saves with `scope: 'project'`
    are rejected with a clear error.
 

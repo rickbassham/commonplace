@@ -31,6 +31,7 @@
  */
 
 import { mkdir } from 'node:fs/promises';
+import { homedir as osHomedir } from 'node:os';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
@@ -147,10 +148,12 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   // Step 1+2: resolve user dir, mkdir -p so first-run users get a clean
   // start. The deprecation warning is issued post-detection (we already
   // have the flag from the scope module).
+  const home = osHomedir();
   const initialScope = detectScope({
     env: options.env,
     roots: null,
     cwd: options.cwd,
+    homedir: home,
   });
 
   if (initialScope.usedDeprecatedMemoryDir) {
@@ -232,6 +235,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
     env: options.env,
     roots,
     cwd: options.cwd,
+    homedir: home,
   });
 
   // Step 8: if the final scope names a project dir that we didn't already

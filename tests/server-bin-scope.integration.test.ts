@@ -319,46 +319,93 @@ describe('project mode via COMMONPLACE_PROJECT_DIR', () => {
 });
 
 // --------------------------------------------------------------------------
-// Project mode via cwd
+// Project mode via cwd-walk (DAR-1016)
 // --------------------------------------------------------------------------
 
 describe('project mode via cwd', () => {
-  it('spawning the bin with cwd containing .commonplace/memory detects the project root and behaves equivalently to env-var mode for save/list/search smoke', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'dar924-cwd-'));
+  it('spawning the bin with cwd containing .git is detected by the upward walk and the project memory dir is auto-created on first project-scope save', async () => {
+    // Construct a project layout with a `.git` marker but NO pre-existing
+    // `.commonplace/memory` directory. The walk MUST detect the marker and
+    // the first project-scope save MUST create the memory directory.
+    const cwd = mkdtempSync(join(tmpdir(), 'dar1016-cwd-walk-'));
     try {
-      mkdirSync(join(cwd, '.commonplace/memory'), { recursive: true });
+      mkdirSync(join(cwd, '.git'), { recursive: true });
+      const cwdProjDir = join(cwd, '.commonplace', 'memory');
+      // Pre-condition: the project memory directory does NOT yet exist.
+      expect(existsSync(cwdProjDir)).toBe(false);
+
       const h = await spawnHarness({ userDir, cwd });
       try {
-        const projSave = await callJSON(h.client, 'memory_save', {
-          name: 'cwd_proj',
+        // First project save: the directory should be auto-created.
+        const firstSave = await callJSON(h.client, 'memory_save', {
+          name: 'walk_proj_a',
           type: 'project',
           description: 'd',
-          body: 'b',
+          body: 'b1',
           scope: 'project',
         });
-        expect(projSave.isError).toBe(false);
-        if (!isObject(projSave.parsed)) throw new Error('save not object');
-        expect(projSave.parsed.scope).toBe('project');
+        expect(firstSave.isError).toBe(false);
+        if (!isObject(firstSave.parsed)) throw new Error('save not object');
+        expect(firstSave.parsed.scope).toBe('project');
+        expect(existsSync(cwdProjDir)).toBe(true);
+        expect(readdirSync(cwdProjDir).some((f) => f === 'walk_proj_a.md')).toBe(true);
 
-        // The project memory must land under <cwd>/.commonplace/memory.
-        const cwdProjDir = join(cwd, '.commonplace/memory');
-        expect(readdirSync(cwdProjDir).some((f) => f === 'cwd_proj.md')).toBe(true);
+        // Second project save in the same session: idempotent mkdir, no
+        // error.
+        const secondSave = await callJSON(h.client, 'memory_save', {
+          name: 'walk_proj_b',
+          type: 'project',
+          description: 'd',
+          body: 'b2',
+          scope: 'project',
+        });
+        expect(secondSave.isError).toBe(false);
+        expect(readdirSync(cwdProjDir).some((f) => f === 'walk_proj_b.md')).toBe(true);
 
+        // List returns both project entries with scope=project.
         const list = await callJSON(h.client, 'memory_list', {});
         if (!isObject(list.parsed)) throw new Error('list not object');
         const memories = list.parsed.memories;
         if (!Array.isArray(memories)) throw new Error('memories not array');
-        const cwdProj = memories.find((m) => isObject(m) && m.name === 'cwd_proj');
-        if (!isObject(cwdProj)) throw new Error('cwd_proj entry missing');
-        expect(cwdProj.scope).toBe('project');
-
-        const search = await callJSON(h.client, 'memory_search', { query: 'b' });
-        expect(search.isError).toBe(false);
+        const a = memories.find((m) => isObject(m) && m.name === 'walk_proj_a');
+        const b = memories.find((m) => isObject(m) && m.name === 'walk_proj_b');
+        if (!isObject(a) || !isObject(b)) throw new Error('entries missing');
+        expect(a.scope).toBe('project');
+        expect(b.scope).toBe('project');
       } finally {
         await h.cleanup();
       }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('spawning the bin from a nested cwd under a .git-marked project root: upward walk resolves to the project root', async () => {
+    // Top-level project with `.git`; cwd is a deep subdir.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'dar1016-cwd-nested-'));
+    try {
+      mkdirSync(join(projectRoot, '.git'), { recursive: true });
+      const nested = join(projectRoot, 'a', 'b', 'c');
+      mkdirSync(nested, { recursive: true });
+
+      const h = await spawnHarness({ userDir, cwd: nested });
+      try {
+        const save = await callJSON(h.client, 'memory_save', {
+          name: 'nested_proj',
+          type: 'project',
+          description: 'd',
+          body: 'b',
+          scope: 'project',
+        });
+        expect(save.isError).toBe(false);
+        // The memory MUST land under the marked root, not the nested cwd.
+        const projDir = join(projectRoot, '.commonplace', 'memory');
+        expect(readdirSync(projDir).some((f) => f === 'nested_proj.md')).toBe(true);
+      } finally {
+        await h.cleanup();
+      }
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
     }
   }, 60_000);
 });
