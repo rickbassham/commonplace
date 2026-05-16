@@ -140,9 +140,13 @@ filter.
 
 ## Tool reference
 
-All four tools accept an optional `scope: 'user' | 'project'` argument
-that selects which store to read from or write to. When `scope` is
-omitted, reads merge across both stores and writes default to `user`.
+All four tools accept a `scope: 'user' | 'project'` argument that
+selects which store to read from or write to. On `memory_save`, `scope`
+is **required** -- the agent must make an explicit user-vs-project
+decision on every save. On the read-side tools (`memory_search`,
+`memory_list`, `memory_delete`, and the graph tools), `scope` remains
+optional and acts as a filter; when omitted, reads merge across both
+stores.
 
 ### memory_save
 
@@ -152,13 +156,13 @@ is delete + save.
 
 Input schema:
 
-| Argument      | Type                                       | Required | Description                                                                                                |
-| ------------- | ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `name`        | string                                     | required | Memory name. Must match `^[a-z0-9_]+$`. Becomes the filename stem.                                         |
-| `type`        | `user \| feedback \| project \| reference` | required | One of the four memory types described above.                                                              |
-| `description` | string                                     | required | Short human description carried in frontmatter.                                                            |
-| `body`        | string                                     | required | Markdown body content.                                                                                     |
-| `scope`       | `user` or `project`                        | optional | Which store to write to. Defaults to `user`. `project` requires that a project store was detected at boot. |
+| Argument      | Type                                       | Required | Description                                                                            |
+| ------------- | ------------------------------------------ | -------- | -------------------------------------------------------------------------------------- |
+| `name`        | string                                     | required | Memory name. Must match `^[a-z0-9_]+$`. Becomes the filename stem.                     |
+| `type`        | `user \| feedback \| project \| reference` | required | One of the four memory types described above.                                          |
+| `description` | string                                     | required | Short human description carried in frontmatter.                                        |
+| `body`        | string                                     | required | Markdown body content.                                                                 |
+| `scope`       | `user` or `project`                        | required | Which store to write to. `project` requires that a project store was detected at boot. |
 
 Example call:
 

@@ -104,9 +104,11 @@ describe('ac-3: CallTool dispatch by name', () => {
 
   it("CallTool with name 'memory_save' invokes the memory_save handler and not any other handler (verified via spy)", async () => {
     const spies = makeSpiedHandlers();
-    await callTool({ name: 'memory_save', arguments: {} }, spies.handlers).catch(() => {
-      /* stubs throw */
-    });
+    await callTool({ name: 'memory_save', arguments: { scope: 'user' } }, spies.handlers).catch(
+      () => {
+        /* stubs throw */
+      },
+    );
     expect(spies.spies.memory_save).toHaveBeenCalledTimes(1);
     expect(spies.spies.memory_search).not.toHaveBeenCalled();
     expect(spies.spies.memory_list).not.toHaveBeenCalled();

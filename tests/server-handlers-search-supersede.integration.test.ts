@@ -157,6 +157,7 @@ describe('ac-5 (integration): on-the-wire JSON has no mentions edges in match.re
           type: 'reference',
           description: 'd',
           body: t.body,
+          scope: 'user',
         });
         expect(r.isError).toBe(false);
       }
@@ -218,6 +219,7 @@ describe('ac-2/ac-3 (integration): superseded memories filter out by default and
         type: 'reference',
         description: 'da',
         body: 'body_a',
+        scope: 'user',
       });
       expect(aOk.isError).toBe(false);
       // memory B — saved via store directly so we can attach supersedes:[a].

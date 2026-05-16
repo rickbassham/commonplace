@@ -142,21 +142,9 @@ describe('project store auto-create on first save', () => {
     ).rejects.toThrow(/project/i);
   });
 
-  it('memory_save defaults to scope: "user" when scope is omitted', async () => {
-    const { userStore, projectStore } = await makeStores();
-    const handler = createMemorySaveHandler({ userStore, projectStore });
-    const result = await handler({
-      name: 'defaultscope',
-      type: 'reference',
-      description: 'd',
-      body: 'b',
-    });
-    if (!isRecord(result)) throw new Error('save result not object');
-    expect(result.scope).toBe('user');
-    // Must be in user dir, not project dir.
-    expect(readdirSync(userTmp).some((f) => f === 'defaultscope.md')).toBe(true);
-    expect(readdirSync(projectTmp).some((f) => f === 'defaultscope.md')).toBe(false);
-  });
+  // `memory_save` defaulting `scope` to 'user' was removed in DAR-1017;
+  // `scope` is now required. The rejection-on-missing-scope behavior is
+  // covered in `server-handlers-scope-required.test.ts`.
 });
 
 // --------------------------------------------------------------------------

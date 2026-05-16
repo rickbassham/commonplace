@@ -101,11 +101,23 @@ describe('bin integration: memory_graph and memory_path end-to-end', () => {
   it("save A and B, call memory_link({from:A, to:B}), then call memory_graph({name:A, depth:1}) and assert nodes contains B and edges contains {from:A, to:B, type:'related-to'} (proves the bin's MemoryGraph is wired into the handler)", async () => {
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'alpha', type: 'reference', description: 'a', body: 'A body' },
+      arguments: {
+        name: 'alpha',
+        type: 'reference',
+        description: 'a',
+        body: 'A body',
+        scope: 'user',
+      },
     });
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'beta', type: 'reference', description: 'b', body: 'B body' },
+      arguments: {
+        name: 'beta',
+        type: 'reference',
+        description: 'b',
+        body: 'B body',
+        scope: 'user',
+      },
     });
     const linked = await client.callTool({
       name: 'memory_link',
@@ -130,11 +142,23 @@ describe('bin integration: memory_graph and memory_path end-to-end', () => {
   it("with A linked to B via memory_link, call memory_path({from:A, to:B}) and assert path is [{from:A, to:B, type:'related-to'}]", async () => {
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'alpha', type: 'reference', description: 'a', body: 'A body' },
+      arguments: {
+        name: 'alpha',
+        type: 'reference',
+        description: 'a',
+        body: 'A body',
+        scope: 'user',
+      },
     });
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'beta', type: 'reference', description: 'b', body: 'B body' },
+      arguments: {
+        name: 'beta',
+        type: 'reference',
+        description: 'b',
+        body: 'B body',
+        scope: 'user',
+      },
     });
     await client.callTool({
       name: 'memory_link',
@@ -155,11 +179,23 @@ describe('bin integration: memory_graph and memory_path end-to-end', () => {
   it("call memory_path({from:A, to:<nonexistent_but_saved_memory_C>}) where C exists as a memory but no path connects A to C, assert response is { path: null, reason: 'unreachable' }", async () => {
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'alpha', type: 'reference', description: 'a', body: 'A body' },
+      arguments: {
+        name: 'alpha',
+        type: 'reference',
+        description: 'a',
+        body: 'A body',
+        scope: 'user',
+      },
     });
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'gamma', type: 'reference', description: 'c', body: 'C body' },
+      arguments: {
+        name: 'gamma',
+        type: 'reference',
+        description: 'c',
+        body: 'C body',
+        scope: 'user',
+      },
     });
 
     const result = await client.callTool({

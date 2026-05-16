@@ -178,6 +178,7 @@ describe('user-only mode', () => {
           type: 'reference',
           description: 'd',
           body: 'b',
+          scope: 'user',
         });
         expect(save.isError).toBe(false);
         if (!isObject(save.parsed)) throw new Error('save not object');
@@ -245,7 +246,7 @@ describe('project mode via COMMONPLACE_PROJECT_DIR', () => {
         type: 'user',
         description: 'd',
         body: 'b',
-        // scope omitted -> defaults to user
+        scope: 'user',
       });
       expect(userSave.isError).toBe(false);
       const projSave = await callJSON(h.client, 'memory_save', {
@@ -286,6 +287,7 @@ describe('project mode via COMMONPLACE_PROJECT_DIR', () => {
         type: 'reference',
         description: 'd',
         body: 'shared topic in user store',
+        scope: 'user',
       });
       await callJSON(h.client, 'memory_save', {
         name: 'b_proj',
@@ -423,6 +425,7 @@ describe('same memory name saved in both scopes', () => {
         type: 'reference',
         description: 'in user',
         body: 'user body',
+        scope: 'user',
       });
       expect(userSave.isError).toBe(false);
       const projSave = await callJSON(h.client, 'memory_save', {
@@ -458,6 +461,7 @@ describe('same memory name saved in both scopes', () => {
         type: 'reference',
         description: 'd',
         body: 'b',
+        scope: 'user',
       });
       await callJSON(h.client, 'memory_save', {
         name: 'shared_del',

@@ -152,6 +152,23 @@ const validateScope = (raw: unknown, toolName: string): Scope | undefined => {
   return raw;
 };
 
+/**
+ * Validate a required `scope` argument. Missing or `undefined` rejects with a
+ * "required" error; any non-Scope value rejects with the same allowed-values
+ * message as {@link validateScope}.
+ */
+const requireScope = (raw: unknown, toolName: string): Scope => {
+  if (raw === undefined) {
+    throw new Error(`${toolName}: field \`scope\` is required; pass one of ${SCOPES.join(', ')}`);
+  }
+  if (!isScope(raw)) {
+    throw new Error(
+      `${toolName}: field \`scope\` must be one of ${SCOPES.join(', ')}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
 /** Return shape for {@link createMemorySaveHandler}. */
 export interface MemorySaveResult {
   saved: {
@@ -406,7 +423,7 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
     const type = validateMemoryType(args.type, 'memory_save');
     const description = requireString(args, 'description', 'memory_save');
     const body = requireString(args, 'body', 'memory_save');
-    const scope = validateScope(args.scope, 'memory_save') ?? 'user';
+    const scope = requireScope(args.scope, 'memory_save');
     const pinnedArg = validateBoolean(args.pinned, 'pinned', 'memory_save');
 
     if (scope === 'project' && projectStore === undefined) {

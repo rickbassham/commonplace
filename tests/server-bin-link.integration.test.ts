@@ -93,12 +93,24 @@ describe('bin integration: spawned bin with MemoryGraph wired in', () => {
   it("ac-5: after spawning the built bin and calling memory_save twice, the running server's graph reflects the saved entries -- verified by calling memory_link between them and observing success (would fail with 'target memory does not exist' if graph were not populated by scan/save)", async () => {
     const saveA = await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'alpha', type: 'reference', description: 'a', body: 'A body' },
+      arguments: {
+        name: 'alpha',
+        type: 'reference',
+        description: 'a',
+        body: 'A body',
+        scope: 'user',
+      },
     });
     expect(saveA.isError).toBeFalsy();
     const saveB = await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'beta', type: 'reference', description: 'b', body: 'B body' },
+      arguments: {
+        name: 'beta',
+        type: 'reference',
+        description: 'b',
+        body: 'B body',
+        scope: 'user',
+      },
     });
     expect(saveB.isError).toBeFalsy();
 
@@ -112,11 +124,23 @@ describe('bin integration: spawned bin with MemoryGraph wired in', () => {
   it('ac-6: spawned-bin integration: save memory A, save memory B, call memory_link({from:A, to:B}), then read A.md from disk and assert relations[] contains {to:B, type:"related-to"} and frontmatter parses as valid YAML', async () => {
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'alpha', type: 'reference', description: 'a', body: 'A body' },
+      arguments: {
+        name: 'alpha',
+        type: 'reference',
+        description: 'a',
+        body: 'A body',
+        scope: 'user',
+      },
     });
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'beta', type: 'reference', description: 'b', body: 'B body' },
+      arguments: {
+        name: 'beta',
+        type: 'reference',
+        description: 'b',
+        body: 'B body',
+        scope: 'user',
+      },
     });
     const link = await client.callTool({
       name: 'memory_link',
@@ -133,11 +157,23 @@ describe('bin integration: spawned bin with MemoryGraph wired in', () => {
   it('ac-6: spawned-bin integration: after link, call memory_unlink({from:A, to:B}), then read A.md from disk and assert relations[] no longer contains the edge and frontmatter still parses as valid YAML', async () => {
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'alpha', type: 'reference', description: 'a', body: 'A body' },
+      arguments: {
+        name: 'alpha',
+        type: 'reference',
+        description: 'a',
+        body: 'A body',
+        scope: 'user',
+      },
     });
     await client.callTool({
       name: 'memory_save',
-      arguments: { name: 'beta', type: 'reference', description: 'b', body: 'B body' },
+      arguments: {
+        name: 'beta',
+        type: 'reference',
+        description: 'b',
+        body: 'B body',
+        scope: 'user',
+      },
     });
     await client.callTool({
       name: 'memory_link',

@@ -48,6 +48,7 @@ const baseArgs = {
   type: 'reference',
   description: 'desc',
   body: 'body',
+  scope: 'user',
 };
 
 describe('ac-2: memory_save inputSchema declares pinned as optional boolean', () => {
