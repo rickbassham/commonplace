@@ -201,6 +201,7 @@ describe('ac-3: full body round-trip through MCP transport', () => {
         type: 'reference',
         description: 'd',
         body: longBody,
+        scope: 'user',
       });
       expect(save.isError).toBe(false);
 
@@ -245,6 +246,7 @@ describe('ac-4: ordering on a seeded corpus', () => {
           type: 'reference',
           description: `d ${name}`,
           body,
+          scope: 'user',
         });
         expect(ok.isError).toBe(false);
       }
@@ -284,6 +286,7 @@ describe('ac-4: ordering on a seeded corpus', () => {
           type: 'reference',
           description: `d ${name}`,
           body,
+          scope: 'user',
         });
         expect(ok.isError).toBe(false);
       }
@@ -316,6 +319,7 @@ describe('ac-5: type filter narrows results', () => {
           type: t,
           description: `d ${t}`,
           body,
+          scope: 'user',
         });
         expect(ok.isError).toBe(false);
       }
@@ -346,6 +350,7 @@ describe('ac-5: type filter narrows results', () => {
           type: t,
           description: `d ${t}`,
           body,
+          scope: 'user',
         });
       }
 

@@ -24,7 +24,7 @@ const ORIGINAL_DESCRIPTIONS: Record<ToolName, string> = {
   memory_search:
     'Semantic search over saved memories across both the user and project stores (when the project store is present). Returns the top-k matches by cosine similarity against the embedding index, merged across stores by descending score; each match carries a `scope` tag identifying which store produced it. By default, memories that have been superseded by another entry are excluded from results.',
   memory_save:
-    'Save a memory as a markdown file with YAML frontmatter and a derived embedding sidecar. Refuses to overwrite an existing entry; the contract is delete + save. The `scope` argument selects which store to write to (default `user`); saving to `project` requires that a project store was detected at boot.',
+    'Save a memory as a markdown file with YAML frontmatter and a derived embedding sidecar. Refuses to overwrite an existing entry; the contract is delete + save. The required `scope` argument selects which store to write to; saving to `project` requires that a project store was detected at boot.',
   memory_list:
     'List saved memories from both stores. Returns frontmatter-only entries (name, type, description, scope) -- no body. Each entry carries a `scope` tag (`user` | `project`) identifying which store it came from. By default, memories that have been superseded by another entry within their own store are excluded from results.',
   memory_delete:

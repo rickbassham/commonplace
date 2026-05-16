@@ -112,9 +112,12 @@ describe('ac-1: createServer wires real CRUD handlers', () => {
       const list = await callJSON(h.client, 'memory_list', {});
       expect(list.isError).toBe(false);
 
-      // memory_save and memory_delete may produce validation errors with no
-      // args, but their error messages must NOT be 'not implemented'.
-      const save = await callJSON(h.client, 'memory_save', {});
+      // memory_save and memory_delete may produce validation errors with
+      // missing args, but their error messages must NOT be 'not
+      // implemented'. We pass `scope` here to keep the failing field
+      // unambiguously `name` (memory_save now requires `scope` too); the
+      // wiring check is unchanged.
+      const save = await callJSON(h.client, 'memory_save', { scope: 'user' });
       expect(save.text).not.toContain('not implemented');
       const del = await callJSON(h.client, 'memory_delete', {});
       expect(del.text).not.toContain('not implemented');
@@ -181,6 +184,7 @@ for (const t of TYPES) {
           type: t,
           description: `desc ${t}`,
           body: `body for ${t}`,
+          scope: 'user',
         });
         expect(save.isError).toBe(false);
         if (!isRecord(save.parsed)) throw new Error('save did not return an object');
@@ -225,6 +229,7 @@ describe('ac-3: list filtering and frontmatter shape', () => {
           type: t,
           description: `desc ${t}`,
           body: `body for ${t}`,
+          scope: 'user',
         });
         expect(ok.isError).toBe(false);
       }
@@ -252,6 +257,7 @@ describe('ac-3: list filtering and frontmatter shape', () => {
         type: 'reference',
         description: 'd',
         body: 'BODY-CONTENT',
+        scope: 'user',
       });
       const list = await callJSON(h.client, 'memory_list', {});
       if (!isRecord(list.parsed)) throw new Error('list not object');
@@ -285,6 +291,7 @@ describe('ac-3: list filtering and frontmatter shape', () => {
         type: 'reference',
         description: 'first',
         body: 'b',
+        scope: 'user',
       });
       expect(first.isError).toBe(false);
       const second = await callJSON(h.client, 'memory_save', {
@@ -292,6 +299,7 @@ describe('ac-3: list filtering and frontmatter shape', () => {
         type: 'reference',
         description: 'second',
         body: 'b',
+        scope: 'user',
       });
       expect(second.isError).toBe(false);
       const parsed = JSON.parse(second.text) as { saved: { description: string } };
@@ -328,6 +336,7 @@ describe('ac-4: handler responses serialise to MCP text content blocks', () => {
           type: 'reference',
           description: 'desc',
           body: 'body',
+          scope: 'user',
         },
       });
       const content = Array.isArray(result.content) ? result.content : [];
@@ -352,7 +361,7 @@ describe('ac-4: handler responses serialise to MCP text content blocks', () => {
     try {
       await h.client.callTool({
         name: 'memory_save',
-        arguments: { name: 'a', type: 'reference', description: 'd', body: 'b' },
+        arguments: { name: 'a', type: 'reference', description: 'd', body: 'b', scope: 'user' },
       });
       const result = await h.client.callTool({ name: 'memory_list', arguments: {} });
       const content = Array.isArray(result.content) ? result.content : [];
@@ -372,7 +381,7 @@ describe('ac-4: handler responses serialise to MCP text content blocks', () => {
     try {
       await h.client.callTool({
         name: 'memory_save',
-        arguments: { name: 'gone', type: 'reference', description: 'd', body: 'b' },
+        arguments: { name: 'gone', type: 'reference', description: 'd', body: 'b', scope: 'user' },
       });
       const result = await h.client.callTool({
         name: 'memory_delete',
@@ -397,7 +406,7 @@ describe('ac-4: handler responses serialise to MCP text content blocks', () => {
       // memory_save: bad type rejects
       const saveBad = await h.client.callTool({
         name: 'memory_save',
-        arguments: { name: 'x', type: 'wrong', description: 'd', body: 'b' },
+        arguments: { name: 'x', type: 'wrong', description: 'd', body: 'b', scope: 'user' },
       });
       expect(saveBad.isError).toBe(true);
       const saveContent = Array.isArray(saveBad.content) ? saveBad.content : [];

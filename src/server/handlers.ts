@@ -135,15 +135,34 @@ const resolveStores = (
 };
 
 /**
- * Validate the optional `scope` argument. `undefined` is allowed and
- * returns `undefined`; anything else must be one of the two literals in
- * {@link SCOPES}. Errors list the allowed values.
+ * Validate the optional `scope` argument on read-side handlers. `undefined`
+ * is allowed and returns `undefined`; anything else must be one of the two
+ * literals in {@link SCOPES}. Errors list the allowed values. Write-side
+ * handlers (`memory_save`) require an explicit scope and use
+ * {@link requireScope} instead.
  */
 const isScope = (v: unknown): v is Scope =>
   typeof v === 'string' && (SCOPES as readonly string[]).includes(v);
 
 const validateScope = (raw: unknown, toolName: string): Scope | undefined => {
   if (raw === undefined) return undefined;
+  if (!isScope(raw)) {
+    throw new Error(
+      `${toolName}: field \`scope\` must be one of ${SCOPES.join(', ')}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+};
+
+/**
+ * Validate a required `scope` argument. Missing or `undefined` rejects with a
+ * "required" error; any non-Scope value rejects with the same allowed-values
+ * message as {@link validateScope}.
+ */
+const requireScope = (raw: unknown, toolName: string): Scope => {
+  if (raw === undefined) {
+    throw new Error(`${toolName}: field \`scope\` is required; pass one of ${SCOPES.join(', ')}`);
+  }
   if (!isScope(raw)) {
     throw new Error(
       `${toolName}: field \`scope\` must be one of ${SCOPES.join(', ')}; got ${JSON.stringify(raw)}`,
@@ -406,7 +425,7 @@ export const createMemorySaveHandler = (opts: HandlerOptions): ToolHandler => {
     const type = validateMemoryType(args.type, 'memory_save');
     const description = requireString(args, 'description', 'memory_save');
     const body = requireString(args, 'body', 'memory_save');
-    const scope = validateScope(args.scope, 'memory_save') ?? 'user';
+    const scope = requireScope(args.scope, 'memory_save');
     const pinnedArg = validateBoolean(args.pinned, 'pinned', 'memory_save');
 
     if (scope === 'project' && projectStore === undefined) {

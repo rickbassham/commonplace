@@ -104,7 +104,7 @@ describe('ac-2: memory_save inputSchema', () => {
     expect(props.type?.type).toBe('string');
     expect(props.type?.enum).toEqual(['user', 'feedback', 'project', 'reference']);
     const required = (schema as { required?: string[] }).required ?? [];
-    expect(new Set(required)).toEqual(new Set(['name', 'type', 'description', 'body']));
+    expect(new Set(required)).toEqual(new Set(['name', 'type', 'description', 'body', 'scope']));
   });
 });
 
@@ -114,6 +114,7 @@ describe('ac-2: memory_save handler validation', () => {
     type: 'reference',
     description: 'd',
     body: 'b',
+    scope: 'user',
   };
 
   it('memory_save handler rejects a missing or non-string `name` with an error message naming the offending field', async () => {
@@ -265,6 +266,7 @@ describe('ac-4: handler return values are JSON-serialisable', () => {
       type: 'reference',
       description: 'd',
       body: 'b',
+      scope: 'user',
     });
     expect(JSON.parse(JSON.stringify(saved))).toEqual(saved);
 

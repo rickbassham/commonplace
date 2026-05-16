@@ -124,6 +124,7 @@ describe('bin integration: spawned bin with real Embedder + MemoryStore', () => 
         type: 'reference',
         description: 'bin integration sentinel.',
         body: 'This memory is created by the spawned-bin integration test to verify end-to-end wiring.',
+        scope: 'user',
       },
     });
     expect(saveResult.isError).toBeFalsy();
@@ -251,6 +252,7 @@ describe('bin integration: spawned bin honours COMMONPLACE_DEFAULT_LIMIT', () =>
           type: 'reference',
           description: `entry ${i}`,
           body: `body ${i} -- lorem ipsum dolor sit amet.`,
+          scope: 'user',
         },
       });
       expect(save.isError).toBeFalsy();
@@ -335,6 +337,7 @@ describe('bin integration: spawned bin exercises one-hop expansion through the r
         type: 'reference',
         description: 'central hub memory about lattice topology',
         body: 'The lattice topology section describes adjacency invariants for a periodic crystal structure.',
+        scope: 'user',
       },
     });
     await client.callTool({
@@ -344,6 +347,7 @@ describe('bin integration: spawned bin exercises one-hop expansion through the r
         type: 'reference',
         description: 'unrelated topic about marine biology',
         body: 'Cephalopod nervous systems use distributed ganglia rather than a centralised brain.',
+        scope: 'user',
       },
     });
     await client.callTool({
@@ -353,6 +357,7 @@ describe('bin integration: spawned bin exercises one-hop expansion through the r
         type: 'reference',
         description: 'another unrelated topic about culinary chemistry',
         body: 'The Maillard reaction is responsible for the browning of seared meats and toasted bread.',
+        scope: 'user',
       },
     });
     // Wire the graph: N1 and N2 build-on H. Edges live on the SOURCE
@@ -493,6 +498,7 @@ describe('bin integration: spawned bin honours COMMONPLACE_CONNECTEDNESS_BOOST',
         type: 'reference',
         description: 'foundational concept about adaptive filtering',
         body: 'Adaptive filtering selects an output based on signal-to-noise ratio over a sliding window.',
+        scope: 'user',
       },
     });
     for (let i = 0; i < 3; i++) {
@@ -503,6 +509,7 @@ describe('bin integration: spawned bin honours COMMONPLACE_CONNECTEDNESS_BOOST',
           type: 'reference',
           description: `referrer ${i}`,
           body: `Referrer ${i} body about a completely unrelated topic such as soil chemistry.`,
+          scope: 'user',
         },
       });
       await client.callTool({
