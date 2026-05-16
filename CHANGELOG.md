@@ -5,6 +5,29 @@ All notable changes to `commonplace-mcp` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0](https://github.com/rickbassham/commonplace/compare/v0.5.0...v0.6.0) (2026-05-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **server:** `memory_save` calls that previously omitted `scope` now fail with a clear validation error. Callers must pass an explicit `scope: 'user'` or `scope: 'project'` on every save.
+
+### Added
+
+* **scope:** detect project root by walking up from cwd (DAR-1016) ([#59](https://github.com/rickbassham/commonplace/issues/59)) ([1f6bcc6](https://github.com/rickbassham/commonplace/commit/1f6bcc606a8060de9adb734df01f8c058f742181))
+* **server:** bootstrap-on-approval flow for project store (DAR-1018) ([#62](https://github.com/rickbassham/commonplace/issues/62)) ([c99f1c4](https://github.com/rickbassham/commonplace/commit/c99f1c45939417b6d897bfb94d1ec8656e90d209))
+* **server:** make `scope` required on `memory_save` (DAR-1017) ([#61](https://github.com/rickbassham/commonplace/issues/61)) ([35e7b6c](https://github.com/rickbassham/commonplace/commit/35e7b6c1c5d39843963d18975835d8cefa806959))
+
+
+### Performance
+
+* **server:** bound memory_search supersede-filter headroom by supersededCount (DAR-959) ([#64](https://github.com/rickbassham/commonplace/issues/64)) ([9e272e0](https://github.com/rickbassham/commonplace/commit/9e272e0c25863ae012b2f0fc7c6ae544c88a80b2))
+
+
+### Changed
+
+* **server:** replace projectStore non-null assertions with a discriminated union (DAR-958) ([#63](https://github.com/rickbassham/commonplace/issues/63)) ([f36b2fa](https://github.com/rickbassham/commonplace/commit/f36b2fac7952a5fa09565137be7b6132abd680a7))
+
 ## [0.5.0](https://github.com/rickbassham/commonplace/compare/v0.4.0...v0.5.0) (2026-05-15)
 
 
