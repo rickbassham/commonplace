@@ -76,8 +76,14 @@ describe('ac-4 (runtime): bin entry on stdio', () => {
   });
 
   it('spawned with piped stdio, stays alive until stdin is closed and writes nothing to stdout before the first MCP message', async () => {
+    // Spawn from a fresh tmpdir, not repoRoot, so the bin's project-root
+    // walk-up (DAR-1016) does not discover the repo's own
+    // `.commonplace/memory/`. The assertion ("stays alive, writes no
+    // stdout pre-MCP") is cwd-independent, so the test should not depend
+    // on whatever this repo happens to have under its project-memory dir.
+    const spawnCwd = mkdtempSync(join(tmpdir(), 'dar955-bin-stdio-'));
     const child = spawn('node', [binPath], {
-      cwd: repoRoot,
+      cwd: spawnCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -118,6 +124,8 @@ describe('ac-4 (runtime): bin entry on stdio', () => {
     // dump anything to stdout before the first MCP message.
     expect(exitCode === 0 || exitCode === null || typeof exitCode === 'number').toBe(true);
     expect(stdoutData, `unexpected stdout: ${stdoutData}; stderr: ${stderrData}`).toBe('');
+
+    rmSync(spawnCwd, { recursive: true, force: true });
   }, 30_000);
 });
 
