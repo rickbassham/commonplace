@@ -27,7 +27,7 @@ import {
   listTools as listToolsResponse,
   type ToolHandlerMap,
 } from './tools.js';
-import type { Scope } from './handlers.js';
+import { CodedError, type Scope } from './handlers.js';
 
 /** Server name advertised in the initialize handshake. */
 export const SERVER_NAME = 'commonplace';
@@ -260,6 +260,19 @@ export function installCallToolHandler(server: Server, handlers: ToolHandlerMap)
       // the dispatcher) and `not implemented` (from stub handlers) flow
       // through here.
       const message = err instanceof Error ? err.message : String(err);
+      // CodedError carries a stable, machine-readable token that we surface
+      // at `structuredContent.code` (a documented MCP field) so an agent
+      // can branch on the failure mode without parsing the human-readable
+      // text. The text payload still names the code so transports that
+      // strip structuredContent (older clients) can fall back to substring
+      // matching.
+      if (err instanceof CodedError) {
+        return {
+          isError: true,
+          structuredContent: { code: err.code },
+          content: [{ type: 'text', text: message }],
+        };
+      }
       return {
         isError: true,
         content: [{ type: 'text', text: message }],

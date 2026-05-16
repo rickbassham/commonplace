@@ -237,7 +237,7 @@ const safeRealpath = (resolver: (p: string) => string, path: string): string => 
  * The check is path-string based and runs on realpath-normalized inputs so
  * symlinked home directories compare equal to their target.
  */
-const isHomedirOrAncestor = (candidate: string, normalizedHome: string): boolean => {
+export const isHomedirOrAncestor = (candidate: string, normalizedHome: string): boolean => {
   if (candidate === normalizedHome) return true;
   // Ancestor check: `${candidate}${sep}` is a strict prefix of homedir's
   // path. The trailing separator prevents matching e.g. `/foo` against

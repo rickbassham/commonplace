@@ -38,6 +38,7 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { Embedder } from '../embedder/index.js';
 import { createServer, installCallToolHandler, SERVER_VERSION } from '../server/server.js';
 import { createDefaultHandlers } from '../server/tools.js';
+import type { BootstrapEnvironment } from '../server/handlers.js';
 import { checkForUpdates } from '../server/update-check.js';
 import { MemoryGraph } from '../store/graph.js';
 import { MemoryStore, type Embedder as EmbedderShape } from '../store/memory-store.js';
@@ -193,6 +194,47 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
     await initialProjectStore.scan();
   }
 
+  // The bootstrap-tool environment closes over a deferred server holder so
+  // its `rebindHandlers` callback can call `installCallToolHandler` on the
+  // server once it exists. The handler is only ever invoked at MCP
+  // request-time (well after `serverHolder.server` is set), so the late
+  // binding is safe. The callback also rebuilds the bootstrap env on each
+  // rebind so a future bootstrap call (rare but possible) still reaches
+  // the same wiring.
+  const serverHolder: { server: Server | null } = { server: null };
+  const buildBootstrapEnv = (): BootstrapEnvironment => ({
+    env: options.env,
+    cwd: options.cwd,
+    homedir: home,
+    createProjectStore: async (dir: string) => {
+      const graph = new MemoryGraph();
+      const store = new MemoryStore({ dir, embedder, graph });
+      return { store, graph };
+    },
+    rebindHandlers: (projectStore, projectGraph) => {
+      if (serverHolder.server === null) {
+        // Defensive: bootstrap handler is invoked only at MCP request-time,
+        // by which point the server is connected. This branch fires only
+        // if the wiring order ever changes; surface a clear error so the
+        // failure mode is debuggable.
+        throw new Error(
+          'memory_bootstrap_project_store: rebindHandlers invoked before server was created',
+        );
+      }
+      const rebuilt = createDefaultHandlers({
+        userStore,
+        projectStore,
+        graph: userGraph,
+        projectGraph,
+        defaultLimit,
+        expansionDecay,
+        connectednessBoost,
+        bootstrapEnv: buildBootstrapEnv(),
+      });
+      installCallToolHandler(serverHolder.server, rebuilt);
+    },
+  });
+
   // Step 3+4: wire handlers with whatever stores are known now. A
   // roots-only project store, if any, is wired post-connect below.
   // `defaultLimit` is the resolved `COMMONPLACE_DEFAULT_LIMIT` value;
@@ -205,12 +247,14 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
     defaultLimit,
     expansionDecay,
     connectednessBoost,
+    bootstrapEnv: buildBootstrapEnv(),
   });
   const server = createServer({
     handlers,
     userStore,
     projectStore: initialProjectStore ?? undefined,
   });
+  serverHolder.server = server;
 
   // Step 5: connect first so the transport is ready to issue requests.
   await server.connect(options.transport);
@@ -264,6 +308,7 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
       defaultLimit,
       expansionDecay,
       connectednessBoost,
+      bootstrapEnv: buildBootstrapEnv(),
     });
     installCallToolHandler(server, handlersWithProject);
   }
