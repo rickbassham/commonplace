@@ -1,0 +1,47 @@
+[
+  {
+    "query": "articles blog posts published writing",
+    "expected_names": ["feedback_no_unverified_claims"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "commonplace MCP server canonical memory store",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "commonplace canonical memory store harness auto-import",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "dogfood product harness defaults",
+    "expected_names": ["project_codebase_strategy"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "extend skill modify workflow process",
+    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "introspection post-hoc rationalization explaining own behavior",
+    "expected_names": ["feedback_no_fabricated_rationale"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "prefer dogfood project tool over harness",
+    "expected_names": ["user_cloud_experience"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "skip workflow skill process bypass",
+    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "terraform CI workflow infra chicken-and-egg merge order",
+    "expected_names": ["feedback_one_thing_at_a_time"],
+    "category": "confirmed_hit"
+  }
+]
