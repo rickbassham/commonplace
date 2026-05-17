@@ -36,34 +36,34 @@ Below the 30-pair statistical-power target. Treat per-variant deltas on this set
 
 | variant                      | Recall@1 | Recall@5 | MRR      | notes                                                                                                                                                                                                                                                                                                            |
 | ---------------------------- | -------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| cosine-body                  | 0.000    | 0.000    | 0.023    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
+| cosine-body                  | 0.600    | 1.000    | 0.800    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
 | cosine-description-plus-body | 0.300    | 0.800    | 0.483    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
 | cosine-description           | 0.100    | 0.500    | 0.280    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
 | bm25                         | 0.100    | 0.300    | 0.198    | k1=1.2; b=0.75; field=body                                                                                                                                                                                                                                                                                       |
-| bm25-cosine-hybrid           | 0.100    | 0.300    | 0.198    | bm25Weight=0.5; cosineWeight=0.5; normalisation=per-query min-max                                                                                                                                                                                                                                                |
+| bm25-cosine-hybrid           | 0.100    | 0.700    | 0.401    | bm25Weight=0.5; cosineWeight=0.5; normalisation=per-query min-max                                                                                                                                                                                                                                                |
 | cross-encoder-rerank         | deferred | deferred | deferred | No local ONNX cross-encoder rerank model ships with the project (e.g. Xenova/ms-marco-MiniLM-L-12-v2 is not present in the transformers.js model cache). Running it would require downloading a model on first benchmark run, which the contract permits deferring rather than introducing a network dependency. |
 
 ### Interpretation
 
 #### `cosine-body`
 
-cosine similarity over the body embedding -- the production baseline. Recall@1 = 0.000, Recall@5 = 0.000, MRR = 0.023. This is the current production retrieval path.
+cosine similarity over the body embedding -- the production baseline. Recall@1 = 0.600, Recall@5 = 1.000, MRR = 0.800. This is the current production retrieval path.
 
 #### `cosine-description-plus-body`
 
-cosine similarity over an in-memory re-embedding of `description + body`. Tests whether including the description in the embedded text helps retrieval. Recall@1 = 0.300 (higher than baseline by 0.300), Recall@5 = 0.800, MRR = 0.483 (higher by 0.460). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+cosine similarity over an in-memory re-embedding of `description + body`. Tests whether including the description in the embedded text helps retrieval. Recall@1 = 0.300 (lower than baseline by 0.300), Recall@5 = 0.800, MRR = 0.483 (lower by 0.317). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `cosine-description`
 
-cosine similarity over an in-memory re-embedding of the description alone. Tests whether the description on its own is enough signal. Recall@1 = 0.100 (higher than baseline by 0.100), Recall@5 = 0.500, MRR = 0.280 (higher by 0.257). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+cosine similarity over an in-memory re-embedding of the description alone. Tests whether the description on its own is enough signal. Recall@1 = 0.100 (lower than baseline by 0.500), Recall@5 = 0.500, MRR = 0.280 (lower by 0.520). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `bm25`
 
-lexical BM25 over body tokens. Tests whether exact-word overlap (no embedding model at all) is competitive. Recall@1 = 0.100 (higher than baseline by 0.100), Recall@5 = 0.300, MRR = 0.198 (higher by 0.175). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+lexical BM25 over body tokens. Tests whether exact-word overlap (no embedding model at all) is competitive. Recall@1 = 0.100 (lower than baseline by 0.500), Recall@5 = 0.300, MRR = 0.198 (lower by 0.602). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `bm25-cosine-hybrid`
 
-weighted sum of per-query min-max-normalised BM25 and cosine scores. Tests whether combining lexical and semantic signals dominates either alone. Recall@1 = 0.100 (higher than baseline by 0.100), Recall@5 = 0.300, MRR = 0.198 (higher by 0.175). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+weighted sum of per-query min-max-normalised BM25 and cosine scores. Tests whether combining lexical and semantic signals dominates either alone. Recall@1 = 0.100 (lower than baseline by 0.500), Recall@5 = 0.700, MRR = 0.401 (lower by 0.399). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `cross-encoder-rerank`
 
@@ -80,34 +80,34 @@ cross-encoder rerank over the top-K cosine candidates. Currently deferred. Defer
 
 | variant                      | Recall@1 | Recall@5 | MRR      | notes                                                                                                                                                                                                                                                                                                            |
 | ---------------------------- | -------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| cosine-body                  | 0.009    | 0.045    | 0.048    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
+| cosine-body                  | 0.664    | 0.748    | 0.705    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
 | cosine-description-plus-body | 0.655    | 0.736    | 0.699    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
 | cosine-description           | 0.655    | 0.848    | 0.744    | embedderModelId=Xenova/bge-base-en-v1.5                                                                                                                                                                                                                                                                          |
 | bm25                         | 0.897    | 0.985    | 0.939    | k1=1.2; b=0.75; field=body                                                                                                                                                                                                                                                                                       |
-| bm25-cosine-hybrid           | 0.897    | 0.985    | 0.939    | bm25Weight=0.5; cosineWeight=0.5; normalisation=per-query min-max                                                                                                                                                                                                                                                |
+| bm25-cosine-hybrid           | 0.800    | 0.976    | 0.878    | bm25Weight=0.5; cosineWeight=0.5; normalisation=per-query min-max                                                                                                                                                                                                                                                |
 | cross-encoder-rerank         | deferred | deferred | deferred | No local ONNX cross-encoder rerank model ships with the project (e.g. Xenova/ms-marco-MiniLM-L-12-v2 is not present in the transformers.js model cache). Running it would require downloading a model on first benchmark run, which the contract permits deferring rather than introducing a network dependency. |
 
 ### Interpretation
 
 #### `cosine-body`
 
-cosine similarity over the body embedding -- the production baseline. Recall@1 = 0.009, Recall@5 = 0.045, MRR = 0.048. This is the current production retrieval path.
+cosine similarity over the body embedding -- the production baseline. Recall@1 = 0.664, Recall@5 = 0.748, MRR = 0.705. This is the current production retrieval path.
 
 #### `cosine-description-plus-body`
 
-cosine similarity over an in-memory re-embedding of `description + body`. Tests whether including the description in the embedded text helps retrieval. Recall@1 = 0.655 (higher than baseline by 0.645), Recall@5 = 0.736, MRR = 0.699 (higher by 0.651). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+cosine similarity over an in-memory re-embedding of `description + body`. Tests whether including the description in the embedded text helps retrieval. Recall@1 = 0.655 (lower than baseline by 0.009), Recall@5 = 0.736, MRR = 0.699 (lower by 0.006). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `cosine-description`
 
-cosine similarity over an in-memory re-embedding of the description alone. Tests whether the description on its own is enough signal. Recall@1 = 0.655 (higher than baseline by 0.645), Recall@5 = 0.848, MRR = 0.744 (higher by 0.696). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+cosine similarity over an in-memory re-embedding of the description alone. Tests whether the description on its own is enough signal. Recall@1 = 0.655 (lower than baseline by 0.009), Recall@5 = 0.848, MRR = 0.744 (higher by 0.039). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `bm25`
 
-lexical BM25 over body tokens. Tests whether exact-word overlap (no embedding model at all) is competitive. Recall@1 = 0.897 (higher than baseline by 0.888), Recall@5 = 0.985, MRR = 0.939 (higher by 0.891). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+lexical BM25 over body tokens. Tests whether exact-word overlap (no embedding model at all) is competitive. Recall@1 = 0.897 (higher than baseline by 0.233), Recall@5 = 0.985, MRR = 0.939 (higher by 0.234). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `bm25-cosine-hybrid`
 
-weighted sum of per-query min-max-normalised BM25 and cosine scores. Tests whether combining lexical and semantic signals dominates either alone. Recall@1 = 0.897 (higher than baseline by 0.888), Recall@5 = 0.985, MRR = 0.939 (higher by 0.891). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
+weighted sum of per-query min-max-normalised BM25 and cosine scores. Tests whether combining lexical and semantic signals dominates either alone. Recall@1 = 0.800 (higher than baseline by 0.136), Recall@5 = 0.976, MRR = 0.878 (higher by 0.173). Interpret with the test-set size in mind -- small N means noisy deltas; the headline question is whether this variant clearly dominates the baseline.
 
 #### `cross-encoder-rerank`
 
