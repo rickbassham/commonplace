@@ -1,0 +1,1652 @@
+[
+  {
+    "query": "AP63203 3.3V buck converter component values",
+    "expected_names": ["ap63203_power_block"],
+    "category": "synthetic"
+  },
+  {
+    "query": "recommended inductor and capacitor for AP63203WU power block",
+    "expected_names": ["ap63203_power_block"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to wire AP63203 TSOT26 pinout and bootstrap cap",
+    "expected_names": ["ap63203_power_block"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I split CI workflow PR from validated artifact PR",
+    "expected_names": ["ci_workflow_and_validated_artifact_must_ship_together"],
+    "category": "synthetic"
+  },
+  {
+    "query": "new terraform validation workflow failing on its own PR",
+    "expected_names": ["ci_workflow_and_validated_artifact_must_ship_together"],
+    "category": "synthetic"
+  },
+  {
+    "query": "chicken and egg problem shipping CI checks without target files",
+    "expected_names": ["ci_workflow_and_validated_artifact_must_ship_together"],
+    "category": "synthetic"
+  },
+  {
+    "query": "clerk assessment repo branching rules for main",
+    "expected_names": ["clerk_assessment_no_merge_to_main"],
+    "category": "synthetic"
+  },
+  {
+    "query": "can I merge PR to main in Hatchways assignment",
+    "expected_names": ["clerk_assessment_no_merge_to_main"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to handle prod deploy workflow when main is off-limits",
+    "expected_names": ["clerk_assessment_no_merge_to_main"],
+    "category": "synthetic"
+  },
+  {
+    "query": "terraform apply fails with R2 403 please enable",
+    "expected_names": ["cloudflare_account_onboarding_gotchas"],
+    "category": "synthetic"
+  },
+  {
+    "query": "wrangler deploy missing workers.dev subdomain registration",
+    "expected_names": ["cloudflare_account_onboarding_gotchas"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Cloudflare new account first deploy checklist gotchas",
+    "expected_names": ["cloudflare_account_onboarding_gotchas"],
+    "category": "synthetic"
+  },
+  {
+    "query": "lessons learned from W5500 circuit design mistakes",
+    "expected_names": ["design_workflow"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to verify analog circuit against datasheet and reference",
+    "expected_names": ["design_workflow"],
+    "category": "synthetic"
+  },
+  {
+    "query": "process for catching wrong pin connections before fabrication",
+    "expected_names": ["design_workflow"],
+    "category": "synthetic"
+  },
+  {
+    "query": "terraform says env var not set even though it is exported",
+    "expected_names": ["envrc_export_required_for_subprocesses"],
+    "category": "synthetic"
+  },
+  {
+    "query": "sourcing .envrc doesn't pass variables to subprocesses",
+    "expected_names": ["envrc_export_required_for_subprocesses"],
+    "category": "synthetic"
+  },
+  {
+    "query": "set -a source envrc set +a pattern for shell exports",
+    "expected_names": ["envrc_export_required_for_subprocesses"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to add STEP 3D model to KiCad footprint",
+    "expected_names": ["feedback_always_3d_models"],
+    "category": "synthetic"
+  },
+  {
+    "query": "required steps when creating a new dda.pretty footprint",
+    "expected_names": ["feedback_always_3d_models"],
+    "category": "synthetic"
+  },
+  {
+    "query": "easyeda2kicad download 3D model and reference path",
+    "expected_names": ["feedback_always_3d_models"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I run make help before exploring project",
+    "expected_names": ["feedback_always_check_makefile"],
+    "category": "synthetic"
+  },
+  {
+    "query": "using make targets for PCB generation tasks",
+    "expected_names": ["feedback_always_check_makefile"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid manually exploring directories when Makefile exists",
+    "expected_names": ["feedback_always_check_makefile"],
+    "category": "synthetic"
+  },
+  {
+    "query": "always include physical pin number with GPIO name",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "synthetic"
+  },
+  {
+    "query": "format for referencing STM32 ESP32 MCU pins in text",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Rick wants pin numbers alongside PA7 PB1 references",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "synthetic"
+  },
+  {
+    "query": "answer the literal question without over-explaining",
+    "expected_names": ["feedback_answer_directly"],
+    "category": "synthetic"
+  },
+  {
+    "query": "user frustrated by tangential responses to yes no questions",
+    "expected_names": ["feedback_answer_directly"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid listing acceptance criteria when asked is it done",
+    "expected_names": ["feedback_answer_directly"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I get permission before running brew install",
+    "expected_names": ["feedback_ask_before_install"],
+    "category": "synthetic"
+  },
+  {
+    "query": "rule about installing system packages without user consent",
+    "expected_names": ["feedback_ask_before_install"],
+    "category": "synthetic"
+  },
+  {
+    "query": "apt pip brew install requires asking user first",
+    "expected_names": ["feedback_ask_before_install"],
+    "category": "synthetic"
+  },
+  {
+    "query": "does merge approval carry over to other PRs",
+    "expected_names": ["feedback_authorization_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "scope of user authorization for push pr merge actions",
+    "expected_names": ["feedback_authorization_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "investigation request does not authorize implementing a fix",
+    "expected_names": ["feedback_authorization_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "dragonlair firmware beta release notes base tag",
+    "expected_names": ["feedback_beta_notes_cumulative"],
+    "category": "synthetic"
+  },
+  {
+    "query": "cumulative release notes since last production tag",
+    "expected_names": ["feedback_beta_notes_cumulative"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to scope release notes for a beta build",
+    "expected_names": ["feedback_beta_notes_cumulative"],
+    "category": "synthetic"
+  },
+  {
+    "query": "when should I create a new SKiDL circuit block",
+    "expected_names": ["feedback_block_design_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "sizing passives for IC full rated capability",
+    "expected_names": ["feedback_block_design_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoiding speculative reusable block designs",
+    "expected_names": ["feedback_block_design_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "reject substring grep tests on prose at handshake review",
+    "expected_names": ["feedback_catch_substring_test_acs_at_handshake"],
+    "category": "synthetic"
+  },
+  {
+    "query": "unit tests that grep README markdown files",
+    "expected_names": ["feedback_catch_substring_test_acs_at_handshake"],
+    "category": "synthetic"
+  },
+  {
+    "query": "contract envelope ACs that test documentation content",
+    "expected_names": ["feedback_catch_substring_test_acs_at_handshake"],
+    "category": "synthetic"
+  },
+  {
+    "query": "surface buried operational decisions in Linear issues",
+    "expected_names": ["feedback_check_linear_before_proposing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "fetch Linear issue and project at session start",
+    "expected_names": ["feedback_check_linear_before_proposing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "migration concerns hidden inside implementation notes",
+    "expected_names": ["feedback_check_linear_before_proposing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I commit regenerated sdkconfig after make build",
+    "expected_names": ["feedback_commit_framework_regen"],
+    "category": "synthetic"
+  },
+  {
+    "query": "handling auto regenerated tracked config files in commits",
+    "expected_names": ["feedback_commit_framework_regen"],
+    "category": "synthetic"
+  },
+  {
+    "query": "framework config drift chore commit vs revert",
+    "expected_names": ["feedback_commit_framework_regen"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop retrying when datasheet download returns HTML",
+    "expected_names": ["feedback_datasheet_hunting_limit"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ask user for manual datasheet download after first failure",
+    "expected_names": ["feedback_datasheet_hunting_limit"],
+    "category": "synthetic"
+  },
+  {
+    "query": "manufacturer CDN anti-bot scraping fallback policy",
+    "expected_names": ["feedback_datasheet_hunting_limit"],
+    "category": "synthetic"
+  },
+  {
+    "query": "must download datasheet before creating IC part template",
+    "expected_names": ["feedback_datasheet_required"],
+    "category": "synthetic"
+  },
+  {
+    "query": "verifying pinout against datasheet before adding part",
+    "expected_names": ["feedback_datasheet_required"],
+    "category": "synthetic"
+  },
+  {
+    "query": "rule for missing datasheet when adding a new chip",
+    "expected_names": ["feedback_datasheet_required"],
+    "category": "synthetic"
+  },
+  {
+    "query": "conventional commit type for dependency version bumps",
+    "expected_names": ["feedback_dep_bump_commit_type"],
+    "category": "synthetic"
+  },
+  {
+    "query": "fix deps vs chore deps when bumping a library",
+    "expected_names": ["feedback_dep_bump_commit_type"],
+    "category": "synthetic"
+  },
+  {
+    "query": "cz bump cannot detect patch increment from chore",
+    "expected_names": ["feedback_dep_bump_commit_type"],
+    "category": "synthetic"
+  },
+  {
+    "query": "do not overwrite manual PCB layout work without confirmation",
+    "expected_names": ["feedback_destructive_actions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to update an existing PCB block without recreating it",
+    "expected_names": ["feedback_destructive_actions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "I accidentally wiped Rick's board placement by recreating the file",
+    "expected_names": ["feedback_destructive_actions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "when the user challenges reasoning talk it through before editing",
+    "expected_names": ["feedback_discuss_before_editing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "user pushed back on a claim should I rewrite the doc",
+    "expected_names": ["feedback_discuss_before_editing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop preemptively making changes when someone questions a decision",
+    "expected_names": ["feedback_discuss_before_editing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "prefer the project's own tooling over harness or system prompt defaults",
+    "expected_names": ["feedback_dogfood_the_product_you_are_building"],
+    "category": "synthetic"
+  },
+  {
+    "query": "use Commonplace MCP memory tools instead of built-in auto-memory path",
+    "expected_names": ["feedback_dogfood_the_product_you_are_building"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I dogfood the product I'm building during a session",
+    "expected_names": ["feedback_dogfood_the_product_you_are_building"],
+    "category": "synthetic"
+  },
+  {
+    "query": "answer the question first before making code changes",
+    "expected_names": ["feedback_dont_act_without_asking"],
+    "category": "synthetic"
+  },
+  {
+    "query": "user asked about UX and I started editing files instead",
+    "expected_names": ["feedback_dont_act_without_asking"],
+    "category": "synthetic"
+  },
+  {
+    "query": "wait for explicit approval before editing in response to a question",
+    "expected_names": ["feedback_dont_act_without_asking"],
+    "category": "synthetic"
+  },
+  {
+    "query": "never present unverified pinout or spec data as fact",
+    "expected_names": ["feedback_dont_fabricate_sources"],
+    "category": "synthetic"
+  },
+  {
+    "query": "I don't have a datasheet for eMMC ball positions what to do",
+    "expected_names": ["feedback_dont_fabricate_sources"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid fabricating JEDEC standards or made-up technical specifications",
+    "expected_names": ["feedback_dont_fabricate_sources"],
+    "category": "synthetic"
+  },
+  {
+    "query": "KiCad custom DRC clearance overrides netclass for traces",
+    "expected_names": ["feedback_drc_netclass_override"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to relax courtyard pad clearance without affecting HV traces",
+    "expected_names": ["feedback_drc_netclass_override"],
+    "category": "synthetic"
+  },
+  {
+    "query": "high voltage traces routing too close after writing DRC rule",
+    "expected_names": ["feedback_drc_netclass_override"],
+    "category": "synthetic"
+  },
+  {
+    "query": "state retry budget hypothesis and escalation before retrying",
+    "expected_names": ["feedback_explicit_stop_conditions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how many times should I retry a failed datasheet download",
+    "expected_names": ["feedback_explicit_stop_conditions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop thrashing on curl variations against a blocked CDN",
+    "expected_names": ["feedback_explicit_stop_conditions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "when a dev-workflow skill doesn't fit propose extending instead of skipping",
+    "expected_names": ["feedback_extend_skills_not_bypass"],
+    "category": "synthetic"
+  },
+  {
+    "query": "five related bugs should I write fixes without the skill",
+    "expected_names": ["feedback_extend_skills_not_bypass"],
+    "category": "synthetic"
+  },
+  {
+    "query": "is it okay to bypass the contract envelope for convenience",
+    "expected_names": ["feedback_extend_skills_not_bypass"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Super4C ESP32 flashing requires manual boot mode confirmation",
+    "expected_names": ["feedback_flash_workflow"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ESP-PROG auto reset does not enter boot mode workflow",
+    "expected_names": ["feedback_flash_workflow"],
+    "category": "synthetic"
+  },
+  {
+    "query": "wait for user before and after uploading firmware to board",
+    "expected_names": ["feedback_flash_workflow"],
+    "category": "synthetic"
+  },
+  {
+    "query": "multi-issue work still needs contract and implementation envelopes",
+    "expected_names": ["feedback_follow_dev_workflow_examples"],
+    "category": "synthetic"
+  },
+  {
+    "query": "two Linear issues at once but linear-execute-issue assumes one",
+    "expected_names": ["feedback_follow_dev_workflow_examples"],
+    "category": "synthetic"
+  },
+  {
+    "query": "post contract marker comment manually when skill cannot be invoked",
+    "expected_names": ["feedback_follow_dev_workflow_examples"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to source the right footprint for a JLCPCB part",
+    "expected_names": ["feedback_footprint_from_jlcpcb"],
+    "category": "synthetic"
+  },
+  {
+    "query": "SOP-8 SOIC-8 package pitch confusion when picking footprints",
+    "expected_names": ["feedback_footprint_from_jlcpcb"],
+    "category": "synthetic"
+  },
+  {
+    "query": "easyeda2kicad lookup for verifying LCSC part dimensions",
+    "expected_names": ["feedback_footprint_from_jlcpcb"],
+    "category": "synthetic"
+  },
+  {
+    "query": "always check datasheet dimensions before assigning a footprint",
+    "expected_names": ["feedback_footprint_verification"],
+    "category": "synthetic"
+  },
+  {
+    "query": "buzzer footprint physical size mismatch caused fabrication issue",
+    "expected_names": ["feedback_footprint_verification"],
+    "category": "synthetic"
+  },
+  {
+    "query": "steps to verify pad spacing matches part body before adding to parts library",
+    "expected_names": ["feedback_footprint_verification"],
+    "category": "synthetic"
+  },
+  {
+    "query": "wait for GitHub Actions workflow to finish without bash polling",
+    "expected_names": ["feedback_gh_watch_flags_over_until_loops"],
+    "category": "synthetic"
+  },
+  {
+    "query": "prefer gh built-in watch flags instead of until sleep loops",
+    "expected_names": ["feedback_gh_watch_flags_over_until_loops"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to block on CI checks completing using the gh CLI",
+    "expected_names": ["feedback_gh_watch_flags_over_until_loops"],
+    "category": "synthetic"
+  },
+  {
+    "query": "do independently powered boards need galvanic isolation",
+    "expected_names": ["feedback_isolation_requirements"],
+    "category": "synthetic"
+  },
+  {
+    "query": "RS485 between separately battery powered boards safe without isolation",
+    "expected_names": ["feedback_isolation_requirements"],
+    "category": "synthetic"
+  },
+  {
+    "query": "upfront question to ask when designing multi-board communication",
+    "expected_names": ["feedback_isolation_requirements"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ban em-dashes curly quotes and emoji in project artifacts",
+    "expected_names": ["feedback_keyboard_only_chars"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ASCII-only substitutes for arrows ellipsis and check marks",
+    "expected_names": ["feedback_keyboard_only_chars"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why keep written output to standard keyboard characters",
+    "expected_names": ["feedback_keyboard_only_chars"],
+    "category": "synthetic"
+  },
+  {
+    "query": "KiCad custom DRC rule conditions silently failing",
+    "expected_names": ["feedback_kicad_dru_singleline"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why courtyard clearance exemption stopped working in kicad_dru",
+    "expected_names": ["feedback_kicad_dru_singleline"],
+    "category": "synthetic"
+  },
+  {
+    "query": "must DRC rule conditions be on a single line",
+    "expected_names": ["feedback_kicad_dru_singleline"],
+    "category": "synthetic"
+  },
+  {
+    "query": "KiCad footprint attr smd not updating from library",
+    "expected_names": ["feedback_kicad_update_footprint"],
+    "category": "synthetic"
+  },
+  {
+    "query": "3D models hidden because footprint shows as virtual",
+    "expected_names": ["feedback_kicad_update_footprint"],
+    "category": "synthetic"
+  },
+  {
+    "query": "enable fabrication attributes checkbox when updating from library",
+    "expected_names": ["feedback_kicad_update_footprint"],
+    "category": "synthetic"
+  },
+  {
+    "query": "mcp__linear__save_issue labels parameter not applying names",
+    "expected_names": ["feedback_linear_label_ids"],
+    "category": "synthetic"
+  },
+  {
+    "query": "pass label UUIDs rather than names when saving Linear issues",
+    "expected_names": ["feedback_linear_label_ids"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why do labels come back empty after creating a Linear issue",
+    "expected_names": ["feedback_linear_label_ids"],
+    "category": "synthetic"
+  },
+  {
+    "query": "when is it okay to mark a Linear issue Done",
+    "expected_names": ["feedback_linear_status"],
+    "category": "synthetic"
+  },
+  {
+    "query": "verify acceptance criteria before flipping issue status",
+    "expected_names": ["feedback_linear_status"],
+    "category": "synthetic"
+  },
+  {
+    "query": "don't change Linear issue status based on vague shipped signal",
+    "expected_names": ["feedback_linear_status"],
+    "category": "synthetic"
+  },
+  {
+    "query": "maximum number of background sub-agents to run at once",
+    "expected_names": ["feedback_max_two_parallel_agents"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why limit parallel general-purpose agents to two",
+    "expected_names": ["feedback_max_two_parallel_agents"],
+    "category": "synthetic"
+  },
+  {
+    "query": "batching review pipelines to avoid crashing the machine",
+    "expected_names": ["feedback_max_two_parallel_agents"],
+    "category": "synthetic"
+  },
+  {
+    "query": "when to avoid adding modes or flags to tools",
+    "expected_names": ["feedback_mechanism_vs_intent"],
+    "category": "synthetic"
+  },
+  {
+    "query": "collapse use cases sharing the same code path",
+    "expected_names": ["feedback_mechanism_vs_intent"],
+    "category": "synthetic"
+  },
+  {
+    "query": "designing a CLI without separate decompose vs bundle commands",
+    "expected_names": ["feedback_mechanism_vs_intent"],
+    "category": "synthetic"
+  },
+  {
+    "query": "use mermaid blocks instead of ASCII art for diagrams",
+    "expected_names": ["feedback_mermaid_diagrams"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how should architecture sketches be drawn in markdown",
+    "expected_names": ["feedback_mermaid_diagrams"],
+    "category": "synthetic"
+  },
+  {
+    "query": "rendering sequence and flowchart diagrams in GitHub readme",
+    "expected_names": ["feedback_mermaid_diagrams"],
+    "category": "synthetic"
+  },
+  {
+    "query": "adding a length-matching netclass without breaking existing routing",
+    "expected_names": ["feedback_netclass_dont_tighten"],
+    "category": "synthetic"
+  },
+  {
+    "query": "kicad netclass clearance defaults for skew grouping",
+    "expected_names": ["feedback_netclass_dont_tighten"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DRC errors after creating a new netclass for eMMC",
+    "expected_names": ["feedback_netclass_dont_tighten"],
+    "category": "synthetic"
+  },
+  {
+    "query": "is CI green enough to admin merge a PR",
+    "expected_names": ["feedback_never_admin_merge_without_explicit_auth"],
+    "category": "synthetic"
+  },
+  {
+    "query": "rules for merging PRs to main per-PR authorization",
+    "expected_names": ["feedback_never_admin_merge_without_explicit_auth"],
+    "category": "synthetic"
+  },
+  {
+    "query": "what counts as explicit permission to merge a pull request",
+    "expected_names": ["feedback_never_admin_merge_without_explicit_auth"],
+    "category": "synthetic"
+  },
+  {
+    "query": "am I allowed to delete an orphaned untracked file",
+    "expected_names": ["feedback_never_delete_files"],
+    "category": "synthetic"
+  },
+  {
+    "query": "policy on removing files that look unused",
+    "expected_names": ["feedback_never_delete_files"],
+    "category": "synthetic"
+  },
+  {
+    "query": "what to do with a misplaced file in the repo",
+    "expected_names": ["feedback_never_delete_files"],
+    "category": "synthetic"
+  },
+  {
+    "query": "does saying lets do X next authorize merging the open PR",
+    "expected_names": ["feedback_never_merge_without_explicit_approval"],
+    "category": "synthetic"
+  },
+  {
+    "query": "phrases that count as explicit merge approval",
+    "expected_names": ["feedback_never_merge_without_explicit_approval"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop priming yourself to merge in review messages",
+    "expected_names": ["feedback_never_merge_without_explicit_approval"],
+    "category": "synthetic"
+  },
+  {
+    "query": "can I overwrite a published release zip with a fix",
+    "expected_names": ["feedback_never_mutate_releases"],
+    "category": "synthetic"
+  },
+  {
+    "query": "immutability of beta artifacts after upload",
+    "expected_names": ["feedback_never_mutate_releases"],
+    "category": "synthetic"
+  },
+  {
+    "query": "small fix to a tagged release without bumping version",
+    "expected_names": ["feedback_never_mutate_releases"],
+    "category": "synthetic"
+  },
+  {
+    "query": "safe way to update components on existing kicad pcb",
+    "expected_names": ["feedback_never_recreate_pcb"],
+    "category": "synthetic"
+  },
+  {
+    "query": "is it ok to git clean a directory with PCB files",
+    "expected_names": ["feedback_never_recreate_pcb"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to refresh netlist without losing manual board layout",
+    "expected_names": ["feedback_never_recreate_pcb"],
+    "category": "synthetic"
+  },
+  {
+    "query": "what to do when branch protection blocks a merge",
+    "expected_names": ["feedback_never_use_admin_merge"],
+    "category": "synthetic"
+  },
+  {
+    "query": "is gh pr merge --admin ever acceptable",
+    "expected_names": ["feedback_never_use_admin_merge"],
+    "category": "synthetic"
+  },
+  {
+    "query": "handling required review or red CI before merging",
+    "expected_names": ["feedback_never_use_admin_merge"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to frame divergence between paired sdkconfig files",
+    "expected_names": ["feedback_no_cherrypicking_diffs"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I single out the important diffs in mirrored configs",
+    "expected_names": ["feedback_no_cherrypicking_diffs"],
+    "category": "synthetic"
+  },
+  {
+    "query": "keeping panictest env identical to release build",
+    "expected_names": ["feedback_no_cherrypicking_diffs"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid inventing justifications in architecture decision records",
+    "expected_names": ["feedback_no_fabricated_rationale"],
+    "category": "synthetic"
+  },
+  {
+    "query": "circular reasoning picking S3 then citing we use S3",
+    "expected_names": ["feedback_no_fabricated_rationale"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to write honest rationale on a greenfield project",
+    "expected_names": ["feedback_no_fabricated_rationale"],
+    "category": "synthetic"
+  },
+  {
+    "query": "never state unverified claims as facts in answers",
+    "expected_names": ["feedback_no_fabrication"],
+    "category": "synthetic"
+  },
+  {
+    "query": "saying I don't know versus a confident guess",
+    "expected_names": ["feedback_no_fabrication"],
+    "category": "synthetic"
+  },
+  {
+    "query": "presented fabricated hardware standard as a real spec",
+    "expected_names": ["feedback_no_fabrication"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should Linear ticket numbers appear in JSDoc or schemas",
+    "expected_names": ["feedback_no_issue_refs_in_code"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DAR ticket references leaking into MCP tool descriptions",
+    "expected_names": ["feedback_no_issue_refs_in_code"],
+    "category": "synthetic"
+  },
+  {
+    "query": "where is it acceptable to include Jira issue numbers",
+    "expected_names": ["feedback_no_issue_refs_in_code"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how conventional-changelog parsers detect breaking change footers",
+    "expected_names": ["feedback_no_literal_breaking_change_in_commit_body"],
+    "category": "synthetic"
+  },
+  {
+    "query": "accidentally triggering a major version bump from prose",
+    "expected_names": ["feedback_no_literal_breaking_change_in_commit_body"],
+    "category": "synthetic"
+  },
+  {
+    "query": "safe wording when discussing the BREAKING CHANGE keyword in commits",
+    "expected_names": ["feedback_no_literal_breaking_change_in_commit_body"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why pre-existing bug is not a valid excuse during review",
+    "expected_names": ["feedback_no_preexisting_excuses"],
+    "category": "synthetic"
+  },
+  {
+    "query": "found a defect outside PR scope what should I do",
+    "expected_names": ["feedback_no_preexisting_excuses"],
+    "category": "synthetic"
+  },
+  {
+    "query": "fix it or file it for surfaced production bugs",
+    "expected_names": ["feedback_no_preexisting_excuses"],
+    "category": "synthetic"
+  },
+  {
+    "query": "LLM does not have real access to its own reasoning",
+    "expected_names": ["feedback_no_pseudo_introspection"],
+    "category": "synthetic"
+  },
+  {
+    "query": "answering why did you choose tool A over tool B honestly",
+    "expected_names": ["feedback_no_pseudo_introspection"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop dressing up post-hoc reconstruction as introspective fact",
+    "expected_names": ["feedback_no_pseudo_introspection"],
+    "category": "synthetic"
+  },
+  {
+    "query": "where should LCSC and MPN footprint properties live",
+    "expected_names": ["feedback_no_silkscreen_data"],
+    "category": "synthetic"
+  },
+  {
+    "query": "PCB custom fields must be hidden on F.Fab not silkscreen",
+    "expected_names": ["feedback_no_silkscreen_data"],
+    "category": "synthetic"
+  },
+  {
+    "query": "pcbnew Python API setting field layer and visibility correctly",
+    "expected_names": ["feedback_no_silkscreen_data"],
+    "category": "synthetic"
+  },
+  {
+    "query": "explaining firmware behavior without having read the source",
+    "expected_names": ["feedback_no_speculation_when_unread"],
+    "category": "synthetic"
+  },
+  {
+    "query": "do not substitute generic framework knowledge for actual code",
+    "expected_names": ["feedback_no_speculation_when_unread"],
+    "category": "synthetic"
+  },
+  {
+    "query": "asked how a specific version handles something I have not opened",
+    "expected_names": ["feedback_no_speculation_when_unread"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should pre-release features ship opt-in or default-on",
+    "expected_names": ["feedback_no_speculative_backcompat"],
+    "category": "synthetic"
+  },
+  {
+    "query": "no users yet so backward compatibility costs without benefit",
+    "expected_names": ["feedback_no_speculative_backcompat"],
+    "category": "synthetic"
+  },
+  {
+    "query": "pushing back on ticket specs that ask for compat flags",
+    "expected_names": ["feedback_no_speculative_backcompat"],
+    "category": "synthetic"
+  },
+  {
+    "query": "defensive code for hypothetical upstream format drift",
+    "expected_names": ["feedback_no_speculative_futureproofing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "bot reviewer suggested hardening should I file a ticket",
+    "expected_names": ["feedback_no_speculative_futureproofing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "react to real failures instead of imagined future ones",
+    "expected_names": ["feedback_no_speculative_futureproofing"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid substring assertions on documentation text in acceptance criteria",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "synthetic"
+  },
+  {
+    "query": "verifying README and CONTRIBUTING changes without mechanical regex tests",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to write meaningful tests for prose acceptance criteria",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "synthetic"
+  },
+  {
+    "query": "don't weigh existing scaffolding against architectural redesigns",
+    "expected_names": ["feedback_no_sunk_cost_anchoring"],
+    "category": "synthetic"
+  },
+  {
+    "query": "evaluating PCB layout rework versus keeping initial blocks",
+    "expected_names": ["feedback_no_sunk_cost_anchoring"],
+    "category": "synthetic"
+  },
+  {
+    "query": "early product cycle decision and a few hours wasted argument",
+    "expected_names": ["feedback_no_sunk_cost_anchoring"],
+    "category": "synthetic"
+  },
+  {
+    "query": "never speculate about ZWO or Pegasus internal component choices",
+    "expected_names": ["feedback_no_unverified_claims"],
+    "category": "synthetic"
+  },
+  {
+    "query": "justifying part selection without invoking competitor designs",
+    "expected_names": ["feedback_no_unverified_claims"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoiding fabricated claims about other companies' hardware",
+    "expected_names": ["feedback_no_unverified_claims"],
+    "category": "synthetic"
+  },
+  {
+    "query": "only one pull request in flight awaiting review",
+    "expected_names": ["feedback_one_pr_at_a_time"],
+    "category": "synthetic"
+  },
+  {
+    "query": "auto mode behavior when previous PR not yet merged",
+    "expected_names": ["feedback_one_pr_at_a_time"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I open a second non-conflicting PR before review",
+    "expected_names": ["feedback_one_pr_at_a_time"],
+    "category": "synthetic"
+  },
+  {
+    "query": "split terraform migration and modification into separate steps",
+    "expected_names": ["feedback_one_thing_at_a_time"],
+    "category": "synthetic"
+  },
+  {
+    "query": "moving a module between repos without changing its config",
+    "expected_names": ["feedback_one_thing_at_a_time"],
+    "category": "synthetic"
+  },
+  {
+    "query": "isolating infrastructure changes for easier rollback verification",
+    "expected_names": ["feedback_one_thing_at_a_time"],
+    "category": "synthetic"
+  },
+  {
+    "query": "check builtin libraries before importing footprints from easyeda",
+    "expected_names": ["feedback_prefer_kicad_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "where to find standard QFN and SO IC footprints",
+    "expected_names": ["feedback_prefer_kicad_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoiding unreliable third-party footprint import tools",
+    "expected_names": ["feedback_prefer_kicad_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DDA prototypes ship to customers when working",
+    "expected_names": ["feedback_prototype_is_production"],
+    "category": "synthetic"
+  },
+  {
+    "query": "no good-enough-for-prototype component shortcuts allowed",
+    "expected_names": ["feedback_prototype_is_production"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to make hardware design choices for one-person operation",
+    "expected_names": ["feedback_prototype_is_production"],
+    "category": "synthetic"
+  },
+  {
+    "query": "use Read tool on PDFs saved by WebFetch",
+    "expected_names": ["feedback_read_downloaded_files"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop claiming downloaded files cannot be parsed",
+    "expected_names": ["feedback_read_downloaded_files"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to open binary files fetched from the web",
+    "expected_names": ["feedback_read_downloaded_files"],
+    "category": "synthetic"
+  },
+  {
+    "query": "rebuild embedded webroot bytes after UI source edits",
+    "expected_names": ["feedback_regenerate_filesystem"],
+    "category": "synthetic"
+  },
+  {
+    "query": "make filesystem versus make build for firmware UI changes",
+    "expected_names": ["feedback_regenerate_filesystem"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why does the flashed device still serve the old web bundle",
+    "expected_names": ["feedback_regenerate_filesystem"],
+    "category": "synthetic"
+  },
+  {
+    "query": "regenerate stale release zip through the documented pipeline",
+    "expected_names": ["feedback_release_artifacts_canonical_only"],
+    "category": "synthetic"
+  },
+  {
+    "query": "never hand-roll a python script to repackage firmware artifacts",
+    "expected_names": ["feedback_release_artifacts_canonical_only"],
+    "category": "synthetic"
+  },
+  {
+    "query": "force pio to rebuild the dragonlair release artifact",
+    "expected_names": ["feedback_release_artifacts_canonical_only"],
+    "category": "synthetic"
+  },
+  {
+    "query": "release notes should target end customers not developers",
+    "expected_names": ["feedback_release_notes_audience"],
+    "category": "synthetic"
+  },
+  {
+    "query": "what to omit from firmware release notes sections",
+    "expected_names": ["feedback_release_notes_audience"],
+    "category": "synthetic"
+  },
+  {
+    "query": "writing beta release notes that ship with the firmware zip",
+    "expected_names": ["feedback_release_notes_audience"],
+    "category": "synthetic"
+  },
+  {
+    "query": "don't silently shrink scope when user agreed to plan",
+    "expected_names": ["feedback_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "delivering all parts of a multi-item request fully",
+    "expected_names": ["feedback_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop blaming the user for scoping decisions they didn't make",
+    "expected_names": ["feedback_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "search footprints by every manufacturer part number",
+    "expected_names": ["feedback_search_all_part_numbers"],
+    "category": "synthetic"
+  },
+  {
+    "query": "finding USB connector footprints across MPN variants",
+    "expected_names": ["feedback_search_all_part_numbers"],
+    "category": "synthetic"
+  },
+  {
+    "query": "missed footprint because only searched primary MPN",
+    "expected_names": ["feedback_search_all_part_numbers"],
+    "category": "synthetic"
+  },
+  {
+    "query": "PCF8574 pin name collision with SKiDL auto alias",
+    "expected_names": ["feedback_skidl_pin_alias_collision"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why u['P1'] merges multiple nets in SKiDL",
+    "expected_names": ["feedback_skidl_pin_alias_collision"],
+    "category": "synthetic"
+  },
+  {
+    "query": "debugging huge merged ground net from pin name lookup",
+    "expected_names": ["feedback_skidl_pin_alias_collision"],
+    "category": "synthetic"
+  },
+  {
+    "query": "pause and ask after MCP tool disconnect or failure",
+    "expected_names": ["feedback_stop_and_ask_on_failure"],
+    "category": "synthetic"
+  },
+  {
+    "query": "don't switch data sources when requested tool errors",
+    "expected_names": ["feedback_stop_and_ask_on_failure"],
+    "category": "synthetic"
+  },
+  {
+    "query": "tool failure protocol instead of pivoting silently",
+    "expected_names": ["feedback_stop_and_ask_on_failure"],
+    "category": "synthetic"
+  },
+  {
+    "query": "halt completely after being corrected by user",
+    "expected_names": ["feedback_stop_and_wait"],
+    "category": "synthetic"
+  },
+  {
+    "query": "what to do immediately after making a mistake",
+    "expected_names": ["feedback_stop_and_wait"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop barreling forward after denied tool call",
+    "expected_names": ["feedback_stop_and_wait"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Storybook stories must import the actual component",
+    "expected_names": ["feedback_storybook_real_components"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid recreating components inline in Storybook",
+    "expected_names": ["feedback_storybook_real_components"],
+    "category": "synthetic"
+  },
+  {
+    "query": "wiring Clerk and Next.js into real Storybook stories",
+    "expected_names": ["feedback_storybook_real_components"],
+    "category": "synthetic"
+  },
+  {
+    "query": "never swap upstream framework source without permission",
+    "expected_names": ["feedback_supply_chain_changes"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ESP-IDF pioarduino fork supply chain trust rule",
+    "expected_names": ["feedback_supply_chain_changes"],
+    "category": "synthetic"
+  },
+  {
+    "query": "pinning platform_packages origin requires user signoff",
+    "expected_names": ["feedback_supply_chain_changes"],
+    "category": "synthetic"
+  },
+  {
+    "query": "run make update-board after editing SKiDL module",
+    "expected_names": ["feedback_sync_pcb_after_skidl"],
+    "category": "synthetic"
+  },
+  {
+    "query": "PCB stale because netlist not regenerated from SKiDL",
+    "expected_names": ["feedback_sync_pcb_after_skidl"],
+    "category": "synthetic"
+  },
+  {
+    "query": "checklist when finishing a block circuit change",
+    "expected_names": ["feedback_sync_pcb_after_skidl"],
+    "category": "synthetic"
+  },
+  {
+    "query": "trust JLCPCB EasyEDA footprints over datasheet reading",
+    "expected_names": ["feedback_trust_validated_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "MLX90640 pin spacing 45 degrees not uniform 90",
+    "expected_names": ["feedback_trust_validated_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "when to override a battle-tested commercial footprint",
+    "expected_names": ["feedback_trust_validated_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid embedding unconfirmed decisions into ticket framing",
+    "expected_names": ["feedback_unratified_assumptions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "difference between recommendation and baked-in premise in tickets",
+    "expected_names": ["feedback_unratified_assumptions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to handle an assumption that isn't yet ratified during planning",
+    "expected_names": ["feedback_unratified_assumptions"],
+    "category": "synthetic"
+  },
+  {
+    "query": "which skill to invoke when implementing a Linear ticket",
+    "expected_names": ["feedback_use_linear_execute_issue_skill"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop rolling manual TDD handshake for dev-workflow projects",
+    "expected_names": ["feedback_use_linear_execute_issue_skill"],
+    "category": "synthetic"
+  },
+  {
+    "query": "process for executing a Linear issue with contract envelope",
+    "expected_names": ["feedback_use_linear_execute_issue_skill"],
+    "category": "synthetic"
+  },
+  {
+    "query": "order to search for KiCad footprints when adding a part",
+    "expected_names": ["feedback_use_source_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "where to find production verified footprints before easyeda2kicad",
+    "expected_names": ["feedback_use_source_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "preferred footprint library lookup sequence for new components",
+    "expected_names": ["feedback_use_source_footprints"],
+    "category": "synthetic"
+  },
+  {
+    "query": "proper way to install python packages without polluting system",
+    "expected_names": ["feedback_use_venv"],
+    "category": "synthetic"
+  },
+  {
+    "query": "avoid global pip3 install on this machine",
+    "expected_names": ["feedback_use_venv"],
+    "category": "synthetic"
+  },
+  {
+    "query": "use uv or virtual environment for project dependencies",
+    "expected_names": ["feedback_use_venv"],
+    "category": "synthetic"
+  },
+  {
+    "query": "read SKILL.md source before invoking a dev-workflow skill",
+    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "category": "synthetic"
+  },
+  {
+    "query": "skill ignored stay-on-branch instruction, how to prevent",
+    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "category": "synthetic"
+  },
+  {
+    "query": "confirm a skill supports user constraints before calling it",
+    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "category": "synthetic"
+  },
+  {
+    "query": "check JLCPCB stock before finalizing a component choice",
+    "expected_names": ["feedback_verify_jlc_availability"],
+    "category": "synthetic"
+  },
+  {
+    "query": "verify part availability with jlc_get_part during selection",
+    "expected_names": ["feedback_verify_jlc_availability"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to avoid out of stock parts in BOM",
+    "expected_names": ["feedback_verify_jlc_availability"],
+    "category": "synthetic"
+  },
+  {
+    "query": "don't trust a skill's self-reported success summary",
+    "expected_names": ["feedback_verify_outcomes_not_summaries"],
+    "category": "synthetic"
+  },
+  {
+    "query": "verify git and PR state after running an agent",
+    "expected_names": ["feedback_verify_outcomes_not_summaries"],
+    "category": "synthetic"
+  },
+  {
+    "query": "trust but verify principle for tool output",
+    "expected_names": ["feedback_verify_outcomes_not_summaries"],
+    "category": "synthetic"
+  },
+  {
+    "query": "read datasheet pin table before creating a SKiDL part template",
+    "expected_names": ["feedback_verify_pinout_before_template"],
+    "category": "synthetic"
+  },
+  {
+    "query": "stop guessing pinouts when adding new parts",
+    "expected_names": ["feedback_verify_pinout_before_template"],
+    "category": "synthetic"
+  },
+  {
+    "query": "workflow for adding a verified part template safely",
+    "expected_names": ["feedback_verify_pinout_before_template"],
+    "category": "synthetic"
+  },
+  {
+    "query": "terraform cloud workspace tag filter not matching",
+    "expected_names": ["hcp_terraform_workspace_tags_key_only"],
+    "category": "synthetic"
+  },
+  {
+    "query": "key-only vs key value tags in HCP Terraform workspaces",
+    "expected_names": ["hcp_terraform_workspace_tags_key_only"],
+    "category": "synthetic"
+  },
+  {
+    "query": "terraform init cannot discover workspace after adding tag",
+    "expected_names": ["hcp_terraform_workspace_tags_key_only"],
+    "category": "synthetic"
+  },
+  {
+    "query": "JLCPCB manufacturing constraints for 4-layer 2oz board",
+    "expected_names": ["jlcpcb_settings"],
+    "category": "synthetic"
+  },
+  {
+    "query": "KiCad DRC setup values for JLCPCB fabrication",
+    "expected_names": ["jlcpcb_settings"],
+    "category": "synthetic"
+  },
+  {
+    "query": "minimum trace width and via size for JLC 2oz multilayer",
+    "expected_names": ["jlcpcb_settings"],
+    "category": "synthetic"
+  },
+  {
+    "query": "which magjack did we pick for the W5500 block",
+    "expected_names": ["magjack_selection"],
+    "category": "synthetic"
+  },
+  {
+    "query": "tab-up RJ45 with exposed center taps for ethernet PHY",
+    "expected_names": ["magjack_selection"],
+    "category": "synthetic"
+  },
+  {
+    "query": "need to swap the W5500 magjack what part should I use",
+    "expected_names": ["magjack_selection"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how long does npx cache resolved packages before refetching",
+    "expected_names": ["npx_cache_ttl"],
+    "category": "synthetic"
+  },
+  {
+    "query": "force npx to fetch a fresh version from registry",
+    "expected_names": ["npx_cache_ttl"],
+    "category": "synthetic"
+  },
+  {
+    "query": "MCP server not picking up newly published npm version",
+    "expected_names": ["npx_cache_ttl"],
+    "category": "synthetic"
+  },
+  {
+    "query": "where do beta release tags live in dragonlair firmware",
+    "expected_names": ["project_beta_release_branches"],
+    "category": "synthetic"
+  },
+  {
+    "query": "tagging early access builds on feature branches before main",
+    "expected_names": ["project_beta_release_branches"],
+    "category": "synthetic"
+  },
+  {
+    "query": "is a beta tag on a non-main branch a mistake",
+    "expected_names": ["project_beta_release_branches"],
+    "category": "synthetic"
+  },
+  {
+    "query": "block SKiDL parameters that change footprints break routing",
+    "expected_names": ["project_block_pcb_parameter_debt"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ina226 shunt and w5500 poe inductor footprint swaps on update-board",
+    "expected_names": ["project_block_pcb_parameter_debt"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why does make update-board destroy my routing on weather_hub",
+    "expected_names": ["project_block_pcb_parameter_debt"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I import DragonLAIR motor and dome code into weather hub",
+    "expected_names": ["project_codebase_strategy"],
+    "category": "synthetic"
+  },
+  {
+    "query": "weather hub firmware fork strategy and trimmed codebase scope",
+    "expected_names": ["project_codebase_strategy"],
+    "category": "synthetic"
+  },
+  {
+    "query": "considering reusing esp32-idf-common subsystems for weather monitoring",
+    "expected_names": ["project_codebase_strategy"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DragonFIRE power controller architecture overview",
+    "expected_names": ["project_dragonfire"],
+    "category": "synthetic"
+  },
+  {
+    "query": "12V distribution board with BTS7004 switching and INA3221 monitoring",
+    "expected_names": ["project_dragonfire"],
+    "category": "synthetic"
+  },
+  {
+    "query": "what parts and rails are on the astronomy power controller",
+    "expected_names": ["project_dragonfire"],
+    "category": "synthetic"
+  },
+  {
+    "query": "plan to add current and voltage monitoring to H-bridge motor driver",
+    "expected_names": ["project_ina226_planned"],
+    "category": "synthetic"
+  },
+  {
+    "query": "INA226 integration with VBAT rail on h_bridge block",
+    "expected_names": ["project_ina226_planned"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how will motor supply voltage be monitored for diagnostics",
+    "expected_names": ["project_ina226_planned"],
+    "category": "synthetic"
+  },
+  {
+    "query": "isolated CAN motor controller architecture for dome and roof",
+    "expected_names": ["project_motor_controller_system"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why galvanic isolation between motor boards with separate batteries",
+    "expected_names": ["project_motor_controller_system"],
+    "category": "synthetic"
+  },
+  {
+    "query": "designing a multi-board synchronized motor system for large domes",
+    "expected_names": ["project_motor_controller_system"],
+    "category": "synthetic"
+  },
+  {
+    "query": "PoE input filter capacitor undersized due to DC bias derating",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "synthetic"
+  },
+  {
+    "query": "AN956 recommended input capacitance for 48V PoE PD",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "synthetic"
+  },
+  {
+    "query": "X5R ceramic cap losing capacitance on 48V VPOS rail",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how is Storybook configured in the web-frontend package",
+    "expected_names": ["project_storybook_setup"],
+    "category": "synthetic"
+  },
+  {
+    "query": "nextjs-vite framework with Clerk decorator and Vite aliases",
+    "expected_names": ["project_storybook_setup"],
+    "category": "synthetic"
+  },
+  {
+    "query": "adding stories for components from other packages like draco",
+    "expected_names": ["project_storybook_setup"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Super4C ESP32 chip revision crystal and MAC details",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "synthetic"
+  },
+  {
+    "query": "BOOT and EN button GPIO pins on Super4C",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to restore stock firmware to the Super4C board",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ESP-PROG to Super4C J47 header UART wiring",
+    "expected_names": ["project_super4c_wiring"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why my Super4C serial console gets no data",
+    "expected_names": ["project_super4c_wiring"],
+    "category": "synthetic"
+  },
+  {
+    "query": "TXD RXD orientation between ESP-PROG and Super4C J47",
+    "expected_names": ["project_super4c_wiring"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why TSL237 is on the weather hub alongside TSL2591",
+    "expected_names": ["project_tsl237_calibration"],
+    "category": "synthetic"
+  },
+  {
+    "query": "picking a dark-sky SQM sensor for astronomy boards",
+    "expected_names": ["project_tsl237_calibration"],
+    "category": "synthetic"
+  },
+  {
+    "query": "TSL2591 versus VEML7700 low-light floor for Bortle 1",
+    "expected_names": ["project_tsl237_calibration"],
+    "category": "synthetic"
+  },
+  {
+    "query": "W5500 PoE variant component selection with external magnetics",
+    "expected_names": ["project_w5500_poe_design"],
+    "category": "synthetic"
+  },
+  {
+    "query": "SI3402-B buck values for 12V PoE output design",
+    "expected_names": ["project_w5500_poe_design"],
+    "category": "synthetic"
+  },
+  {
+    "query": "H1102NLT transformer pin mapping to SI3402 center taps",
+    "expected_names": ["project_w5500_poe_design"],
+    "category": "synthetic"
+  },
+  {
+    "query": "weather monitor prototype pin map and power budget",
+    "expected_names": ["project_weather_board"],
+    "category": "synthetic"
+  },
+  {
+    "query": "ESP32 GPIO assignments for W5500 GPS and eMMC",
+    "expected_names": ["project_weather_board"],
+    "category": "synthetic"
+  },
+  {
+    "query": "KiCad custom DRC rules overriding HighVoltage netclass clearance",
+    "expected_names": ["project_weather_board"],
+    "category": "synthetic"
+  },
+  {
+    "query": "where should I save agent memories in this project",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "synthetic"
+  },
+  {
+    "query": "commonplace MCP versus harness auto-memory location",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I migrate harness memory files to commonplace",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "synthetic"
+  },
+  {
+    "query": "user's experience across AWS Cloudflare GCP Vultr clouds",
+    "expected_names": ["user_cloud_experience"],
+    "category": "synthetic"
+  },
+  {
+    "query": "should I default new projects to AWS for this user",
+    "expected_names": ["user_cloud_experience"],
+    "category": "synthetic"
+  },
+  {
+    "query": "handling stated cloud preferences when picking a platform",
+    "expected_names": ["user_cloud_experience"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Rick's DDA circuit design and board fab preferences",
+    "expected_names": ["user_preferences"],
+    "category": "synthetic"
+  },
+  {
+    "query": "preferred KiCad stackup and passive size for JLCPCB",
+    "expected_names": ["user_preferences"],
+    "category": "synthetic"
+  },
+  {
+    "query": "where to find the personal KiCad footprint library",
+    "expected_names": ["user_preferences"],
+    "category": "synthetic"
+  },
+  {
+    "query": "how to install wrangler now that Homebrew dropped it",
+    "expected_names": ["wrangler_install_path"],
+    "category": "synthetic"
+  },
+  {
+    "query": "best way to run wrangler in operator bootstrap runbooks",
+    "expected_names": ["wrangler_install_path"],
+    "category": "synthetic"
+  },
+  {
+    "query": "non-interactive Cloudflare auth env var for wrangler",
+    "expected_names": ["wrangler_install_path"],
+    "category": "synthetic"
+  },
+  {
+    "query": "wrangler fails with Node.js v22 requirement error",
+    "expected_names": ["wrangler_requires_node_22"],
+    "category": "synthetic"
+  },
+  {
+    "query": "setup-node version to use for Cloudflare Worker CI",
+    "expected_names": ["wrangler_requires_node_22"],
+    "category": "synthetic"
+  },
+  {
+    "query": "why does wrangler refuse to run on Node 20",
+    "expected_names": ["wrangler_requires_node_22"],
+    "category": "synthetic"
+  }
+]

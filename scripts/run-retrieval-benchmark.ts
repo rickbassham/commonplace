@@ -49,10 +49,18 @@ export interface RunBenchmarkOptions {
   pairs: LabeledPair[];
   /** Embedder for re-embedding query and alternate corpus text in memory. */
   embedder: BenchmarkEmbedder;
-  /** Output path for the rendered `retrieval-benchmark.md`. */
-  docsOutputPath: string;
-  /** Output path for the labeled-set JSON. */
-  labeledSetOutputPath: string;
+  /**
+   * Output path for the rendered `retrieval-benchmark.md`. When omitted, the
+   * doc is not written -- callers that want to render a combined doc across
+   * multiple test sets can compute the summaries here and render via
+   * {@link renderCombinedDoc}.
+   */
+  docsOutputPath?: string;
+  /**
+   * Output path for the labeled-set JSON. When omitted, the labeled set is
+   * not written -- useful for runs against an already-committed set.
+   */
+  labeledSetOutputPath?: string;
   /** Optional BM25 weight in the hybrid variant. Defaults to 0.5. */
   hybridWeight?: number;
 }
@@ -108,13 +116,19 @@ export const runBenchmark = async (opts: RunBenchmarkOptions): Promise<Benchmark
     metrics,
   };
 
-  // Write the labeled set (AC-2: stable on-disk artifact).
-  ensureDir(dirname(opts.labeledSetOutputPath));
-  writeFileSync(opts.labeledSetOutputPath, JSON.stringify(opts.pairs, null, 2) + '\n', 'utf8');
+  // Write the labeled set (AC-2: stable on-disk artifact) -- only when the
+  // caller asked for it. Synthetic set runs reuse an already-committed file.
+  if (opts.labeledSetOutputPath !== undefined) {
+    ensureDir(dirname(opts.labeledSetOutputPath));
+    writeFileSync(opts.labeledSetOutputPath, JSON.stringify(opts.pairs, null, 2) + '\n', 'utf8');
+  }
 
-  // Write the docs (AC-4).
-  ensureDir(dirname(opts.docsOutputPath));
-  writeFileSync(opts.docsOutputPath, renderDoc(summary, opts), 'utf8');
+  // Write the docs (AC-4) -- only when the caller asked for it. Multi-set
+  // callers render via `renderCombinedDoc` after collecting all summaries.
+  if (opts.docsOutputPath !== undefined) {
+    ensureDir(dirname(opts.docsOutputPath));
+    writeFileSync(opts.docsOutputPath, renderDoc(summary, opts), 'utf8');
+  }
 
   return summary;
 };
@@ -126,6 +140,7 @@ const tallyByCategory = (pairs: LabeledPair[]): Record<string, number> => {
     confirmed_hit: 0,
     operator_correction: 0,
     should_have_hit: 0,
+    synthetic: 0,
   };
   for (const p of pairs) {
     out[p.category] = (out[p.category] ?? 0) + 1;
@@ -336,6 +351,163 @@ const interpret = (m: VariantMetrics, baseline: VariantMetrics | undefined): str
   );
 };
 
+// --- Multi-set rendering ---------------------------------------------------
+
+/**
+ * Render a doc that compares multiple labeled sets side by side. Each set
+ * gets its own "Test set stats" + "Results" + "Interpretation" subsections;
+ * the shared methodology, corpus stats, and reproducibility sections appear
+ * once. Used by the CLI to combine the mined+labeled set with the synthetic
+ * set in a single `docs/retrieval-benchmark.md`.
+ */
+export interface LabeledSetRun {
+  /** Short label rendered as the section heading, e.g. `Mined` or `Synthetic`. */
+  label: string;
+  /** Long-form description of how this set was produced. */
+  describe: string;
+  /** Benchmark summary computed against this set. */
+  summary: BenchmarkSummary;
+}
+
+export const renderCombinedDoc = (
+  runs: LabeledSetRun[],
+  opts: { hybridWeight?: number },
+): string => {
+  if (runs.length === 0) throw new Error('renderCombinedDoc: at least one run required');
+
+  // All runs share the same corpus; take the first.
+  const corpus = runs[0]!.summary.corpus;
+
+  const out: string[] = [];
+  out.push('# Retrieval-quality benchmark for `memory_search`');
+  out.push('');
+  out.push(
+    'This document reports the results of the DAR-1034 retrieval benchmark: ' +
+      'a comparison of six retrieval variants across two independent labeled ' +
+      'test sets (mined from real Claude Code session transcripts, and ' +
+      'synthetically generated). The benchmark does not change the production ' +
+      'retrieval path -- acting on the numbers is a separate follow-up issue.',
+  );
+  out.push('');
+
+  out.push('## Methodology');
+  out.push('');
+  out.push(
+    'Two independent test sets are used. Each has different strengths and ' +
+      'biases; we report them separately rather than averaging because their ' +
+      'failure modes differ.',
+  );
+  out.push('');
+  for (const run of runs) {
+    out.push(`**${run.label}.** ${run.describe}`);
+    out.push('');
+  }
+  out.push(
+    'Variants are run independently against each set. A variant that wins on ' +
+      'one set but loses on the other is doing well on its biases, not on ' +
+      'retrieval per se; the headline question is whether a variant clearly ' +
+      'dominates the baseline `cosine-body` across both sets.',
+  );
+  out.push('');
+  out.push('### Metric definitions');
+  out.push('');
+  out.push(
+    '- `Recall@1`: fraction of queries whose any `expected_name` appears in ' +
+      'the top-1 ranked candidate. Range `[0, 1]`.',
+  );
+  out.push('- `Recall@5`: same, but for the top-5. Range `[0, 1]`.');
+  out.push(
+    '- `MRR` (mean reciprocal rank): mean of `1 / rank-of-first-expected` ' +
+      'across queries; queries with no expected name in the ranked list ' +
+      'contribute `0`. Range `[0, 1]`.',
+  );
+  out.push('');
+
+  out.push('## Corpus stats');
+  out.push('');
+  out.push(`- Memory count: ${corpus.count}`);
+  out.push(`- Mean body length: ${corpus.meanBodyLengthChars.toFixed(1)} characters`);
+  out.push('');
+
+  for (const run of runs) {
+    out.push(`## ${run.label}`);
+    out.push('');
+    out.push('### Test set stats');
+    out.push('');
+    out.push(`- Pair count: ${run.summary.testSet.count}`);
+    for (const [cat, n] of Object.entries(run.summary.testSet.byCategory)) {
+      if (n === 0) continue;
+      out.push(`- ${cat}: ${n}`);
+    }
+    if (run.summary.testSet.count < 30) {
+      out.push('');
+      out.push(
+        `Below the 30-pair statistical-power target. Treat per-variant deltas ` +
+          'on this set as directional only; cross-reference against the other ' +
+          'test set before drawing conclusions.',
+      );
+    }
+    out.push('');
+
+    out.push('### Results');
+    out.push('');
+    out.push('| variant | Recall@1 | Recall@5 | MRR | notes |');
+    out.push('|---|---|---|---|---|');
+    for (const m of run.summary.metrics) {
+      if (m.deferred) {
+        out.push(`| ${m.variant} | deferred | deferred | deferred | ${m.deferralReason ?? ''} |`);
+      } else {
+        out.push(
+          `| ${m.variant} | ${fmt(m.recall_at_1)} | ${fmt(m.recall_at_5)} | ` +
+            `${fmt(m.mrr)} | ${paramsToString(m.parameters)} |`,
+        );
+      }
+    }
+    out.push('');
+
+    out.push('### Interpretation');
+    out.push('');
+    const baseline = run.summary.metrics.find((m) => m.variant === 'cosine-body');
+    for (const m of run.summary.metrics) {
+      out.push(`#### \`${m.variant}\``);
+      out.push('');
+      if (m.deferred) {
+        out.push(`${VARIANT_DESCRIPTION[m.variant]} Deferred. ${m.deferralReason ?? ''}`);
+      } else {
+        out.push(interpret(m, baseline));
+      }
+      out.push('');
+    }
+  }
+
+  out.push('## Reproducibility');
+  out.push('');
+  out.push('Re-run the full pipeline with:');
+  out.push('');
+  out.push('```');
+  out.push('make benchmark');
+  out.push('```');
+  out.push('');
+  out.push(
+    'The harness reads from `~/.claude/projects` (transcripts) and ' +
+      '`~/.commonplace/memory` (user-scope corpus) by default and writes ' +
+      'this file plus the mined labeled set under `docs/`. The synthetic ' +
+      'labeled set at `docs/retrieval-labeled-set-synthetic.json` is treated ' +
+      'as an already-committed artifact -- regenerate it by running the ' +
+      'agent-based generator described in the DAR-1034 PR description if ' +
+      'memories have been added/removed/renamed. The benchmark never mutates ' +
+      '`.embedding` sidecars on disk (DAR-1034 AC-5).',
+  );
+  out.push('');
+  out.push(
+    `Hybrid weight: \`${opts.hybridWeight ?? 0.5}\` (BM25 weight; cosine ` +
+      `weight = \`${1 - (opts.hybridWeight ?? 0.5)}\`).`,
+  );
+  out.push('');
+
+  return out.join('\n');
+};
+
 // --- CLI --------------------------------------------------------------------
 
 const isCliEntry = (): boolean => {
@@ -384,7 +556,8 @@ const main = async (): Promise<void> => {
   const corpusDir = join(homedir(), '.commonplace', 'memory');
   const transcriptsRoot = process.env.COMMONPLACE_TRANSCRIPTS_ROOT ?? defaultTranscriptsRoot();
   const docsOutputPath = join(repoRoot, 'docs', 'retrieval-benchmark.md');
-  const labeledSetOutputPath = join(repoRoot, 'docs', 'retrieval-labeled-set.json');
+  const minedLabeledSetPath = join(repoRoot, 'docs', 'retrieval-labeled-set.json');
+  const syntheticLabeledSetPath = join(repoRoot, 'docs', 'retrieval-labeled-set-synthetic.json');
 
   // Mine + label.
   const calls = await mineTranscripts({
@@ -392,24 +565,121 @@ const main = async (): Promise<void> => {
     onWarn: (msg) => process.stderr.write(msg + '\n'),
   });
   const corpusNames = loadCorpusNames(corpusDir);
-  const pairs = buildLabeledSet({ calls, corpus: corpusNames });
+  const minedPairs = buildLabeledSet({ calls, corpus: corpusNames });
+
+  // Load the synthetic labeled set (committed to the repo). The synthetic
+  // set is generated by spawning subagents over the corpus -- see the
+  // DAR-1034 PR description for the regeneration recipe. Drift detection
+  // (every `expected_names` entry must resolve to a real corpus file)
+  // happens here, fail-fast, so a stale synthetic set can't silently lower
+  // the headline metrics.
+  const syntheticPairs = loadSyntheticLabeledSet(syntheticLabeledSetPath, corpusNames);
 
   // Load the production embedder lazily so the test suite (which uses a
   // stub embedder) doesn't pay the transformers.js load cost.
   const { Embedder } = await import('../src/embedder/index.js');
   const embedder = new Embedder('Xenova/bge-base-en-v1.5');
+  const hybridWeight = 0.5;
 
-  const summary = await runBenchmark({
+  const minedSummary = await runBenchmark({
     corpusDir,
-    pairs,
+    pairs: minedPairs,
     embedder,
-    docsOutputPath,
-    labeledSetOutputPath,
+    labeledSetOutputPath: minedLabeledSetPath,
+    hybridWeight,
   });
 
-  process.stderr.write(
-    `Benchmark complete: corpus=${summary.corpus.count}, pairs=${summary.testSet.count}\n`,
+  const syntheticSummary = await runBenchmark({
+    corpusDir,
+    pairs: syntheticPairs,
+    embedder,
+    hybridWeight,
+  });
+
+  ensureDir(dirname(docsOutputPath));
+  writeFileSync(
+    docsOutputPath,
+    renderCombinedDoc(
+      [
+        {
+          label: 'Mined test set (real session transcripts)',
+          summary: minedSummary,
+          describe:
+            'Built by `scripts/mine-transcripts.ts` + `scripts/build-labeled-set.ts`. ' +
+            'Walks every `.jsonl` transcript recursively under `~/.claude/projects/` ' +
+            '(including subagent transcripts) and emits one record per ' +
+            '`mcp__commonplace__memory_search` invocation. Labeling assigns each ' +
+            'record to one of `confirmed_hit`, `operator_correction`, or ' +
+            '`should_have_hit`. Bias: small N (the tool is invoked rarely in ' +
+            'practice), but ground-truth signal -- these are real queries with ' +
+            "real expected results that the dev's sessions surfaced.",
+        },
+        {
+          label: 'Synthetic test set (agent-generated queries)',
+          summary: syntheticSummary,
+          describe:
+            'Three queries per memory in the user-scope corpus, generated by ' +
+            'spawning `general-purpose` subagents over the corpus with a fixed ' +
+            'template. Each query is a paraphrase of the description, a body-' +
+            'concept rephrasing, or a problem-framing -- all 4-15 words, ' +
+            'natural search-style phrasing, no verbatim body quotes. Bias: ' +
+            "the agent's notion of 'realistic query' is not the same as actual " +
+            'user/agent search patterns, so wins here may not transfer to ' +
+            'production. But N is large (~330) so per-variant deltas are ' +
+            'statistically meaningful.',
+        },
+      ],
+      { hybridWeight },
+    ),
+    'utf8',
   );
+
+  process.stderr.write(
+    `Benchmark complete: corpus=${minedSummary.corpus.count}, ` +
+      `mined=${minedSummary.testSet.count}, synthetic=${syntheticSummary.testSet.count}\n`,
+  );
+};
+
+/**
+ * Load the committed synthetic labeled set, fail-fast on schema drift or
+ * on dangling `expected_names` references (memory deleted/renamed since
+ * the set was generated). The validation is intentionally strict because
+ * a stale set silently lowers every variant's metrics in the same way and
+ * looks like a real regression.
+ */
+const loadSyntheticLabeledSet = (path: string, corpus: CorpusName[]): LabeledPair[] => {
+  const raw = readFileSync(path, 'utf8');
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${path}: expected a JSON array of LabeledPair entries`);
+  }
+  const corpusFilenames = new Set(corpus.map((c) => c.filename));
+  const out: LabeledPair[] = [];
+  for (let i = 0; i < parsed.length; i++) {
+    const entry: unknown = parsed[i];
+    if (
+      entry === null ||
+      typeof entry !== 'object' ||
+      typeof (entry as { query?: unknown }).query !== 'string' ||
+      !Array.isArray((entry as { expected_names?: unknown }).expected_names) ||
+      (entry as { expected_names: unknown[] }).expected_names.some((n) => typeof n !== 'string') ||
+      typeof (entry as { category?: unknown }).category !== 'string'
+    ) {
+      throw new Error(`${path}: entry ${i} failed schema validation`);
+    }
+    const e = entry as LabeledPair;
+    for (const name of e.expected_names) {
+      if (!corpusFilenames.has(name)) {
+        throw new Error(
+          `${path}: entry ${i} expected_name "${name}" does not resolve to a ` +
+            'corpus file (memory may have been deleted/renamed). Regenerate ' +
+            'the synthetic labeled set -- see the DAR-1034 PR description.',
+        );
+      }
+    }
+    out.push(e);
+  }
+  return out;
 };
 
 if (isCliEntry()) {

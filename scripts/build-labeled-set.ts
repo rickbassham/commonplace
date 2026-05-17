@@ -56,7 +56,11 @@ export interface LabeledPair {
   category: LabelCategory;
 }
 
-export type LabelCategory = 'confirmed_hit' | 'operator_correction' | 'should_have_hit';
+export type LabelCategory =
+  | 'confirmed_hit'
+  | 'operator_correction'
+  | 'should_have_hit'
+  | 'synthetic';
 
 export interface BuildLabeledSetOptions {
   calls: MinedSearchCall[];

@@ -142,7 +142,7 @@ export const mineTranscripts = async (opts: MineOptions = {}): Promise<MinedSear
   const root = opts.root ?? defaultTranscriptsRoot();
   const onWarn = opts.onWarn ?? (() => {});
 
-  const transcripts = collectTranscripts(root);
+  const transcripts = collectTranscripts(root, onWarn);
   const out: MinedSearchCall[] = [];
 
   for (const path of transcripts) {
@@ -192,8 +192,23 @@ export const mineTranscripts = async (opts: MineOptions = {}): Promise<MinedSear
 
 // --- helpers ----------------------------------------------------------------
 
-/** Find every `.jsonl` file under `root`, one level deep (project slugs). */
-const collectTranscripts = (root: string): string[] => {
+/**
+ * Find every `.jsonl` file under `root`, walking the directory tree
+ * recursively. The Claude Code layout has at least three observed shapes:
+ *
+ *   - `~/.claude/projects/<slug>/<session>.jsonl` -- top-level session
+ *     transcripts (the original layout this miner supported).
+ *   - `~/.claude/projects/<slug>/<session>/subagents/<agent>.jsonl` --
+ *     subagent transcripts spawned during a session (94% of files on this
+ *     dev's machine; missing these caps the labeled-set size hard).
+ *   - Any future nesting added by Claude Code releases.
+ *
+ * Walking recursively means we never silently lose data when the layout
+ * grows another level. Symlink loops are guarded by a visited-realpaths
+ * set; non-readable directories are skipped with a warning sent to the
+ * caller-supplied `onWarn` sink.
+ */
+const collectTranscripts = (root: string, onWarn: (msg: string) => void): string[] => {
   let stat;
   try {
     stat = statSync(root);
@@ -203,25 +218,34 @@ const collectTranscripts = (root: string): string[] => {
   if (!stat.isDirectory()) return [];
 
   const out: string[] = [];
-  for (const ent of readdirSync(root, { withFileTypes: true })) {
-    const p = join(root, ent.name);
-    if (ent.isFile() && ent.name.endsWith('.jsonl')) {
-      out.push(p);
-    } else if (ent.isDirectory()) {
-      // One level deeper -- the `~/.claude/projects/<slug>/` layout.
-      let inner: ReadonlyArray<{ name: string; isFile: () => boolean }> = [];
-      try {
-        inner = readdirSync(p, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const sub of inner) {
-        if (sub.isFile() && sub.name.endsWith('.jsonl')) {
-          out.push(join(p, sub.name));
-        }
+  const visited = new Set<string>();
+  const walk = (dir: string): void => {
+    let realDir: string;
+    try {
+      realDir = statSync(dir).isDirectory() ? dir : '';
+    } catch {
+      return;
+    }
+    if (realDir === '' || visited.has(realDir)) return;
+    visited.add(realDir);
+
+    let entries: ReadonlyArray<{ name: string; isFile: () => boolean; isDirectory: () => boolean }>;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      onWarn(`mine-transcripts: cannot read directory ${dir}: ${errMessage(err)}`);
+      return;
+    }
+    for (const ent of entries) {
+      const p = join(dir, ent.name);
+      if (ent.isFile() && ent.name.endsWith('.jsonl')) {
+        out.push(p);
+      } else if (ent.isDirectory()) {
+        walk(p);
       }
     }
-  }
+  };
+  walk(root);
   out.sort();
   return out;
 };

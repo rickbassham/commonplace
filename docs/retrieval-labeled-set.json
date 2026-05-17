@@ -35,6 +35,11 @@
     "category": "confirmed_hit"
   },
   {
+    "query": "scope detection cwd project root walk",
+    "expected_names": ["feedback_scope"],
+    "category": "confirmed_hit"
+  },
+  {
     "query": "skip workflow skill process bypass",
     "expected_names": ["feedback_verify_before_invoking_skills"],
     "category": "confirmed_hit"
