@@ -128,6 +128,20 @@ const buildNameLookup = (corpus: CorpusName[]): NameLookup => {
  * stable casing in the corpus, and operator messages tend to mirror that
  * casing when citing a memory). Returned in first-occurrence order in
  * `text` so multi-mention messages preserve operator emphasis.
+ *
+ * **Substring-match assumption.** Tokens are matched by bare `indexOf`;
+ * collision avoidance relies on {@link buildNameLookup} returning tokens
+ * sorted longest-first (and on each token being seen-deduped on its
+ * canonical filename). This means a short token that is a prefix or
+ * substring of a longer corpus name will be shadowed by the longer name
+ * when both appear -- which is what we want today, given the user-scope
+ * corpus consists of distinct long prose names (e.g.
+ * `macos_apfs_fsync_test_perf`). Adding a short single-word memory name
+ * (`fsync`, say) could in principle produce false-positive operator-
+ * correction / should-have-hit entries pointing at the shorter memory
+ * inside a longer memory's name. If that risk materialises, switch to
+ * word-boundary matching (`new RegExp('\\b' + escape(token) + '\\b')`)
+ * here rather than relying on the longest-first ordering.
  */
 const findMentionedFilenames = (text: string, lookup: NameLookup): string[] => {
   if (text === '') return [];

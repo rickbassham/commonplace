@@ -27,7 +27,7 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   ALL_VARIANTS,
@@ -380,7 +380,7 @@ const loadCorpusNames = (dir: string): CorpusName[] => {
 };
 
 const main = async (): Promise<void> => {
-  const repoRoot = join(import.meta.url.replace(/^file:\/\//, ''), '..', '..');
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
   const corpusDir = join(homedir(), '.commonplace', 'memory');
   const transcriptsRoot = process.env.COMMONPLACE_TRANSCRIPTS_ROOT ?? defaultTranscriptsRoot();
   const docsOutputPath = join(repoRoot, 'docs', 'retrieval-benchmark.md');

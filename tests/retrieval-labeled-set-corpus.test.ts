@@ -16,6 +16,24 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import type { LabeledPair } from '../scripts/build-labeled-set.js';
+
+const isStringArray = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((n) => typeof n === 'string');
+
+const isLabeledPairShape = (value: unknown): value is LabeledPair => {
+  if (value === null || typeof value !== 'object') return false;
+  const pair: Record<string, unknown> = { ...value };
+  return (
+    typeof pair.query === 'string' &&
+    isStringArray(pair.expected_names) &&
+    typeof pair.category === 'string'
+  );
+};
+
+const isLabeledPairArray = (value: unknown): value is LabeledPair[] =>
+  Array.isArray(value) && value.every(isLabeledPairShape);
+
 describe('docs/retrieval-labeled-set.json (ac-2)', () => {
   it('every expected_name resolves to an existing user-scope memory filename', () => {
     const labeledPath = join(__dirname, '..', 'docs', 'retrieval-labeled-set.json');
@@ -31,11 +49,15 @@ describe('docs/retrieval-labeled-set.json (ac-2)', () => {
       return;
     }
 
-    const pairs = JSON.parse(readFileSync(labeledPath, 'utf8')) as Array<{
-      query: string;
-      expected_names: string[];
-      category: string;
-    }>;
+    const parsed: unknown = JSON.parse(readFileSync(labeledPath, 'utf8'));
+    if (!isLabeledPairArray(parsed)) {
+      throw new Error(
+        'docs/retrieval-labeled-set.json failed shape validation: expected an array ' +
+          'of { query: string; expected_names: string[]; category: string } entries. ' +
+          'The labeled-set schema may have drifted; re-run scripts/run-retrieval-benchmark.ts.',
+      );
+    }
+    const pairs = parsed;
     const corpusFilenames = new Set(
       readdirSync(corpusDir)
         .filter((f) => f.endsWith('.md'))

@@ -69,6 +69,20 @@ export interface BenchmarkEmbedder {
   embed(text: string): Promise<Float32Array>;
 }
 
+/**
+ * Precomputed corpus-level BM25 statistics. Built once per corpus by
+ * {@link buildBenchmarkInputs} so the per-(query, doc) scoring loop is
+ * O(1) per term in df/avgLen instead of O(N x avg_doc_len).
+ */
+export interface Bm25CorpusStats {
+  /** Document frequency per term across the corpus. */
+  df: Map<string, number>;
+  /** Average document length (in tokens) across the corpus. */
+  avgLen: number;
+  /** Corpus size (number of documents). */
+  N: number;
+}
+
 /** Pre-processed benchmark inputs. Build once, run every variant against. */
 export interface BenchmarkInputs {
   corpus: BenchmarkCorpusEntry[];
@@ -76,6 +90,8 @@ export interface BenchmarkInputs {
   embedder: BenchmarkEmbedder;
   /** All corpus tokenised bodies, for BM25 IDF calculation. */
   bodyTokensList: string[][];
+  /** Precomputed corpus-level BM25 statistics (df, avgLen, N). */
+  bm25Stats: Bm25CorpusStats;
 }
 
 export interface BuildBenchmarkInputsOptions {
@@ -93,8 +109,13 @@ export interface BuildBenchmarkInputsOptions {
  *   - `entry.descVector` is populated (in memory).
  *   - `entry.bodyTokens` is populated.
  *
- * Does NOT write to disk -- the alternate vectors live only in process
- * memory for the duration of the benchmark run.
+ * No on-disk writes; the alternate vectors live only in process memory
+ * for the duration of the benchmark run (ac-5). Note that this performs
+ * **in-place enrichment** of the caller-supplied corpus entries -- it is
+ * NOT a pure function. Today the only caller is `run-retrieval-benchmark.ts`,
+ * which loads a fresh corpus per invocation, so the mutation is latent.
+ * If a future caller needs to preserve the original entries, copy them
+ * before passing in (e.g. `corpus.map((e) => ({ ...e }))`).
  */
 export const buildBenchmarkInputs = async (
   opts: BuildBenchmarkInputsOptions,
@@ -108,12 +129,37 @@ export const buildBenchmarkInputs = async (
     entry.descVector = await embedder.embed(entry.description);
     entry.bodyTokens = tokenize(entry.body);
   }
+  const bodyTokensList = corpus.map((c) => c.bodyTokens!);
   return {
     corpus,
     pairs,
     embedder,
-    bodyTokensList: corpus.map((c) => c.bodyTokens!),
+    bodyTokensList,
+    bm25Stats: computeBm25CorpusStats(bodyTokensList),
   };
+};
+
+/**
+ * Precompute corpus-level BM25 statistics once: document frequency per
+ * term, average document length, and corpus size. This is the input that
+ * lets {@link bm25Score} run in O(query_terms) per (query, document)
+ * instead of re-scanning the corpus inside the inner loop.
+ */
+export const computeBm25CorpusStats = (corpusTokens: string[][]): Bm25CorpusStats => {
+  const N = corpusTokens.length;
+  const df = new Map<string, number>();
+  let totalLen = 0;
+  for (const doc of corpusTokens) {
+    totalLen += doc.length;
+    const seen = new Set<string>();
+    for (const t of doc) {
+      if (seen.has(t)) continue;
+      seen.add(t);
+      df.set(t, (df.get(t) ?? 0) + 1);
+    }
+  }
+  const avgLen = totalLen / Math.max(N, 1);
+  return { df, avgLen, N };
 };
 
 /** The six variants required by the contract envelope, in pinned order. */
@@ -229,16 +275,20 @@ export const tokenize = (text: string): string[] => {
 };
 
 /**
- * Compute the BM25 score of a document for a query. The corpus is needed
- * to compute IDF and average document length.
+ * Compute the BM25 score of a document for a query.
+ *
+ * The corpus is needed to compute IDF and average document length. Pass
+ * a precomputed {@link Bm25CorpusStats} (via the 4th argument) to amortise
+ * the O(N x avg_doc_len) df/avgLen scan across many calls; without it,
+ * stats are computed from `corpusTokens` on every call.
  */
 export const bm25Score = (
   queryTokens: string[],
   docTokens: string[],
   corpusTokens: string[][],
+  stats?: Bm25CorpusStats,
 ): number => {
-  const N = corpusTokens.length;
-  const avgLen = corpusTokens.reduce((acc, doc) => acc + doc.length, 0) / Math.max(N, 1);
+  const { df, avgLen, N } = stats ?? computeBm25CorpusStats(corpusTokens);
   const docLen = docTokens.length;
   const docTf = new Map<string, number>();
   for (const t of docTokens) docTf.set(t, (docTf.get(t) ?? 0) + 1);
@@ -247,11 +297,10 @@ export const bm25Score = (
   for (const term of queryTokens) {
     const tf = docTf.get(term) ?? 0;
     if (tf === 0) continue;
-    let df = 0;
-    for (const doc of corpusTokens) if (doc.includes(term)) df += 1;
-    if (df === 0) continue;
+    const dfTerm = df.get(term) ?? 0;
+    if (dfTerm === 0) continue;
     // Standard BM25 IDF: log(1 + (N - df + 0.5) / (df + 0.5))
-    const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
+    const idf = Math.log(1 + (N - dfTerm + 0.5) / (dfTerm + 0.5));
     const num = tf * (BM25_K1 + 1);
     const denom = tf + BM25_K1 * (1 - BM25_B + (BM25_B * docLen) / Math.max(avgLen, 1));
     score += idf * (num / denom);
@@ -268,7 +317,12 @@ const runBm25Variant = async (
     const qTokens = tokenize(pair.query);
     const scored: Array<{ filename: string; score: number }> = [];
     for (const entry of inputs.corpus) {
-      const score = bm25Score(qTokens, entry.bodyTokens ?? [], inputs.bodyTokensList);
+      const score = bm25Score(
+        qTokens,
+        entry.bodyTokens ?? [],
+        inputs.bodyTokensList,
+        inputs.bm25Stats,
+      );
       scored.push({ filename: entry.filename, score });
     }
     scored.sort((a, b) => b.score - a.score);
@@ -321,7 +375,9 @@ const runHybridVariant = async (
     const bm25Scores: number[] = [];
     const cosineScores: number[] = [];
     for (const entry of inputs.corpus) {
-      bm25Scores.push(bm25Score(qTokens, entry.bodyTokens ?? [], inputs.bodyTokensList));
+      bm25Scores.push(
+        bm25Score(qTokens, entry.bodyTokens ?? [], inputs.bodyTokensList, inputs.bm25Stats),
+      );
       const vec = entry.bodyVector;
       cosineScores.push(vec === null ? 0 : dot(qVec, vec));
     }
