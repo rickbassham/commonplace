@@ -34,5 +34,4 @@ audit: ## Run security audit at high level
 	pnpm audit --audit-level=high
 
 benchmark: ## Run the DAR-1034 retrieval-quality benchmark (regenerates docs/retrieval-benchmark.md)
-	pnpm exec tsx scripts/run-retrieval-benchmark.ts
-	pnpm prettier --write docs/retrieval-benchmark.md docs/retrieval-labeled-set.json
+	pnpm benchmark
