@@ -253,6 +253,17 @@ describe('ac-1 #3: no test file passes `env: {}` to bootServer/bootHarness witho
       // bootServer calls MUST set the env var in the args literal
       // (bootServer has no default-injection behaviour). The helper
       // module itself is the legitimate aggregator and is exempt.
+      //
+      // NOTE: this allowlist is a best-effort fast-feedback signal --
+      // it matches known env-var names and the literal `ENV_USER_DIR` /
+      // `ENV_DEPRECATED_MEMORY_DIR` constants exported from
+      // `tests/helpers/boot-harness.ts`. A caller indirecting through a
+      // differently-named local constant could slip past this grep. The
+      // hard guarantee against the ~/.commonplace/memory leak lives in
+      // `bootHarness`'s runtime throw at `tests/helpers/boot-harness.ts`
+      // (the refuse-to-boot guard when env omits both vars and no
+      // explicit userDir is set). Treat this static check as an early
+      // warning, not the safety floor.
       const bootServerCalls = findCallArgs(source, 'bootServer');
       for (const args of bootServerCalls) {
         const ok =
