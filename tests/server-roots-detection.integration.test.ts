@@ -85,8 +85,17 @@ const setupHarness = async (options: {
 
   // Connect client and server in parallel. The server boot includes the
   // listRoots round-trip so both sides need to be live concurrently.
+  //
+  // DAR-1035: inject COMMONPLACE_USER_DIR pointing at userTmp when the
+  // caller did not set one. Without this, bootServer falls through to
+  // homedir()/.commonplace/memory and the test silently scans (and with
+  // a stub embedder, corrupts) the developer's real corpus.
+  const callerEnv = options.env ?? {};
   const bootPromise = bootServer({
-    env: options.env ?? {},
+    env: {
+      COMMONPLACE_USER_DIR: userTmp,
+      ...callerEnv,
+    },
     cwd: options.cwd ?? userTmp,
     embedder: stubEmbedder(),
     transport: serverTransport,
