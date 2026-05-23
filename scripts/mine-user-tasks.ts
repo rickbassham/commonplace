@@ -121,7 +121,11 @@ const main = async (): Promise<void> => {
     if (seenTasks.has(key)) continue;
     seenTasks.add(key);
 
-    const sessionId = path.split('/').pop()?.replace(/\.jsonl$/, '') ?? '';
+    const sessionId =
+      path
+        .split('/')
+        .pop()
+        ?.replace(/\.jsonl$/, '') ?? '';
     tasks.push({ sessionId, transcript: path, task });
   }
 

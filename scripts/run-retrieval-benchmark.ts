@@ -621,7 +621,7 @@ const main = async (): Promise<void> => {
             'Built by mining real first-user-message task descriptions from ' +
             'every session transcript (~/.claude/projects/**/*.jsonl), then ' +
             'for each task: (1) a generator agent **without corpus access** ' +
-            "composes a query an in-task agent would issue, (2) the production " +
+            'composes a query an in-task agent would issue, (2) the production ' +
             'cosine ranker produces top-10 candidates, (3) a judge agent picks ' +
             'the single candidate that would have helped (or "none" if the ' +
             'corpus has no relevant memory). Only matched pairs are kept. ' +
@@ -630,7 +630,7 @@ const main = async (): Promise<void> => {
             'is reproducing the deployment shape (agent in-task generates the ' +
             'query without seeing the answer). N is bounded by how many of the ' +
             'sampled tasks the judge actually pairs with a corpus memory ' +
-            '(most do not; the corpus is one dev\'s personal notes, not a ' +
+            "(most do not; the corpus is one dev's personal notes, not a " +
             'general KB). Earlier versions of this benchmark generated ' +
             'queries from memory bodies directly -- that version was an ' +
             'information leak (BM25 trivially won by lexical overlap) and ' +
