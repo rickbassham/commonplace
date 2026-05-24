@@ -9,20 +9,13 @@
  * the description-only or description+body variants.
  */
 
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { inventoryDir } from './helpers/inventory.js';
 import { runBenchmark } from '../scripts/run-retrieval-benchmark.js';
 import { encodeSidecar } from '../src/store/sidecar.js';
 import { contentSha } from '../src/store/memory.js';
@@ -74,23 +67,9 @@ afterEach(() => {
   rmSync(workDir, { recursive: true, force: true });
 });
 
-/** Take an inventory of every file in `dir` (relative path -> bytes, mtimeNs). */
-const inventory = (dir: string): Map<string, { bytes: Buffer; mtimeNs: bigint }> => {
-  const out = new Map<string, { bytes: Buffer; mtimeNs: bigint }>();
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    const st = statSync(full, { bigint: true });
-    out.set(entry, {
-      bytes: readFileSync(full),
-      mtimeNs: st.mtimeNs,
-    });
-  }
-  return out;
-};
-
 describe('runBenchmark (ac-5)', () => {
   it('does not mutate .embedding sidecar bytes or mtimes', async () => {
-    const before = inventory(memoryDir);
+    const before = inventoryDir(memoryDir);
 
     const fakeEmbedder = {
       modelId: 'test/fake-4d',
@@ -114,7 +93,7 @@ describe('runBenchmark (ac-5)', () => {
       labeledSetOutputPath: join(workDir, 'labeled-set.json'),
     });
 
-    const after = inventory(memoryDir);
+    const after = inventoryDir(memoryDir);
 
     // Same set of files (no new sidecars created for description /
     // description+body variants).
