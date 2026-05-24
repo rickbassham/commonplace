@@ -14,11 +14,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-
-import { bootServer } from '../src/bin/boot.js';
 import * as updateCheckModule from '../src/server/update-check.js';
+import { bootHarness } from './helpers/boot-harness.js';
 
 const repoRoot = join(__dirname, '..');
 const bootSource = readFileSync(join(repoRoot, 'src/bin/boot.ts'), 'utf8');
@@ -62,12 +59,10 @@ describe('bootServer invokes checkForUpdates exactly once per boot', () => {
       await new Promise<void>(() => {});
     });
 
-    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client(
-      { name: 'dar1006-boot-wiring', version: '0.0.0' },
-      { capabilities: {} },
-    );
-    const bootPromise = bootServer({
+    // DAR-1035: route through the shared bootHarness so the boot call
+    // cannot fall through to homedir()/.commonplace/memory. The harness
+    // injects a tmp COMMONPLACE_USER_DIR under `cwd` by default.
+    const { close } = await bootHarness({
       env: {},
       cwd: userTmp,
       embedder: {
@@ -75,15 +70,11 @@ describe('bootServer invokes checkForUpdates exactly once per boot', () => {
         dim: 4,
         embed: async () => new Float32Array(4),
       },
-      transport: serverTransport,
     });
-    await client.connect(clientTransport);
-    const boot = await bootPromise; // resolves even though checkForUpdates hangs
 
     expect(spy).toHaveBeenCalledTimes(1);
 
-    await client.close();
-    await boot.server.close();
+    await close();
     spy.mockRestore();
   });
 });

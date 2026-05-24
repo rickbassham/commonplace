@@ -15,11 +15,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-
-import { bootServer } from '../src/bin/boot.js';
 import { DEFAULT_LIMIT, DEFAULT_MODEL_ID, ENV_MODEL } from '../src/bin/env.js';
+import { bootHarness } from './helpers/boot-harness.js';
 
 const repoRoot = join(__dirname, '..');
 
@@ -82,9 +79,15 @@ describe('ac-4 (runtime): bin entry on stdio', () => {
     // stdout pre-MCP") is cwd-independent, so the test should not depend
     // on whatever this repo happens to have under its project-memory dir.
     const spawnCwd = mkdtempSync(join(tmpdir(), 'dar955-bin-stdio-'));
+    // DAR-1035: pin COMMONPLACE_USER_DIR to a tmp path so the spawned bin
+    // does not `mkdir -p` `~/.commonplace/memory` on the developer's
+    // machine (or, under `HOME=$(mktemp -d) make test`, inside that
+    // sentinel HOME).
+    const spawnUserDir = mkdtempSync(join(tmpdir(), 'dar955-bin-stdio-user-'));
     const child = spawn('node', [binPath], {
       cwd: spawnCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, COMMONPLACE_USER_DIR: spawnUserDir },
     });
 
     let stdoutData = '';
@@ -126,6 +129,7 @@ describe('ac-4 (runtime): bin entry on stdio', () => {
     expect(stdoutData, `unexpected stdout: ${stdoutData}; stderr: ${stderrData}`).toBe('');
 
     rmSync(spawnCwd, { recursive: true, force: true });
+    rmSync(spawnUserDir, { recursive: true, force: true });
   }, 30_000);
 });
 
@@ -152,34 +156,11 @@ const makeSpyEmbedder = (modelId: string, dim = 4) => {
   };
 };
 
-/**
- * Drive {@link bootServer} against an in-memory transport pair so the
- * BootResult is observable without spawning a real bin or loading model
- * weights. Returns a teardown helper alongside the boot result.
- */
-const bootHarness = async (options: {
-  env?: NodeJS.ProcessEnv;
-  cwd: string;
-  embedder?: { modelId: string; dim: number; embed: (text: string) => Promise<Float32Array> };
-}) => {
-  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: 'dar913-boot-test', version: '0.0.0' }, { capabilities: {} });
-  const bootPromise = bootServer({
-    env: options.env ?? {},
-    cwd: options.cwd,
-    embedder: options.embedder,
-    transport: serverTransport,
-  });
-  await client.connect(clientTransport);
-  const boot = await bootPromise;
-  return {
-    boot,
-    close: async () => {
-      await client.close();
-      await boot.server.close();
-    },
-  };
-};
+// DAR-1035: the local bootHarness was extracted to tests/helpers/boot-harness.ts
+// so every test boot call routes through one place that injects a tmp
+// COMMONPLACE_USER_DIR by default. Importing it above replaces what used to
+// be an inline async wrapper around bootServer that hand-rolled the same
+// in-memory-transport plumbing.
 
 describe('bootServer reads COMMONPLACE_MODEL and constructs the Embedder with it', () => {
   let userTmp: string;

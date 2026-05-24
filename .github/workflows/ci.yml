@@ -30,6 +30,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history so tests that compare against `main` (e.g. the
+          # DAR-1035 src/-unchanged self-check in
+          # tests/helpers-boot-harness.test.ts) can resolve the base ref.
+          fetch-depth: 0
 
       - name: Setup pnpm
         # Reads the pnpm version from package.json `packageManager` --
