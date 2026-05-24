@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help install build test typecheck lint format format-check audit
+.PHONY: help install build test typecheck lint format format-check audit benchmark
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -32,3 +32,6 @@ format-check: ## Check formatting without writing
 
 audit: ## Run security audit at high level
 	pnpm audit --audit-level=high
+
+benchmark: ## Run the DAR-1034 retrieval-quality benchmark (regenerates docs/retrieval-benchmark.md)
+	pnpm benchmark

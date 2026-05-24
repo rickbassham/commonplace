@@ -1,0 +1,97 @@
+[
+  {
+    "query": "merge gate pre-merge verification checklist",
+    "expected_names": ["feedback_never_merge_without_explicit_approval"],
+    "category": "synthetic"
+  },
+  {
+    "query": "scope boundaries sibling issues contract draft",
+    "expected_names": ["feedback_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "verify PR diff against contract criteria",
+    "expected_names": ["feedback_linear_status"],
+    "category": "synthetic"
+  },
+  {
+    "query": "verify implementation envelope claims against code",
+    "expected_names": ["feedback_linear_status"],
+    "category": "synthetic"
+  },
+  {
+    "query": "merge PR final gate checklist requirements",
+    "expected_names": ["feedback_never_merge_without_explicit_approval"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Claude Code auto-memory disable documentation conventions",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "synthetic"
+  },
+  {
+    "query": "w5500 PoE schematic block review notes",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "synthetic"
+  },
+  {
+    "query": "claude-code auto-migrate project memory importer",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "synthetic"
+  },
+  {
+    "query": "rg11_interface SKiDL block schematic review",
+    "expected_names": ["design_workflow"],
+    "category": "synthetic"
+  },
+  {
+    "query": "tagged release build workflow esp32-idf",
+    "expected_names": ["feedback_release_artifacts_canonical_only"],
+    "category": "synthetic"
+  },
+  {
+    "query": "backfill missing Storybook coverage web-frontend",
+    "expected_names": ["project_storybook_setup"],
+    "category": "synthetic"
+  },
+  {
+    "query": "Clerk infrastructure assignment deployment best practices",
+    "expected_names": ["clerk_assessment_no_merge_to_main"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DAR-1013 contract envelope acceptance criteria tests",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DAR-917 contract draft tests scope boundaries",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DAR-918 contract handshake negotiation",
+    "expected_names": ["feedback_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DAR-920 contract handshake negotiation",
+    "expected_names": ["feedback_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "DAR-909 PR 12 verification contract envelope",
+    "expected_names": ["feedback_linear_status"],
+    "category": "synthetic"
+  },
+  {
+    "query": "contract envelope draft format and scope boundaries",
+    "expected_names": ["feedback_scope"],
+    "category": "synthetic"
+  },
+  {
+    "query": "MCP server when-to-save instructions prescriptive guidance",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "synthetic"
+  }
+]

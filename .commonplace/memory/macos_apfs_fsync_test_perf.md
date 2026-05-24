@@ -4,6 +4,7 @@ description: Why MemoryStore-backed tests are dramatically slower on macOS than
   Linux CI, and the vitest.config.ts cap that compensates.
 type: project
 ---
+
 # macOS APFS fsync is the dominant cost in write-heavy tests
 
 ## The phenomenon
@@ -14,10 +15,10 @@ faster CPU and SSD. The cost is per-call, not per-byte.
 
 Measured on DAR-959 / PR #64 (commit `3db4043`):
 
-| | Linux CI (Node 22) | This M2 Mac (APFS) |
-|---|---|---|
-| `tests/server-handlers-search-supersede-headroom.test.ts` (8 tests, ~1600 fsyncs) | **2043 ms** | **31581 ms** (with default 12-fork parallelism) |
-| Per-fsync amortised | ~1.3 ms | ~20 ms |
+|                                                                                   | Linux CI (Node 22) | This M2 Mac (APFS)                              |
+| --------------------------------------------------------------------------------- | ------------------ | ----------------------------------------------- |
+| `tests/server-handlers-search-supersede-headroom.test.ts` (8 tests, ~1600 fsyncs) | **2043 ms**        | **31581 ms** (with default 12-fork parallelism) |
+| Per-fsync amortised                                                               | ~1.3 ms            | ~20 ms                                          |
 
 With fsyncs disabled experimentally (don't ship), the same file ran in
 **404 ms** on macOS — a 21x improvement. That isolates fsync as the
