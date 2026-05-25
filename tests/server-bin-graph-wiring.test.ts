@@ -35,3 +35,34 @@ describe('boot module instantiates MemoryGraph and wires it everywhere', () => {
     expect(bootSource).toMatch(/createDefaultHandlers\s*\(\s*\{[^}]*\bgraph\b[^}]*\}/s);
   });
 });
+
+/**
+ * Regression guard for the DAR-1144 verification gap: every
+ * `createDefaultHandlers` call in `src/bin/boot.ts` must thread the
+ * env-resolved hierarchical-expansion knobs (`hierarchicalParentDecay`
+ * and `siblingCollapseThreshold`). When the initial implementation
+ * only wired the bootstrap-rebind call site, the request-path handler
+ * silently fell back to defaults and `COMMONPLACE_HIERARCHICAL_PARENT_DECAY`
+ * / `COMMONPLACE_SIBLING_COLLAPSE_THRESHOLD` had no effect on normal
+ * `memory_search` requests. This test asserts that none of the three
+ * call sites can re-introduce the same hole.
+ */
+describe('boot module threads hierarchical env knobs through every createDefaultHandlers call', () => {
+  // Find all `createDefaultHandlers({...})` blocks. We match the literal
+  // call followed by an object literal, balanced over a single level of
+  // braces (boot.ts does not nest object literals inside these calls).
+  const callRe = /createDefaultHandlers\s*\(\s*\{[\s\S]*?\}\s*\)/g;
+  const calls = bootSource.match(callRe) ?? [];
+
+  it('boot.ts contains at least three createDefaultHandlers call sites (initial wiring, post-roots rewire, bootstrap rebind)', () => {
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(['hierarchicalParentDecay', 'siblingCollapseThreshold'])(
+    'every createDefaultHandlers call site passes %s',
+    (field) => {
+      const missing = calls.filter((call) => !new RegExp(`\\b${field}\\b`).test(call));
+      expect(missing, `Call sites missing ${field}:\n${missing.join('\n---\n')}`).toEqual([]);
+    },
+  );
+});

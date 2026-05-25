@@ -253,6 +253,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
     defaultLimit,
     expansionDecay,
     connectednessBoost,
+    hierarchicalParentDecay,
+    siblingCollapseThreshold,
     bootstrapEnv: buildBootstrapEnv(),
   });
   const server = createServer({
@@ -314,6 +316,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
       defaultLimit,
       expansionDecay,
       connectednessBoost,
+      hierarchicalParentDecay,
+      siblingCollapseThreshold,
       bootstrapEnv: buildBootstrapEnv(),
     });
     installCallToolHandler(server, handlersWithProject);
