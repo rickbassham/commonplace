@@ -33,3 +33,24 @@ export const DEFAULT_EXPANSION_DECAY = 0.7;
  * similar-cosine memories is where the boost actually moves results.
  */
 export const DEFAULT_CONNECTEDNESS_BOOST = 0.02;
+
+/**
+ * Default decay applied to a hierarchical parent scaffold's score in
+ * `memory_search` when `expand: 'hierarchical'` is used and neither the
+ * caller nor the env supplies an override. The included parent's score is
+ * `max(triggering_child_score) * parentDecay`. The default `0.9` keeps the
+ * parent close to (but strictly below) its strongest triggering child so
+ * the parent typically appears just under its child in raw-score order --
+ * sibling collapse is the mechanism that re-ranks the parent above the
+ * triggering children when enough siblings hit.
+ */
+export const DEFAULT_HIERARCHICAL_PARENT_DECAY = 0.9;
+
+/**
+ * Default minimum number of direct-hit siblings sharing the same
+ * `child-of` parent that triggers sibling collapse in `memory_search`'s
+ * hierarchical expansion. When the count meets or exceeds this threshold,
+ * the parent is re-ranked above its triggering children in the merged
+ * result list. The default `2` mirrors the issue's AC-3 default.
+ */
+export const DEFAULT_SIBLING_COLLAPSE_THRESHOLD = 2;

@@ -34,7 +34,12 @@
  *   - A config-file fallback. v0.1 is env-vars-only.
  */
 
-import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from '../server/defaults.js';
+import {
+  DEFAULT_CONNECTEDNESS_BOOST,
+  DEFAULT_EXPANSION_DECAY,
+  DEFAULT_HIERARCHICAL_PARENT_DECAY,
+  DEFAULT_SIBLING_COLLAPSE_THRESHOLD,
+} from '../server/defaults.js';
 
 /**
  * Env var name for the embedding model id. Defaults to
@@ -65,6 +70,24 @@ export const ENV_EXPANSION_DECAY = 'COMMONPLACE_EXPANSION_DECAY';
 export const ENV_CONNECTEDNESS_BOOST = 'COMMONPLACE_CONNECTEDNESS_BOOST';
 
 /**
+ * Env var name for the hierarchical parent-decay applied to scaffold
+ * parents surfaced via `expand: 'hierarchical'`. Defaults to
+ * {@link DEFAULT_HIERARCHICAL_PARENT_DECAY} when unset or empty. Allowed
+ * range is `(0, 1]`; values outside the range or non-numeric throw at boot
+ * (mirroring the `COMMONPLACE_EXPANSION_DECAY` resolver pattern).
+ */
+export const ENV_HIERARCHICAL_PARENT_DECAY = 'COMMONPLACE_HIERARCHICAL_PARENT_DECAY';
+
+/**
+ * Env var name for the sibling-collapse threshold (minimum direct-hit
+ * sibling count that promotes a `child-of` parent above its triggering
+ * children). Defaults to {@link DEFAULT_SIBLING_COLLAPSE_THRESHOLD} when
+ * unset or empty. Must be a positive integer when set; invalid values
+ * throw at boot.
+ */
+export const ENV_SIBLING_COLLAPSE_THRESHOLD = 'COMMONPLACE_SIBLING_COLLAPSE_THRESHOLD';
+
+/**
  * Default embedding model id when `COMMONPLACE_MODEL` is unset or empty.
  */
 export const DEFAULT_MODEL_ID = 'Xenova/bge-base-en-v1.5';
@@ -82,7 +105,12 @@ export const DEFAULT_LIMIT = 5;
  * bumping a default in either spot would otherwise silently drift from the
  * other.
  */
-export { DEFAULT_EXPANSION_DECAY, DEFAULT_CONNECTEDNESS_BOOST };
+export {
+  DEFAULT_EXPANSION_DECAY,
+  DEFAULT_CONNECTEDNESS_BOOST,
+  DEFAULT_HIERARCHICAL_PARENT_DECAY,
+  DEFAULT_SIBLING_COLLAPSE_THRESHOLD,
+};
 
 /**
  * Resolve the embedding model id from the environment.
@@ -200,6 +228,62 @@ export function resolveConnectednessBoost(env: NodeJS.ProcessEnv): number {
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error(
       `${ENV_CONNECTEDNESS_BOOST} must be a finite non-negative number (0 disables the boost); got ${JSON.stringify(raw)}`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Resolve the hierarchical parent-decay from the environment.
+ *
+ * Returns the parsed number when `COMMONPLACE_HIERARCHICAL_PARENT_DECAY` is
+ * set, otherwise {@link DEFAULT_HIERARCHICAL_PARENT_DECAY}. Empty strings
+ * are treated as unset.
+ *
+ * Throws when the variable is set to a value that is not a finite number
+ * in the half-open range `(0, 1]`, matching the
+ * `COMMONPLACE_EXPANSION_DECAY` validation pattern. We deliberately do
+ * NOT silently coerce -- a typo like
+ * `COMMONPLACE_HIERARCHICAL_PARENT_DECAY=1.5` (or `-0.5`, or `abc`)
+ * should fail loudly rather than silently produce parents scored higher
+ * than (or negative relative to) their triggering children.
+ */
+export function resolveHierarchicalParentDecay(env: NodeJS.ProcessEnv): number {
+  const raw = env[ENV_HIERARCHICAL_PARENT_DECAY];
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return DEFAULT_HIERARCHICAL_PARENT_DECAY;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
+    throw new Error(
+      `${ENV_HIERARCHICAL_PARENT_DECAY} must be a finite number in (0, 1]; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Resolve the sibling-collapse threshold from the environment.
+ *
+ * Returns the parsed positive integer when
+ * `COMMONPLACE_SIBLING_COLLAPSE_THRESHOLD` is set, otherwise
+ * {@link DEFAULT_SIBLING_COLLAPSE_THRESHOLD}. Empty strings are treated
+ * as unset.
+ *
+ * Throws when the variable is set to a value that is not a positive
+ * integer (>= 1). Non-integer / NaN / Infinity / values < 1 all reject
+ * with the same shape used by `COMMONPLACE_DEFAULT_LIMIT` so operators
+ * recover the same way.
+ */
+export function resolveSiblingCollapseThreshold(env: NodeJS.ProcessEnv): number {
+  const raw = env[ENV_SIBLING_COLLAPSE_THRESHOLD];
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return DEFAULT_SIBLING_COLLAPSE_THRESHOLD;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(
+      `${ENV_SIBLING_COLLAPSE_THRESHOLD} must be a positive integer (>= 1); got ${JSON.stringify(raw)}`,
     );
   }
   return parsed;

@@ -28,7 +28,12 @@ import {
 import { DEFAULT_SEARCH_LIMIT } from '../store/memory-store.js';
 import type { MemoryEntry, MemoryStore, SearchHit, SearchOptions } from '../store/memory-store.js';
 import type { EdgeType, MemoryGraph } from '../store/graph.js';
-import { DEFAULT_CONNECTEDNESS_BOOST, DEFAULT_EXPANSION_DECAY } from './defaults.js';
+import {
+  DEFAULT_CONNECTEDNESS_BOOST,
+  DEFAULT_EXPANSION_DECAY,
+  DEFAULT_HIERARCHICAL_PARENT_DECAY,
+  DEFAULT_SIBLING_COLLAPSE_THRESHOLD,
+} from './defaults.js';
 import { detectScope, isHomedirOrAncestor } from '../bin/scope.js';
 import type { ToolArguments, ToolHandler } from './tools.js';
 
@@ -146,6 +151,25 @@ export interface HandlerOptions {
    * deterministically.
    */
   connectednessBoost?: number;
+  /**
+   * Multiplicative decay applied to a hierarchical-parent scaffold's
+   * score when `expand: 'hierarchical'` surfaces it. The included parent
+   * is scored at `max(triggering_child_score) * parentDecay`. Resolved by
+   * the bin from `COMMONPLACE_HIERARCHICAL_PARENT_DECAY`; defaults to
+   * `0.9` when omitted. Out-of-range values are validated by the env-var
+   * resolver, not here.
+   */
+  hierarchicalParentDecay?: number;
+  /**
+   * Minimum direct-hit sibling count that triggers sibling collapse in
+   * `memory_search`'s hierarchical expansion: when at least this many
+   * direct hits share the same `child-of` parent, the parent is re-ranked
+   * above all of its triggering children in the merged result list.
+   * Resolved by the bin from `COMMONPLACE_SIBLING_COLLAPSE_THRESHOLD`;
+   * defaults to `2` when omitted. Out-of-range values are validated by the
+   * env-var resolver, not here.
+   */
+  siblingCollapseThreshold?: number;
 }
 
 /**
@@ -297,9 +321,17 @@ export interface MemoryDeleteResult {
 /**
  * The literal values accepted for `memory_search`'s `expand` argument.
  * `'none'` is the default and a true alias for omitting the field;
- * `'one-hop'` opts into outbound-edge expansion.
+ * `'one-hop'` opts into generic outbound-edge expansion (gated by
+ * `expandTypes`); `'hierarchical'` opts into the specialised `child-of`
+ * parent-scaffold walk introduced in DAR-1144, which also re-ranks
+ * parents above their triggering children when enough siblings hit.
  */
-export const EXPAND_MODES = ['none', 'one-hop'] as const;
+const EXPAND_MODES_TUPLE: readonly ['none', 'one-hop', 'hierarchical'] = [
+  'none',
+  'one-hop',
+  'hierarchical',
+];
+export const EXPAND_MODES = EXPAND_MODES_TUPLE;
 
 /** Union type of {@link EXPAND_MODES}. */
 export type ExpandMode = (typeof EXPAND_MODES)[number];
@@ -739,6 +771,22 @@ const validateExpandLimit = (raw: unknown, toolName: string): number | undefined
 const DEFAULT_EXPAND_LIMIT = 2;
 
 /**
+ * Maximum number of `child-of` hops `memory_search` walks during
+ * hierarchical expansion. AC-2 limits this issue to one level of
+ * `child-of`; the constant exists so cycle-safety is structural (the
+ * walk loop is bounded by this constant, not by a Set-based visited
+ * check), and so a defensive depth-cap unit test can assert against a
+ * named bound.
+ *
+ * Multi-hop hierarchical walks (grandparent scaffolds, lifetime-period
+ * layer) are an explicit follow-up listed in DAR-1144's non-goals and
+ * the issue's "Follow-ups" section -- bumping this constant alone is
+ * NOT sufficient to ship multi-hop because the parent-decay and
+ * sibling-collapse semantics also need to compose over multiple hops.
+ */
+export const MAX_HIERARCHICAL_WALK_DEPTH = 1;
+
+/**
  * Edge types that the connectedness boost IGNORES when counting
  * a memory's inbound edges. `mentions` is body-tokenizer-derived and
  * noisy (a passing reference is not necessarily a vote of importance);
@@ -844,6 +892,13 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
   // (re-exporting the same default) and passes the result here. When
   // alpha is 0 the boost short-circuits (see {@link applyBoost}).
   const connectednessBoost = opts.connectednessBoost ?? DEFAULT_CONNECTEDNESS_BOOST;
+  // Hierarchical-expansion knobs. Defaults live in `./defaults.ts` so the
+  // bin (`resolveHierarchicalParentDecay`,
+  // `resolveSiblingCollapseThreshold`) and the handler factory share a
+  // single source of truth.
+  const hierarchicalParentDecay = opts.hierarchicalParentDecay ?? DEFAULT_HIERARCHICAL_PARENT_DECAY;
+  const siblingCollapseThreshold =
+    opts.siblingCollapseThreshold ?? DEFAULT_SIBLING_COLLAPSE_THRESHOLD;
   return async (rawArgs: ToolArguments): Promise<MemorySearchResult> => {
     const args = requireArgsObject(rawArgs, 'memory_search');
     const query = requireString(args, 'query', 'memory_search');
@@ -1183,6 +1238,241 @@ export const createMemorySearchHandler = (opts: HandlerOptions): ToolHandler => 
       // earlier (higher-scored, then by-insertion) source ranks first
       // -- which is the deterministic tiebreak the contract specifies.
       candidates.sort((a, b) => b.score - a.score);
+    }
+
+    if (expandMode === 'hierarchical') {
+      // Hierarchical expansion walks OUTBOUND `child-of` edges one level
+      // from each direct cosine hit to surface parent "scaffold"
+      // memories. The parent is included with score
+      // `max(triggering_child_score) * hierarchicalParentDecay` and a
+      // `via: { source: <triggering child>, edge: 'child-of' }`
+      // annotation. When at least `siblingCollapseThreshold` direct hits
+      // share the same parent, the parent is re-ranked above all of its
+      // triggering children -- but the children remain in the response
+      // at their original cosine scores; only ordering changes.
+      //
+      // Cycle safety: `memory_link` does NOT reject `child-of` cycles at
+      // save time, so a constructed cycle (A child-of B, B child-of A)
+      // is structurally possible. The walk is bounded by
+      // {@link MAX_HIERARCHICAL_WALK_DEPTH} hops (one, per AC-2), so the
+      // worst case is each direct hit's first-level `child-of` parents
+      // -- finite and far below any infinite-loop concern.
+
+      // Per-scope direct-hit names so a parent that is also a direct hit
+      // can be deduped against the cosine candidate it already produced
+      // (higher-wins semantics, AC-4).
+      const directNamesByScope = new Map<Scope, Set<string>>();
+      for (const c of candidates) {
+        let s = directNamesByScope.get(c.scope);
+        if (s === undefined) {
+          s = new Set<string>();
+          directNamesByScope.set(c.scope, s);
+        }
+        s.add(c.name);
+      }
+
+      // Accumulator: for each (scope, parent name) record the max
+      // triggering-child score and the children that triggered it (in
+      // the order they were observed, which matches descending direct-
+      // hit score). The map key is "scope::name" so user-scope and
+      // project-scope parents with the same name don't collide.
+      interface ParentAccum {
+        parent: string;
+        scope: Scope;
+        maxChildScore: number;
+        firstSource: string;
+        triggerChildren: string[];
+      }
+      const parentAccum = new Map<string, ParentAccum>();
+      const parentKey = (scope: Scope, name: string): string => `${scope}::${name}`;
+
+      // Walk direct hits in sorted (descending-score) order so
+      // `firstSource` and the trigger-children list reflect the highest-
+      // scoring child first -- deterministic for tie-breaks.
+      const directHits = candidates.slice();
+      for (const direct of directHits) {
+        if (direct.kind !== 'direct') continue;
+        const graph = graphByScope.get(direct.scope);
+        if (graph === undefined) continue;
+
+        // Bounded walk: we follow `child-of` edges for exactly one hop,
+        // capped explicitly so a future multi-hop variant cannot
+        // accidentally unbound the loop. The `for (let depth ...)`
+        // shape makes the cap surface obvious at the call site and
+        // tests can verify the cap by constructing a cycle (see AC-7).
+        for (let depth = 0; depth < MAX_HIERARCHICAL_WALK_DEPTH; depth++) {
+          const outbound = graph.outbound(direct.name);
+          for (const edge of outbound) {
+            if (edge.type !== 'child-of') continue;
+            const parentName = edge.to;
+            const key = parentKey(direct.scope, parentName);
+            let accum = parentAccum.get(key);
+            if (accum === undefined) {
+              accum = {
+                parent: parentName,
+                scope: direct.scope,
+                maxChildScore: direct.score,
+                firstSource: direct.name,
+                triggerChildren: [direct.name],
+              };
+              parentAccum.set(key, accum);
+            } else {
+              if (direct.score > accum.maxChildScore) {
+                accum.maxChildScore = direct.score;
+              }
+              if (!accum.triggerChildren.includes(direct.name)) {
+                accum.triggerChildren.push(direct.name);
+              }
+            }
+          }
+        }
+      }
+
+      // Project each accumulated parent into a candidate -- skipping
+      // (or up-scoring) when the parent is itself a direct cosine hit.
+      // The supersede / type / threshold filters mirror the one-hop
+      // path: an expanded entry can't sneak past filters the direct
+      // search would have applied.
+      for (const accum of parentAccum.values()) {
+        const directNames = directNamesByScope.get(accum.scope) ?? new Set<string>();
+        const decayedScore = accum.maxChildScore * hierarchicalParentDecay;
+
+        // Resolve the entry through the per-scope entry map (lazy-built
+        // shared cache, mirroring one-hop). When the parent is a dangling
+        // edge target (graph has the edge but no loaded memory for it),
+        // we cannot project an entry, so skip.
+        let entryMap = entriesByScope.get(accum.scope);
+        if (entryMap === undefined) {
+          const directStore = storeByScope.get(accum.scope);
+          if (directStore === undefined) {
+            throw new Error(
+              `internal invariant violated: storeByScope missing scope '${accum.scope}' during hierarchical expansion`,
+            );
+          }
+          const m = new Map<string, MemoryEntry>();
+          for (const e of directStore.all()) m.set(e.name, e);
+          entryMap = m;
+          entriesByScope.set(accum.scope, m);
+        }
+        const parentEntry = entryMap.get(accum.parent);
+        if (parentEntry === undefined) continue;
+
+        // Supersede filter: identical semantics to direct hits and
+        // one-hop neighbours.
+        const supersededMap = supersededByScope.get(accum.scope);
+        if (supersededMap === undefined) {
+          throw new Error(
+            `internal invariant violated: supersededByScope missing scope '${accum.scope}' during hierarchical expansion`,
+          );
+        }
+        if (!includeSuperseded && supersededMap.has(parentEntry.name)) continue;
+        // Type filter: parents must respect the caller's type scope.
+        if (callerType !== undefined && parentEntry.type !== callerType) continue;
+        // Threshold gates the SCORE returned to the caller; a parent
+        // whose decayed score falls below the threshold is dropped just
+        // like one-hop neighbours below threshold.
+        if (threshold !== undefined && decayedScore < threshold) continue;
+
+        if (directNames.has(parentEntry.name)) {
+          // Parent is already a direct cosine hit. AC-4 higher-wins
+          // semantics: if the sibling-derived score exceeds the direct
+          // cosine score, upgrade the direct entry's score (still a
+          // direct hit, no `via` annotation -- projected like any
+          // direct hit, only with the boosted score). Otherwise leave
+          // it alone.
+          const directIdx = candidates.findIndex(
+            (c) => c.scope === accum.scope && c.name === parentEntry.name && c.kind === 'direct',
+          );
+          const directCandidate = directIdx === -1 ? undefined : candidates[directIdx];
+          if (directCandidate !== undefined && decayedScore > directCandidate.score) {
+            candidates[directIdx] = { ...directCandidate, score: decayedScore };
+          }
+          continue;
+        }
+
+        candidates.push({
+          kind: 'expanded',
+          name: parentEntry.name,
+          scope: accum.scope,
+          score: decayedScore,
+          entry: parentEntry,
+          via: { source: accum.firstSource, edge: 'child-of' },
+        });
+      }
+
+      // Score-descending sort -- direct hits keep their boosted scores;
+      // expanded parents land relative to children by decayed score.
+      candidates.sort((a, b) => b.score - a.score);
+
+      // Sibling collapse: when at least `siblingCollapseThreshold`
+      // direct-hit children share the same parent, promote the parent
+      // above all of its triggering children's indices. Children remain
+      // present at their original (cosine) scores -- the collapse is
+      // ordering-only (AC-3, no information loss).
+      //
+      // We do this AFTER the score sort so the baseline order is
+      // well-defined; the collapse is a targeted reorder rather than a
+      // re-rank of every candidate.
+      const collapseTargets: Array<{ parentName: string; scope: Scope; minChildIdx: number }> = [];
+      for (const accum of parentAccum.values()) {
+        if (accum.triggerChildren.length < siblingCollapseThreshold) continue;
+        // Find the minimum index of any triggering child in the current
+        // candidate ordering. If the parent's current index is already
+        // <= that minimum, no reorder is needed.
+        let minChildIdx = -1;
+        let i = 0;
+        for (const c of candidates) {
+          if (
+            c.scope === accum.scope &&
+            c.kind === 'direct' &&
+            accum.triggerChildren.includes(c.name)
+          ) {
+            if (minChildIdx === -1 || i < minChildIdx) minChildIdx = i;
+          }
+          i++;
+        }
+        if (minChildIdx === -1) continue;
+        collapseTargets.push({
+          parentName: accum.parent,
+          scope: accum.scope,
+          minChildIdx,
+        });
+      }
+
+      // Apply collapses in order of minChildIdx (lowest first) so an
+      // earlier collapse target doesn't shift the indices that a later
+      // target depends on. Within the same minChildIdx the order is
+      // insertion-stable (Array.sort is stable in V8).
+      collapseTargets.sort((a, b) => a.minChildIdx - b.minChildIdx);
+      for (const target of collapseTargets) {
+        const parentIdx = candidates.findIndex(
+          (c) => c.scope === target.scope && c.name === target.parentName,
+        );
+        if (parentIdx === -1) continue;
+        // Re-find the minimum child index against the CURRENT ordering
+        // (earlier collapses may have moved things).
+        const accum = parentAccum.get(parentKey(target.scope, target.parentName));
+        if (accum === undefined) continue;
+        let currentMinChildIdx = -1;
+        let i = 0;
+        for (const c of candidates) {
+          if (
+            c.scope === target.scope &&
+            c.kind === 'direct' &&
+            accum.triggerChildren.includes(c.name)
+          ) {
+            if (currentMinChildIdx === -1 || i < currentMinChildIdx) currentMinChildIdx = i;
+          }
+          i++;
+        }
+        if (currentMinChildIdx === -1) continue;
+        if (parentIdx <= currentMinChildIdx) continue; // already above all children
+        const [parentCandidate] = candidates.splice(parentIdx, 1);
+        if (parentCandidate === undefined) continue;
+        // Splice removed an element above the child index, so the
+        // child's index doesn't shift; insert the parent at that index.
+        candidates.splice(currentMinChildIdx, 0, parentCandidate);
+      }
     }
 
     const sliceLimit = callerLimit ?? fallbackLimit;
