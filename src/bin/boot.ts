@@ -46,7 +46,9 @@ import {
   resolveConnectednessBoost,
   resolveDefaultLimit,
   resolveExpansionDecay,
+  resolveHierarchicalParentDecay,
   resolveModelId,
+  resolveSiblingCollapseThreshold,
 } from './env.js';
 import { detectScope, type RootEntry, type ScopeDetectionResult } from './scope.js';
 
@@ -144,6 +146,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
   const defaultLimit = resolveDefaultLimit(options.env);
   const expansionDecay = resolveExpansionDecay(options.env);
   const connectednessBoost = resolveConnectednessBoost(options.env);
+  const hierarchicalParentDecay = resolveHierarchicalParentDecay(options.env);
+  const siblingCollapseThreshold = resolveSiblingCollapseThreshold(options.env);
   const embedder = options.embedder ?? new Embedder(resolveModelId(options.env));
 
   // Step 1+2: resolve user dir, mkdir -p so first-run users get a clean
@@ -229,6 +233,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
         defaultLimit,
         expansionDecay,
         connectednessBoost,
+        hierarchicalParentDecay,
+        siblingCollapseThreshold,
         bootstrapEnv: buildBootstrapEnv(),
       });
       installCallToolHandler(serverHolder.server, rebuilt);
@@ -247,6 +253,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
     defaultLimit,
     expansionDecay,
     connectednessBoost,
+    hierarchicalParentDecay,
+    siblingCollapseThreshold,
     bootstrapEnv: buildBootstrapEnv(),
   });
   const server = createServer({
@@ -308,6 +316,8 @@ export async function bootServer(options: BootOptions): Promise<BootResult> {
       defaultLimit,
       expansionDecay,
       connectednessBoost,
+      hierarchicalParentDecay,
+      siblingCollapseThreshold,
       bootstrapEnv: buildBootstrapEnv(),
     });
     installCallToolHandler(server, handlersWithProject);

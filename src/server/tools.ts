@@ -175,6 +175,24 @@ export interface CreateDefaultHandlersOptions {
    */
   connectednessBoost?: number;
   /**
+   * Optional hierarchical parent-decay for `memory_search` (multiplier
+   * applied to a `child-of` parent scaffold's score when
+   * `expand: 'hierarchical'` surfaces it). Resolved by the bin from
+   * `COMMONPLACE_HIERARCHICAL_PARENT_DECAY`; defaults to `0.9` when
+   * omitted. Out-of-range values are validated by the env-var resolver
+   * (`resolveHierarchicalParentDecay`), not here.
+   */
+  hierarchicalParentDecay?: number;
+  /**
+   * Optional minimum number of direct-hit siblings sharing the same
+   * `child-of` parent that triggers sibling collapse during
+   * `expand: 'hierarchical'`. Resolved by the bin from
+   * `COMMONPLACE_SIBLING_COLLAPSE_THRESHOLD`; defaults to `2` when
+   * omitted. Out-of-range values are validated by the env-var resolver
+   * (`resolveSiblingCollapseThreshold`), not here.
+   */
+  siblingCollapseThreshold?: number;
+  /**
    * Bootstrap-tool environment. When supplied, the
    * `memory_bootstrap_project_store` tool is wired to a real handler that
    * can detect a project root and re-bind the running server's handler map.
@@ -230,6 +248,8 @@ export function createDefaultHandlers(options: CreateDefaultHandlersOptions = {}
     projectGraph: options.projectGraph,
     expansionDecay: options.expansionDecay,
     connectednessBoost: options.connectednessBoost,
+    hierarchicalParentDecay: options.hierarchicalParentDecay,
+    siblingCollapseThreshold: options.siblingCollapseThreshold,
   };
   // The bootstrap handler is wired only when the caller supplied a
   // `bootstrapEnv` (the bin does this; unit tests that exercise the
@@ -297,7 +317,7 @@ const TOOL_SCHEMAS: Record<ToolName, { description: string; inputSchema: Tool['i
           type: 'string',
           enum: [...EXPAND_MODES],
           description:
-            "One-hop graph expansion mode. 'none' (default) returns only direct cosine hits. 'one-hop' augments the response with outbound graph neighbors of each direct hit, each carrying a `via: { source, edge }` field naming the direct hit that pulled it in. Expanded entries are scored at direct_hit_score * decay (default decay 0.7, configurable via COMMONPLACE_EXPANSION_DECAY) and deduplicated against direct hits.",
+            "Graph expansion mode. 'none' (default) returns only direct cosine hits. 'one-hop' augments the response with outbound graph neighbors of each direct hit, each carrying a `via: { source, edge }` field naming the direct hit that pulled it in; expanded entries are scored at direct_hit_score * decay (default 0.7, configurable via COMMONPLACE_EXPANSION_DECAY) and deduplicated against direct hits. 'hierarchical' additionally walks outbound `child-of` edges one level to surface parent scaffold memories (parent score = max(triggering_child_score) * parentDecay, default 0.9 via COMMONPLACE_HIERARCHICAL_PARENT_DECAY) and re-ranks a parent above its triggering children when at least COMMONPLACE_SIBLING_COLLAPSE_THRESHOLD (default 2) direct hits share that parent; the children remain in the response at their original cosine scores.",
         },
         expandTypes: {
           type: 'array',

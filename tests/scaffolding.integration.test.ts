@@ -15,9 +15,8 @@
  * declared in the implementation envelope's `untested[]` with reasons.
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const repoRoot = join(__dirname, '..');
@@ -30,31 +29,13 @@ const runMake = (args: string[], timeoutMs = 120_000): SpawnSyncReturns<string> 
     env: { ...process.env, CI: '1' },
   });
 
-describe('ac-8: build pipeline', () => {
-  // Build once for the whole describe block; both `it`s assert against the
-  // resulting `dist/index.js` rather than re-invoking `make build`.
-  beforeAll(() => {
-    const res = runMake(['build']);
-    if (res.status !== 0) {
-      throw new Error(`make build failed: ${res.stderr || res.stdout}`);
-    }
-  }, 180_000);
-
-  it('make build produces dist/index.js', () => {
-    expect(existsSync(join(repoRoot, 'dist/index.js'))).toBe(true);
-  });
-
-  it('running `node dist/index.js` after build prints a usage message and exits non-zero (the bin is the `commonplace` CLI dispatcher; bare invocation requires a subcommand)', () => {
-    const res = spawnSync('node', ['dist/index.js'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      timeout: 30_000,
-    });
-    expect(res.status).not.toBe(0);
-    expect(res.stderr).toContain('commonplace');
-    expect(res.stderr).toContain('migrate');
-  }, 60_000);
-});
+// The build-pipeline contract that previously lived here (`make build`
+// produces the compiled CLI entry; running it prints a usage message)
+// was removed: no test may invoke a build or depend on the compiled output. The
+// production build is verified by CI's `make build` gate, and the
+// bare-CLI usage-message behaviour is covered in-process via
+// `parseMigrateArgs([])` in `tests/migrate.test.ts` / `tests/graph-cli.test.ts`
+// (which assert the dispatcher renders USAGE naming `commonplace migrate`).
 
 describe('ac-10: required Make targets exit 0', () => {
   it('make help exits 0 and lists each required target', () => {
