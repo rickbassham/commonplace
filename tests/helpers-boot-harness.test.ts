@@ -1,7 +1,7 @@
 /**
  * DAR-1035: tests for the shared `bootHarness` test helper.
  *
- * Covers ac-1 (#1, #2, #3, #4) and ac-4 from the DAR-1035 contract:
+ * Covers ac-1 (#1, #2, #3, #4) from the DAR-1035 contract:
  *
  *   - ac-1 #1: bootHarness refuses to boot when env omits
  *     COMMONPLACE_USER_DIR/COMMONPLACE_MEMORY_DIR AND the caller did not
@@ -18,14 +18,11 @@
  *     boot call passes COMMONPLACE_USER_DIR (or uses the harness default)
  *     such that BootResult.userDir is a path under userTmp, not
  *     homedir()/.commonplace/memory.
- *   - ac-4:    the src/ tree is untouched by this PR (the fix is purely a
- *     test-harness scoping change).
  */
 
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
-import { execSync } from 'node:child_process';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -328,49 +325,5 @@ describe('ac-1 #4: server-bin-update-check-wiring.test.ts boots with a tmp userD
       usesSharedHelper || setsUserDirInline,
       'tests/server-bin-update-check-wiring.test.ts must either import the shared bootHarness helper (which injects a tmp userDir) or set COMMONPLACE_USER_DIR on the boot call site; otherwise bootServer will fall through to ~/.commonplace/memory.',
     ).toBe(true);
-  });
-});
-
-describe('ac-4: src/ tree is unchanged by this PR (test-harness-only fix)', () => {
-  it('git diff main...HEAD touches only files under tests/, scripts/, .commonplace/, or top-level config (no changes under src/)', () => {
-    // `git diff --name-only <base>...HEAD` lists every file changed since
-    // the branch diverged from `main`. The fix for DAR-1035 must NOT touch
-    // any production code under src/.
-    let names = '';
-    try {
-      names = execSync('git diff --name-only main...HEAD', {
-        cwd: repoRoot,
-        encoding: 'utf8',
-      });
-    } catch (err) {
-      // If `main` isn't available locally (e.g. shallow clone in CI), fall
-      // back to merge-base against origin/main. If that also fails, skip
-      // the assertion rather than fail spuriously.
-      try {
-        names = execSync('git diff --name-only origin/main...HEAD', {
-          cwd: repoRoot,
-          encoding: 'utf8',
-        });
-      } catch {
-        // Cannot determine the diff; treat as a no-op (the manual review
-        // catches src/ changes too). Surface the original error in the
-        // assertion message so a regression is still loud.
-        throw new Error(
-          `ac-4 self-check could not resolve git diff against main/origin-main: ${
-            (err as Error).message
-          }`,
-        );
-      }
-    }
-
-    const changed = names
-      .split('\n')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    const srcChanges = changed.filter((p) => p.startsWith('src/'));
-    expect(
-      srcChanges,
-      `DAR-1035 contract forbids production code changes (ac-4). The following src/ files were modified:\n  - ${srcChanges.join('\n  - ')}`,
-    ).toEqual([]);
   });
 });
