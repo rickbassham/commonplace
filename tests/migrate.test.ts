@@ -59,7 +59,13 @@ const writeValidSidecar = (
   vector: Float32Array,
 ): string => {
   const p = join(dir, `${m.name}.embedding`);
-  const buf = encodeSidecar({ modelId, dim, contentSha: contentSha(m), vector });
+  const buf = encodeSidecar({
+    modelId,
+    dim,
+    contentSha: contentSha(m),
+    descriptionVector: vector,
+    bodyVector: vector,
+  });
   writeFileSync(p, buf);
   return p;
 };
@@ -78,10 +84,11 @@ describe('ac-1: runMigrate routes through MemoryStore.scan()', () => {
     // Act
     const result = await runMigrate({ dir: tmp, embedder, pruneDangling: false });
 
-    // Assert: exactly one embed call (from scan's missing-sidecar branch),
-    // sidecar exists with the expected shape, and the result reports the
-    // missing-sidecar case as embedded.
-    expect(vi.mocked(embedder.embed).mock.calls.length).toBe(1);
+    // Assert: exactly two embed calls (one per channel -- description +
+    // body -- from scan's missing-sidecar branch), sidecar exists with the
+    // expected shape, and the result reports the missing-sidecar case as
+    // embedded.
+    expect(vi.mocked(embedder.embed).mock.calls.length).toBe(2);
     expect(existsSync(join(tmp, 'alpha.embedding'))).toBe(true);
     expect(result.embedded).toBe(1);
     expect(result.reembedded).toBe(0);
@@ -266,7 +273,8 @@ describe('ac-3: idempotent on second run', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: 'a'.repeat(64),
-        vector: new Float32Array(embedder.dim),
+        descriptionVector: new Float32Array(embedder.dim),
+        bodyVector: new Float32Array(embedder.dim),
       }),
     );
 
@@ -323,7 +331,8 @@ describe('ac-4: --dry-run', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: 'a'.repeat(64),
-        vector: new Float32Array(embedder.dim),
+        descriptionVector: new Float32Array(embedder.dim),
+        bodyVector: new Float32Array(embedder.dim),
       }),
     );
 
@@ -371,7 +380,8 @@ describe('ac-5: orphan cleanup', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: 'a'.repeat(64),
-        vector: new Float32Array(embedder.dim),
+        descriptionVector: new Float32Array(embedder.dim),
+        bodyVector: new Float32Array(embedder.dim),
       }),
     );
 
@@ -389,7 +399,8 @@ describe('ac-5: orphan cleanup', () => {
           modelId: embedder.modelId,
           dim: embedder.dim,
           contentSha: 'a'.repeat(64),
-          vector: new Float32Array(embedder.dim),
+          descriptionVector: new Float32Array(embedder.dim),
+          bodyVector: new Float32Array(embedder.dim),
         }),
       );
     }
@@ -521,7 +532,8 @@ describe('ac-8: mixed-state fixture', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: 'a'.repeat(64),
-        vector: new Float32Array(embedder.dim),
+        descriptionVector: new Float32Array(embedder.dim),
+        bodyVector: new Float32Array(embedder.dim),
       }),
     );
 
@@ -573,7 +585,8 @@ describe('ac-8: mixed-state fixture', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: 'a'.repeat(64),
-        vector: new Float32Array(embedder.dim),
+        descriptionVector: new Float32Array(embedder.dim),
+        bodyVector: new Float32Array(embedder.dim),
       }),
     );
 

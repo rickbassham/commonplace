@@ -1,17 +1,19 @@
 /**
- * Contract tests for the binary `.embedding` sidecar wire format:
- * - encodeSidecar({ modelId, dim, contentSha, vector }): Buffer
- * - decodeSidecar(buf): { modelId, dim, contentSha, vector }
+ * Contract tests for the binary `.embedding` sidecar wire format (v0x02,
+ * two-channel):
+ * - encodeSidecar({ modelId, dim, contentSha, descriptionVector, bodyVector }): Buffer
+ * - decodeSidecar(buf): { modelId, dim, contentSha, descriptionVector, bodyVector }
  *
  * Format (all integers little-endian):
  *
- *   magic       4 bytes   "CMEM"
- *   version     1 byte    0x01
- *   model_len   1 byte    length of model_id in utf-8 bytes
- *   model_id    N bytes   utf-8
- *   dim         4 bytes   uint32 LE
- *   content_sha 32 bytes  raw sha256 (decoded from the 64-char hex string)
- *   vector      dim*4     float32 LE
+ *   magic        4 bytes   "CMEM"
+ *   version      1 byte    0x02
+ *   model_len    1 byte    length of model_id in utf-8 bytes
+ *   model_id     N bytes   utf-8
+ *   dim          4 bytes   uint32 LE
+ *   content_sha  32 bytes  raw sha256 (decoded from the 64-char hex string)
+ *   desc_vector  dim*4     float32 LE (description-channel embedding)
+ *   body_vector  dim*4     float32 LE (body-channel embedding)
  */
 
 import { describe, expect, it } from 'vitest';
@@ -23,7 +25,7 @@ import { decodeSidecar, encodeSidecar } from '../src/store/sidecar.js';
 const repoRoot = join(__dirname, '..');
 
 const MAGIC = Buffer.from('CMEM', 'ascii');
-const VERSION = 0x01;
+const VERSION = 0x02;
 
 /** Build a 64-char lowercase hex sha (deterministic, not necessarily a real digest). */
 const hexSha = (seed: number): string => {
@@ -43,11 +45,45 @@ const makeVector = (dim: number, fn: (i: number) => number = (i) => i * 0.5): nu
   return v;
 };
 
+/**
+ * Hand-build a v0x01 single-vector sidecar buffer (the pre-DAR-1210 wire
+ * format): magic, version 0x01, model_len, model_id, dim, content_sha,
+ * single vector of dim*4 bytes. The encoder no longer produces this form,
+ * so tests that need a legacy buffer construct it here.
+ */
+const buildV1Sidecar = (
+  modelId: string,
+  dim: number,
+  contentShaHex: string,
+  vector: number[],
+): Buffer => {
+  const modelBytes = Buffer.from(modelId, 'utf8');
+  const out = Buffer.alloc(4 + 1 + 1 + modelBytes.length + 4 + 32 + dim * 4);
+  let off = 0;
+  MAGIC.copy(out, off);
+  off += 4;
+  out.writeUInt8(0x01, off);
+  off += 1;
+  out.writeUInt8(modelBytes.length, off);
+  off += 1;
+  modelBytes.copy(out, off);
+  off += modelBytes.length;
+  out.writeUInt32LE(dim, off);
+  off += 4;
+  Buffer.from(contentShaHex, 'hex').copy(out, off);
+  off += 32;
+  for (let i = 0; i < dim; i++) {
+    out.writeFloatLE(vector[i]!, off);
+    off += 4;
+  }
+  return out;
+};
+
 // -------------------------------------------------------------------------
-// ac-1: docs/sidecar-format.md documents the format
+// docs: docs/sidecar-format.md documents the format
 // -------------------------------------------------------------------------
 
-describe('ac-1: docs', () => {
+describe('docs', () => {
   it('docs/sidecar-format.md exists at the repo-relative path and is non-empty', () => {
     const p = join(repoRoot, 'docs', 'sidecar-format.md');
     expect(existsSync(p)).toBe(true);
@@ -57,12 +93,7 @@ describe('ac-1: docs', () => {
     expect(text.length).toBeGreaterThan(0);
   });
 
-  // The "describes every header field with byte offsets and sizes" assertion
-  // is a manual/prose check per the contract envelope (type: "manual"). We
-  // include a structural smoke test here that the doc names every field; the
-  // human-graded check is whether the offsets in the doc match the
-  // implementation -- enforced by review, not this test.
-  it('docs/sidecar-format.md mentions every header field by name', () => {
+  it('docs/sidecar-format.md mentions every header field by name (including both vector channels)', () => {
     const text = readFileSync(join(repoRoot, 'docs', 'sidecar-format.md'), 'utf8');
     for (const term of [
       'magic',
@@ -71,7 +102,8 @@ describe('ac-1: docs', () => {
       'model_id',
       'dim',
       'content_sha',
-      'vector',
+      'desc_vector',
+      'body_vector',
       'CMEM',
     ]) {
       expect(text, `docs/sidecar-format.md missing reference to: ${term}`).toContain(term);
@@ -80,59 +112,63 @@ describe('ac-1: docs', () => {
 });
 
 // -------------------------------------------------------------------------
-// ac-2: encodeSidecar
+// encodeSidecar
 // -------------------------------------------------------------------------
 
-describe('ac-2: encodeSidecar', () => {
-  it("encodeSidecar returns a Buffer whose first 4 bytes are the ASCII magic 'CMEM'", () => {
+describe('encodeSidecar', () => {
+  it("returns a Buffer whose first 4 bytes are the ASCII magic 'CMEM'", () => {
     const buf = encodeSidecar({
       modelId: 'm',
       dim: 1,
       contentSha: hexSha(1),
-      vector: [1.0],
+      descriptionVector: [0.5],
+      bodyVector: [1.0],
     });
     expect(Buffer.isBuffer(buf)).toBe(true);
     expect(buf.subarray(0, 4).equals(MAGIC)).toBe(true);
   });
 
-  it('encodeSidecar writes version byte 0x01 at offset 4', () => {
+  it('writes version byte 0x02 at offset 4', () => {
     const buf = encodeSidecar({
       modelId: 'm',
       dim: 1,
       contentSha: hexSha(2),
-      vector: [0.0],
+      descriptionVector: [0.0],
+      bodyVector: [0.0],
     });
     expect(buf[4]).toBe(VERSION);
   });
 
-  it('encodeSidecar writes model_len as the utf-8 byte length of modelId at offset 5, followed by the model_id utf-8 bytes', () => {
+  it('writes model_len as the utf-8 byte length of modelId at offset 5, followed by the model_id utf-8 bytes', () => {
     const modelId = 'Xenova/bge-base-en-v1.5';
     const buf = encodeSidecar({
       modelId,
       dim: 1,
       contentSha: hexSha(3),
-      vector: [1.5],
+      descriptionVector: [0.5],
+      bodyVector: [1.5],
     });
     const utf8 = Buffer.from(modelId, 'utf8');
     expect(buf[5]).toBe(utf8.length);
     expect(buf.subarray(6, 6 + utf8.length).equals(utf8)).toBe(true);
   });
 
-  it('encodeSidecar writes dim as a uint32 little-endian immediately after model_id', () => {
+  it('writes dim as a uint32 little-endian immediately after model_id', () => {
     const modelId = 'm';
     const dim = 768;
     const buf = encodeSidecar({
       modelId,
       dim,
       contentSha: hexSha(4),
-      vector: makeVector(dim, () => 0.0),
+      descriptionVector: makeVector(dim, () => 0.0),
+      bodyVector: makeVector(dim, () => 0.0),
     });
     const utf8 = Buffer.from(modelId, 'utf8');
     const offset = 4 + 1 + 1 + utf8.length;
     expect(buf.readUInt32LE(offset)).toBe(dim);
   });
 
-  it('encodeSidecar writes the 32-byte raw sha256 (decoded from the contentSha hex string) immediately after dim', () => {
+  it('writes the 32-byte raw sha256 (decoded from the contentSha hex string) immediately after dim', () => {
     const modelId = 'mm';
     const dim = 2;
     const sha = hexSha(5);
@@ -140,7 +176,8 @@ describe('ac-2: encodeSidecar', () => {
       modelId,
       dim,
       contentSha: sha,
-      vector: [0.25, -0.5],
+      descriptionVector: [0.5, -1.0],
+      bodyVector: [0.25, -0.5],
     });
     const utf8 = Buffer.from(modelId, 'utf8');
     const shaOffset = 4 + 1 + 1 + utf8.length + 4;
@@ -148,43 +185,49 @@ describe('ac-2: encodeSidecar', () => {
     expect(shaBytes.toString('hex')).toBe(sha);
   });
 
-  it('encodeSidecar writes vector as dim consecutive float32 little-endian values, in order', () => {
+  it('writes desc_vector then body_vector as dim consecutive float32 little-endian values each, in order', () => {
     const modelId = 'm';
     const dim = 4;
-    const vec = [0.0, 1.0, -1.5, 3.25];
+    const desc = [0.5, -0.5, 2.0, -2.25];
+    const body = [0.0, 1.0, -1.5, 3.25];
     const buf = encodeSidecar({
       modelId,
       dim,
       contentSha: hexSha(6),
-      vector: vec,
+      descriptionVector: desc,
+      bodyVector: body,
     });
     const utf8 = Buffer.from(modelId, 'utf8');
-    const vecOffset = 4 + 1 + 1 + utf8.length + 4 + 32;
+    const descOffset = 4 + 1 + 1 + utf8.length + 4 + 32;
+    const bodyOffset = descOffset + dim * 4;
     for (let i = 0; i < dim; i++) {
-      expect(buf.readFloatLE(vecOffset + i * 4)).toBe(vec[i]);
+      expect(buf.readFloatLE(descOffset + i * 4)).toBe(desc[i]);
+      expect(buf.readFloatLE(bodyOffset + i * 4)).toBe(body[i]);
     }
   });
 
-  it('encodeSidecar total buffer length equals 4 + 1 + 1 + model_len + 4 + 32 + dim*4', () => {
+  it('total buffer length equals 4 + 1 + 1 + model_len + 4 + 32 + 2*dim*4', () => {
     const modelId = 'Xenova/bge-base-en-v1.5';
     const dim = 768;
     const buf = encodeSidecar({
       modelId,
       dim,
       contentSha: hexSha(7),
-      vector: makeVector(dim),
+      descriptionVector: makeVector(dim),
+      bodyVector: makeVector(dim),
     });
     const utf8 = Buffer.from(modelId, 'utf8');
-    expect(buf.length).toBe(4 + 1 + 1 + utf8.length + 4 + 32 + dim * 4);
+    expect(buf.length).toBe(4 + 1 + 1 + utf8.length + 4 + 32 + 2 * dim * 4);
   });
 
-  it('encodeSidecar throws when vector.length !== dim', () => {
+  it('throws when descriptionVector.length !== dim or bodyVector.length !== dim', () => {
     expect(() =>
       encodeSidecar({
         modelId: 'm',
         dim: 4,
         contentSha: hexSha(8),
-        vector: [1, 2, 3],
+        descriptionVector: [1, 2, 3],
+        bodyVector: [1, 2, 3, 4],
       }),
     ).toThrow();
     expect(() =>
@@ -192,16 +235,23 @@ describe('ac-2: encodeSidecar', () => {
         modelId: 'm',
         dim: 2,
         contentSha: hexSha(9),
-        vector: [1, 2, 3],
+        descriptionVector: [1, 2],
+        bodyVector: [1, 2, 3],
       }),
     ).toThrow();
   });
 
-  it('encodeSidecar throws when contentSha is not a 64-character lowercase hex string', () => {
+  it('throws when contentSha is not a 64-character lowercase hex string', () => {
     const baseVec = [0.0];
     // Wrong length.
     expect(() =>
-      encodeSidecar({ modelId: 'm', dim: 1, contentSha: 'abcd', vector: baseVec }),
+      encodeSidecar({
+        modelId: 'm',
+        dim: 1,
+        contentSha: 'abcd',
+        descriptionVector: baseVec,
+        bodyVector: baseVec,
+      }),
     ).toThrow();
     // Uppercase hex (must be lowercase).
     expect(() =>
@@ -209,7 +259,8 @@ describe('ac-2: encodeSidecar', () => {
         modelId: 'm',
         dim: 1,
         contentSha: 'A'.repeat(64),
-        vector: baseVec,
+        descriptionVector: baseVec,
+        bodyVector: baseVec,
       }),
     ).toThrow();
     // Non-hex chars.
@@ -218,47 +269,42 @@ describe('ac-2: encodeSidecar', () => {
         modelId: 'm',
         dim: 1,
         contentSha: 'z'.repeat(64),
-        vector: baseVec,
-      }),
-    ).toThrow();
-    // 64 chars but contains a non-hex char.
-    expect(() =>
-      encodeSidecar({
-        modelId: 'm',
-        dim: 1,
-        contentSha: 'g' + 'a'.repeat(63),
-        vector: baseVec,
+        descriptionVector: baseVec,
+        bodyVector: baseVec,
       }),
     ).toThrow();
   });
 });
 
 // -------------------------------------------------------------------------
-// ac-3: decodeSidecar
+// decodeSidecar
 // -------------------------------------------------------------------------
 
-describe('ac-3: decodeSidecar', () => {
-  it('decodeSidecar returns { modelId, dim, contentSha, vector } with values equal to the inputs that were encoded', () => {
+describe('decodeSidecar', () => {
+  it('returns { modelId, dim, contentSha, descriptionVector, bodyVector } equal to the encoded inputs', () => {
     const input = {
       modelId: 'Xenova/bge-base-en-v1.5',
       dim: 4,
       contentSha: hexSha(10),
-      vector: [0.0, 1.0, -2.5, 0.125],
+      descriptionVector: [0.5, -1.0, 2.5, -0.125],
+      bodyVector: [0.0, 1.0, -2.5, 0.125],
     };
     const buf = encodeSidecar(input);
     const out = decodeSidecar(buf);
     expect(out.modelId).toBe(input.modelId);
     expect(out.dim).toBe(input.dim);
     expect(out.contentSha).toBe(input.contentSha);
-    expect(Array.from(out.vector)).toEqual(input.vector);
+    expect(Array.from(out.descriptionVector)).toEqual(input.descriptionVector);
+    expect(Array.from(out.bodyVector)).toEqual(input.bodyVector);
   });
 
-  it('decodeSidecar returns contentSha as a 64-character lowercase hex string (not a Buffer)', () => {
+  it('returns contentSha as a 64-character lowercase hex string (not a Buffer)', () => {
     const input = {
       modelId: 'm',
       dim: 1,
       contentSha: hexSha(11),
-      vector: [0.0],
+      descriptionVector: [0.0],
+      bodyVector: [0.0],
     };
     const buf = encodeSidecar(input);
     const out = decodeSidecar(buf);
@@ -267,191 +313,106 @@ describe('ac-3: decodeSidecar', () => {
     expect(out.contentSha).toBe(input.contentSha);
   });
 
-  it('decodeSidecar returns vector as a Float32Array (or number[] per implementation choice) of length dim', () => {
+  it('returns both vectors as Float32Arrays of length dim', () => {
     const dim = 8;
-    const vec = makeVector(dim, (i) => (i - 3) * 0.25);
     const buf = encodeSidecar({
       modelId: 'm',
       dim,
       contentSha: hexSha(12),
-      vector: vec,
+      descriptionVector: makeVector(dim, (i) => (i - 4) * 0.5),
+      bodyVector: makeVector(dim, (i) => (i - 3) * 0.25),
     });
     const out = decodeSidecar(buf);
-    // Float32Array OR number[]; either is acceptable per the contract.
-    const isF32 = out.vector instanceof Float32Array;
-    const isArray = Array.isArray(out.vector);
-    expect(isF32 || isArray).toBe(true);
-    expect(out.vector.length).toBe(dim);
+    expect(out.descriptionVector).toBeInstanceOf(Float32Array);
+    expect(out.bodyVector).toBeInstanceOf(Float32Array);
+    expect(out.descriptionVector.length).toBe(dim);
+    expect(out.bodyVector.length).toBe(dim);
   });
 });
 
 // -------------------------------------------------------------------------
-// ac-4: validation in decode + encode dim mismatch
+// ac-4 (DAR-1210): version handling
 // -------------------------------------------------------------------------
 
-describe('ac-4: throws on bad magic, unknown version, mismatched dim', () => {
-  it("decodeSidecar throws when the first 4 bytes are not 'CMEM'", () => {
-    const good = encodeSidecar({
-      modelId: 'm',
-      dim: 1,
-      contentSha: hexSha(13),
-      vector: [0.0],
-    });
-    const bad = Buffer.from(good);
-    bad.write('XXXX', 0, 4, 'ascii');
-    expect(() => decodeSidecar(bad)).toThrow();
+describe('ac-4: version handling', () => {
+  it('decoding a v0x01 single-vector sidecar buffer raises the documented decode error (does not silently return a partial result)', () => {
+    const v1 = buildV1Sidecar('Xenova/bge-base-en-v1.5', 4, hexSha(40), [1.0, 2.0, 3.0, 4.0]);
+    expect(() => decodeSidecar(v1)).toThrow(/unsupported version 0x01/);
   });
 
-  it('decodeSidecar throws when the version byte is not 0x01 (e.g. 0x02, 0xFF)', () => {
+  it('decodeSidecar throws when the version byte is anything other than 0x02 (e.g. 0x01, 0x03, 0xFF)', () => {
     const good = encodeSidecar({
       modelId: 'm',
       dim: 1,
       contentSha: hexSha(14),
-      vector: [0.0],
+      descriptionVector: [0.0],
+      bodyVector: [0.0],
     });
-    const v2 = Buffer.from(good);
-    v2[4] = 0x02;
-    expect(() => decodeSidecar(v2)).toThrow();
-
-    const vff = Buffer.from(good);
-    vff[4] = 0xff;
-    expect(() => decodeSidecar(vff)).toThrow();
-  });
-
-  it('decodeSidecar throws when the remaining vector bytes after the header are not exactly dim*4 bytes', () => {
-    const good = encodeSidecar({
-      modelId: 'm',
-      dim: 4,
-      contentSha: hexSha(15),
-      vector: [1.0, 2.0, 3.0, 4.0],
-    });
-    // Drop one byte from the tail (vector now short by 1 byte).
-    const short = good.subarray(0, good.length - 1);
-    expect(() => decodeSidecar(short)).toThrow();
-
-    // Append one extra byte to the tail (vector now too long by 1 byte).
-    const long = Buffer.concat([good, Buffer.from([0x00])]);
-    expect(() => decodeSidecar(long)).toThrow();
-  });
-
-  it('encodeSidecar throws when vector.length !== dim (mismatched dim at encode time)', () => {
-    expect(() =>
-      encodeSidecar({
-        modelId: 'm',
-        dim: 5,
-        contentSha: hexSha(16),
-        vector: [1, 2, 3],
-      }),
-    ).toThrow();
-  });
-});
-
-// -------------------------------------------------------------------------
-// ac-5: round-trip property
-// -------------------------------------------------------------------------
-
-describe('ac-5: round-trip', () => {
-  it('round-trip property: for arbitrary { modelId, dim, contentSha, vector } inputs, decodeSidecar(encodeSidecar(x)) deep-equals x (modelId, dim, contentSha, and per-element vector values)', () => {
-    const cases: Array<{
-      modelId: string;
-      dim: number;
-      contentSha: string;
-      vector: number[];
-    }> = [
-      { modelId: 'a', dim: 1, contentSha: hexSha(20), vector: [0.0] },
-      { modelId: 'm', dim: 3, contentSha: hexSha(21), vector: [0.0, -1.0, 1.0] },
-      {
-        modelId: 'Xenova/bge-base-en-v1.5',
-        dim: 8,
-        contentSha: hexSha(22),
-        vector: makeVector(8, (i) => (i - 4) * 0.0625),
-      },
-      {
-        modelId: 'x'.repeat(255), // model_len boundary (1-byte field max)
-        dim: 2,
-        contentSha: hexSha(23),
-        vector: [0.5, -0.5],
-      },
-    ];
-    for (const input of cases) {
-      const buf = encodeSidecar(input);
-      const out = decodeSidecar(buf);
-      expect(out.modelId).toBe(input.modelId);
-      expect(out.dim).toBe(input.dim);
-      expect(out.contentSha).toBe(input.contentSha);
-      expect(out.vector.length).toBe(input.vector.length);
-      for (let i = 0; i < input.vector.length; i++) {
-        expect(out.vector[i]).toBe(input.vector[i]);
-      }
-    }
-  });
-
-  it('round-trip preserves non-ASCII utf-8 in modelId (e.g. multi-byte characters) without corruption', () => {
-    const modelId = 'モデル/日本語-эмбеддинг-🚀';
-    const input = {
-      modelId,
-      dim: 2,
-      contentSha: hexSha(24),
-      vector: [1.0, -1.0],
-    };
-    const buf = encodeSidecar(input);
-    const out = decodeSidecar(buf);
-    expect(out.modelId).toBe(modelId);
-    // Sanity: the byte length we stored is the utf-8 byte length, not the
-    // code-point count.
-    const utf8 = Buffer.from(modelId, 'utf8');
-    expect(buf[5]).toBe(utf8.length);
-    expect(utf8.length).not.toBe([...modelId].length);
-  });
-
-  it('round-trip preserves float32 vector values exactly (no precision loss beyond float32 representation)', () => {
-    // Pick values that are exactly representable in float32: powers of two,
-    // simple binary fractions, and zero. Float32 stores these exactly.
-    const exact = [0.0, 1.0, -1.0, 0.5, -0.25, 0.125, 1024.0, -1024.0];
-    const input = {
-      modelId: 'm',
-      dim: exact.length,
-      contentSha: hexSha(25),
-      vector: exact,
-    };
-    const buf = encodeSidecar(input);
-    const out = decodeSidecar(buf);
-    for (let i = 0; i < exact.length; i++) {
-      expect(out.vector[i]).toBe(exact[i]);
+    for (const v of [0x01, 0x03, 0xff]) {
+      const bad = Buffer.from(good);
+      bad[4] = v;
+      expect(() => decodeSidecar(bad)).toThrow(/unsupported version/);
     }
   });
 });
 
 // -------------------------------------------------------------------------
-// ac-6: rejects bad magic, truncated buffers, future version
+// validation in decode
 // -------------------------------------------------------------------------
 
-describe('ac-6: validation negative cases', () => {
-  it("decodeSidecar throws when given a buffer whose first 4 bytes are not 'CMEM' (e.g. 'XXXX')", () => {
+describe('decode validation', () => {
+  it("throws when the first 4 bytes are not 'CMEM'", () => {
     const good = encodeSidecar({
       modelId: 'm',
       dim: 1,
-      contentSha: hexSha(30),
-      vector: [0.0],
+      contentSha: hexSha(13),
+      descriptionVector: [0.0],
+      bodyVector: [0.0],
     });
     const bad = Buffer.from(good);
     bad.write('XXXX', 0, 4, 'ascii');
     expect(() => decodeSidecar(bad)).toThrow();
   });
 
-  it('decodeSidecar throws when given a buffer truncated mid-header (shorter than magic+version+model_len+model_id+dim+content_sha)', () => {
+  it('throws when the trailing vector bytes after the header are not exactly 2*dim*4 bytes', () => {
     const good = encodeSidecar({
-      modelId: 'Xenova/bge-base-en-v1.5',
+      modelId: 'm',
+      dim: 4,
+      contentSha: hexSha(15),
+      descriptionVector: [1.0, 2.0, 3.0, 4.0],
+      bodyVector: [5.0, 6.0, 7.0, 8.0],
+    });
+    // Drop one byte from the tail (payload now short by 1 byte).
+    const short = good.subarray(0, good.length - 1);
+    expect(() => decodeSidecar(short)).toThrow();
+
+    // Append one extra byte to the tail (payload now too long by 1 byte).
+    const long = Buffer.concat([good, Buffer.from([0x00])]);
+    expect(() => decodeSidecar(long)).toThrow();
+
+    // Exactly one channel's worth of floats (a v2 header with a v1-sized
+    // payload) must also be rejected -- no silent partial decode.
+    const utf8 = Buffer.from('m', 'utf8');
+    const headerEnd = 4 + 1 + 1 + utf8.length + 4 + 32;
+    const oneChannel = good.subarray(0, headerEnd + 4 * 4);
+    expect(() => decodeSidecar(oneChannel)).toThrow();
+  });
+
+  it('throws when given a buffer truncated mid-header (shorter than magic+version+model_len+model_id+dim+content_sha)', () => {
+    const modelId = 'Xenova/bge-base-en-v1.5';
+    const good = encodeSidecar({
+      modelId,
       dim: 4,
       contentSha: hexSha(31),
-      vector: [1.0, 2.0, 3.0, 4.0],
+      descriptionVector: [1.0, 2.0, 3.0, 4.0],
+      bodyVector: [5.0, 6.0, 7.0, 8.0],
     });
-    const utf8 = Buffer.from('Xenova/bge-base-en-v1.5', 'utf8');
+    const utf8 = Buffer.from(modelId, 'utf8');
     const headerEnd = 4 + 1 + 1 + utf8.length + 4 + 32;
 
     // Empty buffer
     expect(() => decodeSidecar(Buffer.alloc(0))).toThrow();
-    // 0 bytes
+    // 3 bytes
     expect(() => decodeSidecar(Buffer.alloc(3))).toThrow();
     // Just magic, no version/model_len/etc.
     expect(() => decodeSidecar(good.subarray(0, 4))).toThrow();
@@ -464,38 +425,97 @@ describe('ac-6: validation negative cases', () => {
     // Truncated mid-content_sha.
     expect(() => decodeSidecar(good.subarray(0, headerEnd - 1))).toThrow();
   });
+});
 
-  it('decodeSidecar throws when given a buffer truncated mid-vector (header valid but vector bytes are short of dim*4)', () => {
-    const good = encodeSidecar({
-      modelId: 'm',
-      dim: 4,
-      contentSha: hexSha(32),
-      vector: [1.0, 2.0, 3.0, 4.0],
-    });
-    const utf8 = Buffer.from('m', 'utf8');
-    const headerEnd = 4 + 1 + 1 + utf8.length + 4 + 32;
+// -------------------------------------------------------------------------
+// ac-4 (DAR-1210): round-trip property
+// -------------------------------------------------------------------------
 
-    // Header present, no vector bytes at all.
-    expect(() => decodeSidecar(good.subarray(0, headerEnd))).toThrow();
-    // Header + 1 float (dim says 4).
-    expect(() => decodeSidecar(good.subarray(0, headerEnd + 4))).toThrow();
-    // Header + 3 floats (dim says 4).
-    expect(() => decodeSidecar(good.subarray(0, headerEnd + 12))).toThrow();
-    // Off by one byte (not aligned).
-    expect(() => decodeSidecar(good.subarray(0, good.length - 1))).toThrow();
+describe('ac-4: round-trip', () => {
+  it('round-trips both the description vector and the body vector under the bumped format version (decode(encode(x)) deep-equals x for both channels)', () => {
+    const cases: Array<{
+      modelId: string;
+      dim: number;
+      contentSha: string;
+      descriptionVector: number[];
+      bodyVector: number[];
+    }> = [
+      {
+        modelId: 'a',
+        dim: 1,
+        contentSha: hexSha(20),
+        descriptionVector: [0.5],
+        bodyVector: [0.0],
+      },
+      {
+        modelId: 'm',
+        dim: 3,
+        contentSha: hexSha(21),
+        descriptionVector: [0.5, -0.5, 0.25],
+        bodyVector: [0.0, -1.0, 1.0],
+      },
+      {
+        modelId: 'Xenova/bge-base-en-v1.5',
+        dim: 8,
+        contentSha: hexSha(22),
+        descriptionVector: makeVector(8, (i) => (i - 2) * 0.125),
+        bodyVector: makeVector(8, (i) => (i - 4) * 0.0625),
+      },
+      {
+        modelId: 'x'.repeat(255), // model_len boundary (1-byte field max)
+        dim: 2,
+        contentSha: hexSha(23),
+        descriptionVector: [0.25, -0.25],
+        bodyVector: [0.5, -0.5],
+      },
+    ];
+    for (const input of cases) {
+      const buf = encodeSidecar(input);
+      const out = decodeSidecar(buf);
+      expect(out.modelId).toBe(input.modelId);
+      expect(out.dim).toBe(input.dim);
+      expect(out.contentSha).toBe(input.contentSha);
+      expect(Array.from(out.descriptionVector)).toEqual(input.descriptionVector);
+      expect(Array.from(out.bodyVector)).toEqual(input.bodyVector);
+    }
   });
 
-  it('decodeSidecar throws when version byte is greater than 0x01 (future version, e.g. 0x02)', () => {
-    const good = encodeSidecar({
+  it('round-trip preserves non-ASCII utf-8 in modelId (e.g. multi-byte characters) without corruption', () => {
+    const modelId = 'モデル/日本語-эмбеддинг-🚀';
+    const input = {
+      modelId,
+      dim: 2,
+      contentSha: hexSha(24),
+      descriptionVector: [0.5, -0.5],
+      bodyVector: [1.0, -1.0],
+    };
+    const buf = encodeSidecar(input);
+    const out = decodeSidecar(buf);
+    expect(out.modelId).toBe(modelId);
+    // Sanity: the byte length we stored is the utf-8 byte length, not the
+    // code-point count.
+    const utf8 = Buffer.from(modelId, 'utf8');
+    expect(buf[5]).toBe(utf8.length);
+    expect(utf8.length).not.toBe([...modelId].length);
+  });
+
+  it('round-trip preserves float32 vector values exactly in both channels (no precision loss beyond float32 representation)', () => {
+    // Pick values that are exactly representable in float32: powers of two,
+    // simple binary fractions, and zero. Float32 stores these exactly.
+    const exact = [0.0, 1.0, -1.0, 0.5, -0.25, 0.125, 1024.0, -1024.0];
+    const reversed = exact.slice().reverse();
+    const input = {
       modelId: 'm',
-      dim: 1,
-      contentSha: hexSha(33),
-      vector: [0.0],
-    });
-    for (const v of [0x02, 0x10, 0xff]) {
-      const bad = Buffer.from(good);
-      bad[4] = v;
-      expect(() => decodeSidecar(bad)).toThrow();
+      dim: exact.length,
+      contentSha: hexSha(25),
+      descriptionVector: reversed,
+      bodyVector: exact,
+    };
+    const buf = encodeSidecar(input);
+    const out = decodeSidecar(buf);
+    for (let i = 0; i < exact.length; i++) {
+      expect(out.descriptionVector[i]).toBe(reversed[i]);
+      expect(out.bodyVector[i]).toBe(exact[i]);
     }
   });
 });

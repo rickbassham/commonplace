@@ -100,8 +100,11 @@ const makeMemory = (
 
 /**
  * Save a memory through the store with a controlled vector. We register the
- * vector against the body text in the embedder registry, then call save() so
- * the store persists everything end-to-end.
+ * vector against BOTH the body text and the description text in the embedder
+ * registry, then call save() so the store persists everything end-to-end.
+ * Registering the same vector on both channels keeps the fused score
+ * (max over channels) equal to the hand-computed body cosine, so the
+ * single-channel fixtures in this file stay exact under fusion.
  */
 const saveWithVector = async (
   store: MemoryStore,
@@ -110,6 +113,23 @@ const saveWithVector = async (
   vector: Float32Array,
 ): Promise<void> => {
   embedder.register(m.body, vector);
+  embedder.register(m.description, vector);
+  await store.save(m);
+};
+
+/**
+ * Save a memory with DIFFERENT vectors per channel, for fusion tests that
+ * need the description channel to diverge from the body channel.
+ */
+const saveWithChannelVectors = async (
+  store: MemoryStore,
+  embedder: ReturnType<typeof makeProgrammableEmbedder>,
+  m: Memory,
+  bodyVector: Float32Array,
+  descriptionVector: Float32Array,
+): Promise<void> => {
+  embedder.register(m.body, bodyVector);
+  embedder.register(m.description, descriptionVector);
   await store.save(m);
 };
 
@@ -636,5 +656,116 @@ describe('ac-6: synthetic corpus', () => {
       expect(names.has(noise)).toBe(false);
     }
     for (const r of results) expect(r.score).toBeGreaterThanOrEqual(0.5);
+  });
+});
+
+// -------------------------------------------------------------------------
+// DAR-1210 ac-3: description+body fusion scoring
+// -------------------------------------------------------------------------
+
+describe('DAR-1210 ac-3: description+body fusion scoring', () => {
+  it('search() scores each entry as max(cos(query, description-vector), cos(query, body-vector)): a memory whose description matches the query but whose body vector is orthogonal ranks first', async () => {
+    const embedder = makeProgrammableEmbedder(4);
+    const store = new MemoryStore({ dir: tmp, embedder });
+
+    const queryVec = l2norm(new Float32Array([1, 0, 0, 0]));
+    embedder.register('q', queryVec);
+
+    // `desc_hit`: body orthogonal to the query (cos 0) but description
+    // aligned with it (cos 0.95) -- the dense-fact-sheet failure mode.
+    await saveWithChannelVectors(
+      store,
+      embedder,
+      makeMemory('desc_hit'),
+      l2norm(new Float32Array([0, 1, 0, 0])), // body channel: orthogonal
+      l2norm(new Float32Array([0.95, Math.sqrt(1 - 0.9025), 0, 0])), // desc channel
+    );
+
+    // `body_mid`: body moderately aligned (cos 0.5), description orthogonal.
+    await saveWithChannelVectors(
+      store,
+      embedder,
+      makeMemory('body_mid'),
+      l2norm(new Float32Array([0.5, Math.sqrt(1 - 0.25), 0, 0])),
+      l2norm(new Float32Array([0, 0, 1, 0])),
+    );
+
+    const results = await store.search('q');
+    expect(results.map((r) => r.memory.name)).toEqual(['desc_hit', 'body_mid']);
+    // Fused scores are the max over channels.
+    expect(results[0]!.score).toBeCloseTo(0.95, 6);
+    expect(results[1]!.score).toBeCloseTo(0.5, 6);
+  });
+
+  it('threshold filter applies to the fused score: an entry whose description-channel score clears the threshold is returned even when its body-channel score alone would not', async () => {
+    const embedder = makeProgrammableEmbedder(4);
+    const store = new MemoryStore({ dir: tmp, embedder });
+
+    const queryVec = l2norm(new Float32Array([1, 0, 0, 0]));
+    embedder.register('q', queryVec);
+
+    // Body channel scores 0.1 (below the 0.6 threshold); description
+    // channel scores 0.9 (above). Fused = max = 0.9 -> must be returned.
+    await saveWithChannelVectors(
+      store,
+      embedder,
+      makeMemory('rescued_by_desc'),
+      l2norm(new Float32Array([0.1, Math.sqrt(1 - 0.01), 0, 0])),
+      l2norm(new Float32Array([0.9, Math.sqrt(1 - 0.81), 0, 0])),
+    );
+
+    // Control: both channels below threshold -> dropped.
+    await saveWithChannelVectors(
+      store,
+      embedder,
+      makeMemory('dropped'),
+      l2norm(new Float32Array([0.2, Math.sqrt(1 - 0.04), 0, 0])),
+      l2norm(new Float32Array([0.3, Math.sqrt(1 - 0.09), 0, 0])),
+    );
+
+    const results = await store.search('q', { threshold: 0.6 });
+    expect(results.map((r) => r.memory.name)).toEqual(['rescued_by_desc']);
+    expect(results[0]!.score).toBeCloseTo(0.9, 6);
+  });
+
+  it('type filter and limit slice operate on fused scores exactly as before (filters before slice)', async () => {
+    const embedder = makeProgrammableEmbedder(4);
+    const store = new MemoryStore({ dir: tmp, embedder });
+
+    const queryVec = l2norm(new Float32Array([1, 0, 0, 0]));
+    embedder.register('q', queryVec);
+
+    // Six `feedback` entries whose FUSED scores come from the description
+    // channel (bodies all orthogonal), plus two high-scoring `reference`
+    // entries that must not consume the type-filtered limit.
+    for (let i = 0; i < 6; i++) {
+      const c = 0.5 + i * 0.05;
+      await saveWithChannelVectors(
+        store,
+        embedder,
+        makeMemory(`fb${i}`, `body-fb${i}`, 'feedback'),
+        l2norm(new Float32Array([0, 1, 0, 0])),
+        l2norm(new Float32Array([c, Math.sqrt(1 - c * c), 0, 0])),
+      );
+    }
+    for (let i = 0; i < 2; i++) {
+      await saveWithChannelVectors(
+        store,
+        embedder,
+        makeMemory(`ref${i}`, `body-ref${i}`, 'reference'),
+        l2norm(new Float32Array([0.99, Math.sqrt(1 - 0.9801), 0, 0])),
+        l2norm(new Float32Array([0.99, Math.sqrt(1 - 0.9801), 0, 0])),
+      );
+    }
+
+    const results = await store.search('q', { type: 'feedback', limit: 5 });
+    expect(results.length).toBe(5);
+    for (const r of results) expect(r.memory.type).toBe('feedback');
+    // Descending fused score; the lowest planted feedback entry (0.5) is the
+    // one cut by the limit.
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i - 1]!.score).toBeGreaterThanOrEqual(results[i]!.score);
+    }
+    expect(results.map((r) => r.memory.name)).toEqual(['fb5', 'fb4', 'fb3', 'fb2', 'fb1']);
   });
 });

@@ -256,7 +256,8 @@ describe('ac-7: mid-write SIGKILL crash safety', () => {
       modelId: 'stub/test-model',
       dim: 4,
       contentSha: contentSha(m),
-      vector: v,
+      descriptionVector: v,
+      bodyVector: v,
     });
     writeFileSync(join(tmp, `${name}.embedding`), emb);
     return {

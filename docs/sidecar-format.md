@@ -24,22 +24,37 @@ re-embed at any time.
 All multi-byte integers and floats are **little-endian**. `model_id` is utf-8.
 
 ```
-offset       size         field         value
------------  -----------  ------------  ----------------------------------------
-0            4            magic         ASCII "CMEM"  (0x43 0x4D 0x45 0x4D)
-4            1            version       0x01
-5            1            model_len     utf-8 byte length of model_id (0..255)
-6            model_len    model_id      utf-8 bytes (e.g. "Xenova/bge-base-en-v1.5")
-6 + L        4            dim           uint32 LE (e.g. 768 for bge-base)
-10 + L       32           content_sha   raw sha256 (decoded from the 64-char hex)
-42 + L       dim * 4      vector        float32 LE values, in order
+offset           size         field         value
+---------------  -----------  ------------  ----------------------------------------
+0                4            magic         ASCII "CMEM"  (0x43 0x4D 0x45 0x4D)
+4                1            version       0x02
+5                1            model_len     utf-8 byte length of model_id (0..255)
+6                model_len    model_id      utf-8 bytes (e.g. "Xenova/bge-base-en-v1.5")
+6 + L            4            dim           uint32 LE (e.g. 768 for bge-base)
+10 + L           32           content_sha   raw sha256 (decoded from the 64-char hex)
+42 + L           dim * 4      desc_vector   float32 LE values, in order
+42 + L + dim*4   dim * 4      body_vector   float32 LE values, in order
 ```
 
 Where `L = model_len` (the value of the byte at offset 5).
 
-**Total size** = `4 + 1 + 1 + L + 4 + 32 + dim*4` = `42 + L + dim*4` bytes.
-For bge-base (`L = 23`, `dim = 768`), this is `42 + 23 + 3072 = 3137` bytes
-(~3 KB).
+**Total size** = `4 + 1 + 1 + L + 4 + 32 + 2*dim*4` = `42 + L + 2*dim*4`
+bytes. For bge-base (`L = 23`, `dim = 768`), this is `42 + 23 + 6144 = 6209`
+bytes (~6 KB).
+
+## Version history
+
+- **0x02** (DAR-1210) — two-channel format. Carries the description-channel
+  embedding (`desc_vector`) followed by the body-channel embedding
+  (`body_vector`). `memory_search` fuses the two channels at query time
+  (`max` of the per-channel cosines), fixing the recall failure mode where a
+  memory whose body is a dense fact sheet is unfindable by queries that
+  nearly restate its human-written `description`.
+- **0x01** (legacy) — single-vector format (body channel only). Decoders
+  reject this version; because sidecars are derived data, consumers treat a
+  v0x01 sidecar as stale and transparently re-embed it in the current format
+  on the next scan. There is no migration tooling and no backward-compat
+  decode path by design.
 
 ### Field details
 
@@ -47,10 +62,11 @@ For bge-base (`L = 23`, `dim = 768`), this is `42 + 23 + 3072 = 3137` bytes
   reject any buffer whose first four bytes are not exactly these. Acts as a
   cheap file-type check.
 
-- **version** (1 byte, offset 4). The format version number. Always `0x01` for
-  this revision. A decoder MUST reject any other value (including `0x00` and
-  any value `> 0x01`). There is no backward-compat reader for unknown versions
-  — a future v2 will own its own migration story.
+- **version** (1 byte, offset 4). The format version number. Always `0x02` for
+  this revision. A decoder MUST reject any other value (including the legacy
+  `0x01` and any value `> 0x02`). There is no backward-compat reader for other
+  versions — older sidecars are re-embedded; a future v3 will own its own
+  migration story.
 
 - **model_len** (1 byte, offset 5). The utf-8 byte length of `model_id`. The
   one-byte field caps `model_id` at 255 utf-8 bytes; the encoder MUST throw
@@ -62,19 +78,27 @@ For bge-base (`L = 23`, `dim = 768`), this is `42 + 23 + 3072 = 3137` bytes
   the model is known/installed is the consumer's job.
 
 - **dim** (4 bytes, offset `6 + model_len`). The vector dimensionality, as a
-  uint32 little-endian. For bge-base this is `768`. The encoder MUST throw if
-  `vector.length !== dim`.
+  uint32 little-endian. For bge-base this is `768`. Both channels share the
+  same `dim` (they are produced by the same model). The encoder MUST throw if
+  either vector's length differs from `dim`.
 
 - **content_sha** (32 bytes, offset `10 + model_len`). The raw sha256 digest
-  of the canonical source `.md` content (as defined in `src/store/memory.ts`).
-  The encode API accepts the digest as a 64-character
-  lowercase hex string and writes the decoded 32 raw bytes; the decode API
-  re-encodes those bytes back to 64-character lowercase hex.
+  of the canonical source `.md` content (as defined in `src/store/memory.ts`,
+  spanning `type`, `name`, `description`, and `body`). The encode API accepts
+  the digest as a 64-character lowercase hex string and writes the decoded 32
+  raw bytes; the decode API re-encodes those bytes back to 64-character
+  lowercase hex.
 
-- **vector** (`dim * 4` bytes, offset `42 + model_len`). The embedding vector
-  as `dim` consecutive float32 little-endian values, in vector index order. A
-  decoder MUST reject buffers whose trailing vector payload is not exactly
-  `dim * 4` bytes (no shorter, no longer).
+- **desc_vector** (`dim * 4` bytes, offset `42 + model_len`). The
+  description-channel embedding (the frontmatter `description:` text embedded
+  on its own) as `dim` consecutive float32 little-endian values, in vector
+  index order.
+
+- **body_vector** (`dim * 4` bytes, offset `42 + model_len + dim*4`). The
+  body-channel embedding (the markdown body embedded on its own), same
+  layout as `desc_vector`. A decoder MUST reject buffers whose trailing
+  vector payload is not exactly `2 * dim * 4` bytes (no shorter, no longer —
+  including the v1-sized single-channel payload).
 
 ## API summary
 
@@ -85,18 +109,19 @@ const buf = encodeSidecar({
   modelId: 'Xenova/bge-base-en-v1.5',
   dim: 768,
   contentSha: '<64-char lowercase hex sha256>',
-  vector: float32Array, // length 768
+  descriptionVector: descFloat32Array, // length 768
+  bodyVector: bodyFloat32Array, // length 768
 });
 
-const { modelId, dim, contentSha, vector } = decodeSidecar(buf);
-// `vector` is a Float32Array of length `dim`.
+const { modelId, dim, contentSha, descriptionVector, bodyVector } = decodeSidecar(buf);
+// Both vectors are Float32Arrays of length `dim`.
 ```
 
 ### Validation contract
 
 `encodeSidecar` throws on:
 
-- `vector.length !== dim`
+- `descriptionVector.length !== dim` or `bodyVector.length !== dim`
 - `contentSha` not matching `/^[0-9a-f]{64}$/`
 - `modelId` utf-8 byte length `> 255`
 
@@ -105,19 +130,21 @@ const { modelId, dim, contentSha, vector } = decodeSidecar(buf);
 - buffer shorter than the minimum header (magic + version + model_len + zero-
   length model_id + dim + content_sha = 42 bytes)
 - magic not equal to ASCII `CMEM`
-- version byte not equal to `0x01`
+- version byte not equal to `0x02` (the legacy `0x01` single-vector form
+  raises the documented "unsupported version" error — no partial decode)
 - buffer truncated before the end of the declared `model_id`, `dim`, or
   `content_sha`
-- trailing vector payload not exactly `dim * 4` bytes (truncated or trailing
-  garbage)
+- trailing vector payload not exactly `2 * dim * 4` bytes (truncated or
+  trailing garbage)
 
 ### Round-trip guarantee
 
 For any well-formed input `x`, `decodeSidecar(encodeSidecar(x))` deep-equals
-`x` on `modelId`, `dim`, `contentSha`, and per-element `vector` values.
-Float32 representation is exact for values that fit in float32 (powers of
-two, simple binary fractions, etc.); other values are rounded to the nearest
-float32 once during encode and preserved exactly thereafter.
+`x` on `modelId`, `dim`, `contentSha`, and per-element values of both
+`descriptionVector` and `bodyVector`. Float32 representation is exact for
+values that fit in float32 (powers of two, simple binary fractions, etc.);
+other values are rounded to the nearest float32 once during encode and
+preserved exactly thereafter.
 
 ## Out of scope
 

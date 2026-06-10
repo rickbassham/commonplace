@@ -39,14 +39,17 @@ export const loadCorpus = (dir: string): BenchmarkCorpusEntry[] => {
       continue; // Skip malformed memories rather than aborting the whole load.
     }
     let bodyVector: Float32Array | null = null;
+    let descVector: Float32Array | undefined;
     const sidecarPath = mdPath.replace(/\.md$/, '.embedding');
     try {
       const sidecar = decodeSidecar(readFileSync(sidecarPath));
-      bodyVector = sidecar.vector;
+      bodyVector = sidecar.bodyVector;
+      descVector = sidecar.descriptionVector;
     } catch {
-      // Missing or corrupt sidecar -- leave bodyVector null. The
-      // orchestrator will re-embed in memory.
+      // Missing, corrupt, or old-format (v0x01) sidecar -- leave both
+      // channels unset. The orchestrator will re-embed in memory.
       bodyVector = null;
+      descVector = undefined;
     }
     out.push({
       filename,
@@ -54,6 +57,7 @@ export const loadCorpus = (dir: string): BenchmarkCorpusEntry[] => {
       description: memory.description,
       body: memory.body,
       bodyVector,
+      ...(descVector === undefined ? {} : { descVector }),
     });
   }
   return out;
