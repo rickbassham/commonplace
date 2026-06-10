@@ -31,17 +31,41 @@ const RECOGNISED_CATEGORIES = new Set([
   'judged_meh',
 ]);
 
-interface RawPair {
-  query: unknown;
-  expected_names: unknown;
-  category: unknown;
+interface LabeledPairShape {
+  query: string;
+  expected_names: string[];
+  category: string;
 }
 
-const loadLabeledSet = (): RawPair[] => {
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+const isLabeledPairShape = (value: unknown): value is LabeledPairShape => {
+  if (typeof value !== 'object' || value === null) return false;
+  if (!('query' in value && 'expected_names' in value && 'category' in value)) return false;
+  return (
+    typeof value.query === 'string' &&
+    isStringArray(value.expected_names) &&
+    typeof value.category === 'string'
+  );
+};
+
+function assertLabeledPairShape(value: unknown, label: string): asserts value is LabeledPairShape {
+  if (!isLabeledPairShape(value)) {
+    expect.fail(
+      `${label}: must be { query: string; expected_names: string[]; category: string }, ` +
+        `got ${JSON.stringify(value)}`,
+    );
+  }
+}
+
+const loadLabeledSet = (): unknown[] => {
   const raw = readFileSync(join(repoRoot, 'docs', 'retrieval-labeled-set.json'), 'utf8');
   const parsed: unknown = JSON.parse(raw);
-  expect(Array.isArray(parsed)).toBe(true);
-  return parsed as RawPair[];
+  if (!Array.isArray(parsed)) {
+    throw new Error('docs/retrieval-labeled-set.json: expected a top-level JSON array');
+  }
+  return parsed;
 };
 
 describe('DAR-1210 ac-1: expanded labeled set', () => {
@@ -49,35 +73,29 @@ describe('DAR-1210 ac-1: expanded labeled set', () => {
     const pairs = loadLabeledSet();
     expect(pairs.length).toBeGreaterThan(0);
     for (const [i, pair] of pairs.entries()) {
-      expect(typeof pair.query, `entry ${i}: query must be a string`).toBe('string');
-      expect((pair.query as string).length, `entry ${i}: query must be non-empty`).toBeGreaterThan(
-        0,
-      );
-      expect(Array.isArray(pair.expected_names), `entry ${i}: expected_names must be array`).toBe(
-        true,
-      );
-      const names = pair.expected_names as unknown[];
-      expect(names.length, `entry ${i}: expected_names must be non-empty`).toBeGreaterThan(0);
-      for (const n of names) {
-        expect(typeof n, `entry ${i}: expected_names entries must be strings`).toBe('string');
-        expect(
-          (n as string).length,
-          `entry ${i}: expected_names entries non-empty`,
-        ).toBeGreaterThan(0);
+      assertLabeledPairShape(pair, `entry ${i}`);
+      expect(pair.query.length, `entry ${i}: query must be non-empty`).toBeGreaterThan(0);
+      expect(
+        pair.expected_names.length,
+        `entry ${i}: expected_names must be non-empty`,
+      ).toBeGreaterThan(0);
+      for (const n of pair.expected_names) {
+        expect(n.length, `entry ${i}: expected_names entries non-empty`).toBeGreaterThan(0);
       }
       expect(
-        RECOGNISED_CATEGORIES.has(pair.category as string),
+        RECOGNISED_CATEGORIES.has(pair.category),
         `entry ${i}: unrecognised category ${JSON.stringify(pair.category)}`,
       ).toBe(true);
     }
   });
 
   it('includes judged-negative pairs from the 2026-06-10 mining (count > 0) and the canonical production-miss pair whose gold is dda_linear_workspace_conventions', () => {
-    const pairs = loadLabeledSet();
-    const negatives = pairs.filter((p) => p.category === 'judged_negative');
+    const negatives = loadLabeledSet()
+      .filter(isLabeledPairShape)
+      .filter((p) => p.category === 'judged_negative');
     expect(negatives.length).toBeGreaterThan(0);
     const canonical = negatives.filter((p) =>
-      (p.expected_names as string[]).includes('dda_linear_workspace_conventions'),
+      p.expected_names.includes('dda_linear_workspace_conventions'),
     );
     expect(canonical.length).toBeGreaterThan(0);
   });
