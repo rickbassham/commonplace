@@ -5,6 +5,20 @@ All notable changes to `commonplace-mcp` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0](https://github.com/rickbassham/commonplace/compare/v0.6.0...v0.7.0) (2026-06-10)
+
+
+### Added
+
+* **scripts:** retrieval-quality benchmark for memory_search (DAR-1034) ([#66](https://github.com/rickbassham/commonplace/issues/66)) ([ce29ca8](https://github.com/rickbassham/commonplace/commit/ce29ca84a33c2a6bad7b5f4eaa9edb3e432ebff8))
+* **server:** hierarchical memory_search expansion via child-of edges (DAR-1144) ([#69](https://github.com/rickbassham/commonplace/issues/69)) ([9c13204](https://github.com/rickbassham/commonplace/commit/9c132046e3e49ab63a6f4474e115b8851dc651a1))
+* **store:** two-channel retrieval -- fuse description and body embeddings (DAR-1210) ([#71](https://github.com/rickbassham/commonplace/issues/71)) ([3ebe831](https://github.com/rickbassham/commonplace/commit/3ebe831e5d028f1597490858850c5f8f93cb60bd))
+
+
+### Fixed
+
+* **tests:** prevent bootHarness leak that corrupted ~/.commonplace/memory (DAR-1035) ([#67](https://github.com/rickbassham/commonplace/issues/67)) ([a96326a](https://github.com/rickbassham/commonplace/commit/a96326a925e0be05246eb4b20c9b7c525cfb5057))
+
 ## [0.6.0](https://github.com/rickbassham/commonplace/compare/v0.5.0...v0.6.0) (2026-05-16)
 
 
