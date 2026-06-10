@@ -88,7 +88,7 @@ export interface BenchmarkSummary {
 }
 
 export const runBenchmark = async (opts: RunBenchmarkOptions): Promise<BenchmarkSummary> => {
-  const corpus = loadCorpus(opts.corpusDir);
+  const corpus = loadCorpus(opts.corpusDir, opts.embedder.modelId);
   const inputs = await buildBenchmarkInputs({ corpus, pairs: opts.pairs, embedder: opts.embedder });
 
   const variantResults: VariantResult[] = [];
@@ -672,7 +672,11 @@ const main = async (): Promise<void> => {
             'structurally blind to the miss mode DAR-1210 fixes. Judged pairs ' +
             'are preserved verbatim across benchmark regenerations (judgments ' +
             'are not re-litigated) and take precedence over an auto-mined pair ' +
-            'with the same query. Bias: one dev’s sessions; ground-truth signal.',
+            'with the same query. The 2 `judged_meh` pairs are included in this ' +
+            'set’s aggregate metrics despite their ambiguous signal; the ' +
+            'DAR-1210 acceptance gates read off the dedicated judged-positive/' +
+            'judged-negative sections below, which exclude them. Bias: one ' +
+            'dev’s sessions; ground-truth signal.',
         },
         {
           label: 'Judged positives (2026-06-10 mining)',
