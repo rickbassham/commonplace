@@ -60,7 +60,28 @@ export type LabelCategory =
   | 'confirmed_hit'
   | 'operator_correction'
   | 'should_have_hit'
-  | 'synthetic';
+  | 'synthetic'
+  | 'judged_positive'
+  | 'judged_negative'
+  | 'judged_meh';
+
+/**
+ * Categories carried by the 2026-06-10 judged mining pass (DAR-1210).
+ * Unlike the heuristic categories above, these were assigned by judge
+ * agents reading each mined `memory_search` call WITH its surrounding
+ * conversation context:
+ *
+ *   - `judged_positive`: the search surfaced the gold memory and the agent
+ *     used it.
+ *   - `judged_negative`: a relevant gold memory existed in the corpus but
+ *     was NOT surfaced (the catastrophic-miss mode fusion scoring fixes).
+ *   - `judged_meh`: ambiguous signal; mostly legitimate absence checks.
+ *
+ * Entries with these categories are curated artifacts: the benchmark CLI
+ * preserves them across regenerations instead of re-mining them (the
+ * heuristic pipeline cannot reproduce judgments).
+ */
+export const JUDGED_CATEGORIES = ['judged_positive', 'judged_negative', 'judged_meh'] as const;
 
 export interface BuildLabeledSetOptions {
   calls: MinedSearchCall[];

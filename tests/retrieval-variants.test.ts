@@ -89,11 +89,13 @@ const buildInputs = async (): Promise<BenchmarkInputs> =>
   buildBenchmarkInputs({ corpus, pairs, embedder: stubEmbedder });
 
 describe('ALL_VARIANTS contract', () => {
-  it('includes the six variant names from the contract envelope', () => {
+  it('includes cosine-desc-body-max and cosine-desc-body-mean in addition to the six existing variant names (DAR-1210 ac-2)', () => {
     expect(ALL_VARIANTS).toEqual([
       'cosine-body',
       'cosine-description-plus-body',
       'cosine-description',
+      'cosine-desc-body-max',
+      'cosine-desc-body-mean',
       'bm25',
       'bm25-cosine-hybrid',
       'cross-encoder-rerank',
@@ -141,6 +143,90 @@ describe('runVariant -- cosine-description (ac-3)', () => {
     // description has both "canonical" and "release" -- it must rank
     // first under cosine-description.
     expect(result.queries[1]!.ranked_names[0]).toBe('feedback_release_artifacts_canonical_only');
+  });
+});
+
+describe('runVariant -- desc/body fusion (DAR-1210 ac-2)', () => {
+  /**
+   * Registry-keyed stub embedder: each exact input string maps to a
+   * pre-registered unit vector; unregistered inputs embed to the zero
+   * vector. Lets the fixtures pin per-channel cosines exactly.
+   */
+  const makeRegistryEmbedder = (
+    dim: number,
+    entries: Array<[string, number[]]>,
+  ): { modelId: string; dim: number; embed: (text: string) => Promise<Float32Array> } => {
+    const registry = new Map(entries.map(([k, v]) => [k, Float32Array.from(v)]));
+    return {
+      modelId: 'test/registry-4d',
+      dim,
+      embed: async (text: string): Promise<Float32Array> =>
+        new Float32Array(registry.get(text) ?? new Float32Array(dim)),
+    };
+  };
+
+  /**
+   * Fixture pinned for both fusion rules. Query is the unit x-axis.
+   *
+   *   - desc_only_hit: desc cosine 1.0, body cosine 0.0
+   *       -> max = 1.0, mean = 0.5
+   *   - balanced:      desc cosine 0.6, body cosine 0.6
+   *       -> max = 0.6, mean = 0.6
+   *
+   * Under max-fusion desc_only_hit ranks first; under mean-fusion the
+   * hand-computed means (0.5 vs 0.6) put balanced first. The flip is what
+   * pins the arithmetic-mean rule (a max implementation would rank
+   * desc_only_hit first in both).
+   */
+  const fusionFixture = async (): Promise<BenchmarkInputs> => {
+    const embedder = makeRegistryEmbedder(4, [
+      ['fusion query', [1, 0, 0, 0]],
+      ['desc-only-hit description', [1, 0, 0, 0]],
+      ['desc-only-hit body', [0, 1, 0, 0]], // orthogonal to the query
+      ['balanced description', [0.6, 0.8, 0, 0]],
+      ['balanced body', [0.6, 0, 0.8, 0]],
+    ]);
+    const fusionCorpus: BenchmarkCorpusEntry[] = [
+      {
+        filename: 'desc_only_hit',
+        name: 'desc_only_hit',
+        description: 'desc-only-hit description',
+        body: 'desc-only-hit body',
+        bodyVector: null,
+      },
+      {
+        filename: 'balanced',
+        name: 'balanced',
+        description: 'balanced description',
+        body: 'balanced body',
+        bodyVector: null,
+      },
+    ];
+    const fusionPairs: LabeledPair[] = [
+      { query: 'fusion query', expected_names: ['desc_only_hit'], category: 'confirmed_hit' },
+    ];
+    return buildBenchmarkInputs({ corpus: fusionCorpus, pairs: fusionPairs, embedder });
+  };
+
+  it('cosine-desc-body-max ranks first an entry whose description vector matches the query even when its body vector is orthogonal', async () => {
+    const inputs = await fusionFixture();
+    const result = await runVariant({ variant: 'cosine-desc-body-max', inputs });
+    expect(result.deferred).toBe(false);
+    expect(result.queries).toHaveLength(1);
+    // max(desc=1.0, body=0.0) = 1.0 beats max(0.6, 0.6) = 0.6.
+    expect(result.queries[0]!.ranked_names).toEqual(['desc_only_hit', 'balanced']);
+  });
+
+  it('cosine-desc-body-mean scores each entry as the arithmetic mean of the description and body cosines (hand-computed expected score)', async () => {
+    const inputs = await fusionFixture();
+    const result = await runVariant({ variant: 'cosine-desc-body-mean', inputs });
+    expect(result.deferred).toBe(false);
+    expect(result.queries).toHaveLength(1);
+    // Hand-computed means: desc_only_hit = (1.0 + 0.0) / 2 = 0.5;
+    // balanced = (0.6 + 0.6) / 2 = 0.6. Mean-fusion must rank balanced
+    // first -- the opposite of max-fusion on the same fixture, which pins
+    // the arithmetic-mean rule rather than any max-like fallback.
+    expect(result.queries[0]!.ranked_names).toEqual(['balanced', 'desc_only_hit']);
   });
 });
 

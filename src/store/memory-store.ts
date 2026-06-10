@@ -147,8 +147,16 @@ export interface MemoryEntry {
    * not set the key.
    */
   pinned: boolean;
-  /** L2-normalised CLS-pooled embedding vector. */
+  /** L2-normalised CLS-pooled embedding vector of the body channel. */
   vector: Float32Array;
+  /**
+   * L2-normalised CLS-pooled embedding vector of the frontmatter
+   * `description` channel. {@link MemoryStore.search} fuses this channel
+   * with the body channel (max of the per-channel cosines) so memories
+   * whose body is a dense fact sheet remain findable via their
+   * human-written description (DAR-1210).
+   */
+  descriptionVector: Float32Array;
   /** sha256 hex digest of the canonical content (`contentSha`). */
   contentSha: string;
   /** Model id this vector was computed under (matches the configured embedder). */
@@ -273,9 +281,10 @@ export interface SearchOptions {
   /** Restrict results to entries with this {@link Memory.type}. */
   type?: Memory['type'];
   /**
-   * Minimum cosine score (dot product, since vectors are L2-normalised at
-   * write time) for an entry to appear in results. Entries scoring strictly
-   * less than `threshold` are dropped.
+   * Minimum fused cosine score (dot product, since vectors are L2-normalised
+   * at write time; fused = max over the description and body channels) for
+   * an entry to appear in results. Entries scoring strictly less than
+   * `threshold` are dropped.
    */
   threshold?: number;
 }
@@ -284,7 +293,10 @@ export interface SearchOptions {
 export interface SearchHit {
   /** The matching entry. Same object identity as the entry from {@link MemoryStore.all}. */
   memory: MemoryEntry;
-  /** Cosine score (dot product on L2-normalised vectors). */
+  /**
+   * Fused cosine score: max of the description-channel and body-channel
+   * dot products (vectors are L2-normalised, so each equals cosine).
+   */
   score: number;
 }
 
@@ -457,7 +469,7 @@ export class MemoryStore {
       }
       const sha = contentSha(memory);
 
-      let vector: Float32Array | null = null;
+      let vectors: { descriptionVector: Float32Array; bodyVector: Float32Array } | null = null;
       // Track whether a sidecar was already on disk before this iteration,
       // so we can distinguish missing (-> embedded) from stale (->
       // staleReembedded) when a re-embed is required.
@@ -468,7 +480,9 @@ export class MemoryStore {
         // (EACCES, EIO, EMFILE, ENOMEM, ...) propagate to the caller rather
         // than being silently treated as "corrupt -- re-embed". Only the
         // decode step's intentional throw-on-bad-bytes is swallowed below;
-        // that's the documented contract for sidecar corruption.
+        // that's the documented contract for sidecar corruption AND for
+        // legacy v0x01 single-vector sidecars, which decode rejects and
+        // this path transparently re-embeds in the current format.
         const bytes = readFileSync(sidecarPath);
         try {
           const decoded = decodeSidecar(bytes);
@@ -477,15 +491,18 @@ export class MemoryStore {
             decoded.dim === this.#embedder.dim &&
             decoded.contentSha === sha
           ) {
-            vector = decoded.vector;
+            vectors = {
+              descriptionVector: decoded.descriptionVector,
+              bodyVector: decoded.bodyVector,
+            };
           }
         } catch {
-          // Corrupt sidecar bytes -- fall through to re-embed.
-          vector = null;
+          // Corrupt or old-format sidecar bytes -- fall through to re-embed.
+          vectors = null;
         }
       }
 
-      if (vector === null) {
+      if (vectors === null) {
         // Missing/stale/corrupt sidecar. In a normal scan we embed and
         // rewrite; in dry-run we count what WOULD have happened and skip
         // both the embed call and the disk write. The entry is also
@@ -500,12 +517,16 @@ export class MemoryStore {
         if (dryRun) {
           continue;
         }
-        vector = await this.#embedder.embed(memory.body);
+        vectors = {
+          descriptionVector: await this.#embedder.embed(memory.description),
+          bodyVector: await this.#embedder.embed(memory.body),
+        };
         const buf = encodeSidecar({
           modelId: this.#embedder.modelId,
           dim: this.#embedder.dim,
           contentSha: sha,
-          vector,
+          descriptionVector: vectors.descriptionVector,
+          bodyVector: vectors.bodyVector,
         });
         // Route the sidecar (re-)write through the atomic
         // helper so a concurrent reader either sees the prior sidecar or
@@ -513,7 +534,7 @@ export class MemoryStore {
         await atomicWrite(sidecarPath, buf);
       } else {
         // Sidecar on disk decoded cleanly with matching modelId/dim/
-        // contentSha -- the cached vector is reused, no embed call, no
+        // contentSha -- both cached vectors are reused, no embed call, no
         // disk write. Counted as `fresh` so the migrate CLI can report
         // "unchanged" directly without subtracting from `loaded`, whose
         // value differs across live and dry-run modes.
@@ -528,7 +549,8 @@ export class MemoryStore {
         relations: memory.relations,
         supersedes: memory.supersedes,
         pinned: memory.pinned,
-        vector,
+        vector: vectors.bodyVector,
+        descriptionVector: vectors.descriptionVector,
         contentSha: sha,
         modelId: this.#embedder.modelId,
         dim: this.#embedder.dim,
@@ -590,9 +612,9 @@ export class MemoryStore {
    * in-memory index or on disk (via an existing `<name>.md`) raises before
    * any side effects.
    *
-   * On success: writes `<name>.md`, embeds the body, writes
-   * `<name>.embedding`, and appends one {@link MemoryEntry} to the in-memory
-   * array.
+   * On success: writes `<name>.md`, embeds the description and the body
+   * (one embedder call per channel), writes `<name>.embedding`, and appends
+   * one {@link MemoryEntry} to the in-memory array.
    *
    * # Partial-state on embed failure
    *
@@ -651,12 +673,14 @@ export class MemoryStore {
       await atomicWrite(mdPath, mdBytes);
 
       const sha = contentSha(memory);
+      const descriptionVector = await this.#embedder.embed(memory.description);
       const vector = await this.#embedder.embed(memory.body);
       const buf = encodeSidecar({
         modelId: this.#embedder.modelId,
         dim: this.#embedder.dim,
         contentSha: sha,
-        vector,
+        descriptionVector,
+        bodyVector: vector,
       });
       await atomicWrite(sidecarPath, buf);
 
@@ -669,6 +693,7 @@ export class MemoryStore {
         supersedes: memory.supersedes ?? [],
         pinned: memory.pinned === true,
         vector,
+        descriptionVector,
         contentSha: sha,
         modelId: this.#embedder.modelId,
         dim: this.#embedder.dim,
@@ -769,13 +794,18 @@ export class MemoryStore {
       await atomicWrite(mdPath, mdBytes);
 
       let vector = prior.vector;
+      let descriptionVector = prior.descriptionVector;
       if (newSha !== prior.contentSha) {
+        // contentSha spans type/name/description/body, so a change in ANY of
+        // those (including a description-only edit) refreshes both channels.
+        descriptionVector = await this.#embedder.embed(memory.description);
         vector = await this.#embedder.embed(memory.body);
         const buf = encodeSidecar({
           modelId: this.#embedder.modelId,
           dim: this.#embedder.dim,
           contentSha: newSha,
-          vector,
+          descriptionVector,
+          bodyVector: vector,
         });
         await atomicWrite(sidecarPath, buf);
       }
@@ -791,6 +821,7 @@ export class MemoryStore {
         supersedes: nextSupersedes,
         pinned: memory.pinned === true,
         vector,
+        descriptionVector,
         contentSha: newSha,
         modelId: this.#embedder.modelId,
         dim: this.#embedder.dim,
@@ -1149,10 +1180,14 @@ export class MemoryStore {
    *   2. Embed the query string exactly once via the configured Embedder.
    *      The query string is passed through verbatim -- no trimming, no
    *      lowercasing.
-   *   3. Score every entry in {@link all} as the dot product of the query
-   *      vector with `entry.vector`. Because entries' vectors are
-   *      L2-normalised at write time, this dot product equals
-   *      cosine similarity in `[-1, 1]`.
+   *   3. Score every entry in {@link all} as the MAX of the dot products of
+   *      the query vector with `entry.descriptionVector` and with
+   *      `entry.vector` (description+body fusion, DAR-1210). Because
+   *      entries' vectors are L2-normalised at write time, each dot product
+   *      equals cosine similarity in `[-1, 1]`, and so does their max.
+   *      Max-fusion eliminates the catastrophic-miss mode where a memory
+   *      whose body is a dense fact sheet scores near-zero against a query
+   *      that nearly restates its human-written description.
    *   4. Apply optional filters (`type`, `threshold`) BEFORE the limit slice,
    *      so `limit` counts only post-filter matches.
    *   5. Sort the surviving hits in descending score order and slice to
@@ -1187,7 +1222,12 @@ export class MemoryStore {
     const hits: SearchHit[] = [];
     for (const entry of this.#entries) {
       if (opts.type !== undefined && entry.type !== opts.type) continue;
-      const score = dotProduct(queryVec, entry.vector);
+      // Description+body fusion: the entry's score is the better of its two
+      // channels. The threshold below applies to this fused score.
+      const score = Math.max(
+        dotProduct(queryVec, entry.descriptionVector),
+        dotProduct(queryVec, entry.vector),
+      );
       if (opts.threshold !== undefined && score < opts.threshold) continue;
       hits.push({ memory: entry, score });
     }

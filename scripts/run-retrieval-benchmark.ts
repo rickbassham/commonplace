@@ -40,7 +40,12 @@ import {
 import { recallAtK, mrr } from './retrieval-metrics.js';
 import { loadCorpus } from './load-corpus.js';
 import { mineTranscripts, defaultTranscriptsRoot } from './mine-transcripts.js';
-import { buildLabeledSet, type LabeledPair, type CorpusName } from './build-labeled-set.js';
+import {
+  buildLabeledSet,
+  JUDGED_CATEGORIES,
+  type LabeledPair,
+  type CorpusName,
+} from './build-labeled-set.js';
 
 export interface RunBenchmarkOptions {
   /** Corpus directory containing `.md` + `.embedding` files (read-only). */
@@ -83,7 +88,7 @@ export interface BenchmarkSummary {
 }
 
 export const runBenchmark = async (opts: RunBenchmarkOptions): Promise<BenchmarkSummary> => {
-  const corpus = loadCorpus(opts.corpusDir);
+  const corpus = loadCorpus(opts.corpusDir, opts.embedder.modelId);
   const inputs = await buildBenchmarkInputs({ corpus, pairs: opts.pairs, embedder: opts.embedder });
 
   const variantResults: VariantResult[] = [];
@@ -141,6 +146,9 @@ const tallyByCategory = (pairs: LabeledPair[]): Record<string, number> => {
     operator_correction: 0,
     should_have_hit: 0,
     synthetic: 0,
+    judged_positive: 0,
+    judged_negative: 0,
+    judged_meh: 0,
   };
   for (const p of pairs) {
     out[p.category] = (out[p.category] ?? 0) + 1;
@@ -166,11 +174,10 @@ const renderDoc = (summary: BenchmarkSummary, opts: RunBenchmarkOptions): string
   out.push('# Retrieval-quality benchmark for `memory_search`');
   out.push('');
   out.push(
-    'This document reports the results of the DAR-1034 retrieval benchmark: a ' +
-      'comparison of six retrieval variants against a labeled test set mined ' +
-      'from real Claude Code session transcripts. The benchmark does not ' +
-      'change the production retrieval path -- acting on the numbers is a ' +
-      'separate follow-up issue.',
+    'This document reports the results of the retrieval benchmark (DAR-1034, ' +
+      'extended in DAR-1210): a comparison of the retrieval variants in ' +
+      '`scripts/retrieval-variants.ts` against a labeled test set mined ' +
+      'from real Claude Code session transcripts.',
   );
   out.push('');
 
@@ -269,9 +276,10 @@ const renderDoc = (summary: BenchmarkSummary, opts: RunBenchmarkOptions): string
   out.push('## Interpretation');
   out.push('');
   out.push(
-    'The `cosine-body` row is the current production baseline: it is what ' +
-      '`MemoryStore.search` actually does today. All other rows are read ' +
-      'relative to it.',
+    'The `cosine-body` row is the pre-fusion baseline (what ' +
+      '`MemoryStore.search` did before DAR-1210). All other rows are read ' +
+      'relative to it; `cosine-desc-body-max` is the shipped production ' +
+      'scorer.',
   );
   out.push('');
   const baseline = summary.metrics.find((m) => m.variant === 'cosine-body');
@@ -318,11 +326,16 @@ const paramsToString = (p: Record<string, string | number | boolean>): string =>
 
 /** Per-variant copy describing what the variant does, for the interpretation paragraphs. */
 const VARIANT_DESCRIPTION: Record<Variant, string> = {
-  'cosine-body': 'cosine similarity over the body embedding -- the production baseline.',
+  'cosine-body':
+    'cosine similarity over the body embedding -- the pre-DAR-1210 production baseline.',
   'cosine-description-plus-body':
     'cosine similarity over an in-memory re-embedding of `description + body`. Tests whether including the description in the embedded text helps retrieval.',
   'cosine-description':
     'cosine similarity over an in-memory re-embedding of the description alone. Tests whether the description on its own is enough signal.',
+  'cosine-desc-body-max':
+    'two-channel fusion: `max(cos(q, description), cos(q, body))` per entry. The production `MemoryStore.search` scorer as of DAR-1210 -- max-fusion eliminates the catastrophic-miss mode where a dense-fact-sheet body hides a memory from queries that restate its description.',
+  'cosine-desc-body-mean':
+    'two-channel fusion: arithmetic mean of the description and body cosines. Benchmark-only alternative to max-fusion (not shipped).',
   bm25: 'lexical BM25 over body tokens. Tests whether exact-word overlap (no embedding model at all) is competitive.',
   'bm25-cosine-hybrid':
     'weighted sum of per-query min-max-normalised BM25 and cosine scores. Tests whether combining lexical and semantic signals dominates either alone.',
@@ -335,7 +348,8 @@ const interpret = (m: VariantMetrics, baseline: VariantMetrics | undefined): str
   if (baseline === undefined || baseline.variant === m.variant) {
     return (
       `${desc} Recall@1 = ${fmt(m.recall_at_1)}, Recall@5 = ${fmt(m.recall_at_5)}, ` +
-      `MRR = ${fmt(m.mrr)}. This is the current production retrieval path.`
+      `MRR = ${fmt(m.mrr)}. This is the pre-fusion baseline every other row ` +
+      `is read against.`
     );
   }
   const r1Delta = m.recall_at_1 - baseline.recall_at_1;
@@ -382,11 +396,13 @@ export const renderCombinedDoc = (
   out.push('# Retrieval-quality benchmark for `memory_search`');
   out.push('');
   out.push(
-    'This document reports the results of the DAR-1034 retrieval benchmark: ' +
-      'a comparison of six retrieval variants across two independent labeled ' +
-      'test sets (mined from real Claude Code session transcripts, and ' +
-      'synthetically generated). The benchmark does not change the production ' +
-      'retrieval path -- acting on the numbers is a separate follow-up issue.',
+    'This document reports the results of the retrieval benchmark introduced ' +
+      'in DAR-1034 and extended in DAR-1210: a comparison of the retrieval ' +
+      'variants in `scripts/retrieval-variants.ts` across independent labeled ' +
+      'test sets (mined from real Claude Code session transcripts, judged ' +
+      'subsets thereof, and a synthetically generated set). As of DAR-1210 ' +
+      'the production retrieval path is the `cosine-desc-body-max` variant; ' +
+      '`cosine-body` is the pre-fusion baseline it is compared against.',
   );
   out.push('');
 
@@ -565,7 +581,22 @@ const main = async (): Promise<void> => {
     onWarn: (msg) => process.stderr.write(msg + '\n'),
   });
   const corpusNames = loadCorpusNames(corpusDir);
-  const minedPairs = buildLabeledSet({ calls, corpus: corpusNames });
+  const autoMinedPairs = buildLabeledSet({ calls, corpus: corpusNames });
+
+  // The committed labeled set carries the judged pairs from the 2026-06-10
+  // mining pass (DAR-1210) under the `judged_*` categories. Those are
+  // curated artifacts the heuristic pipeline cannot reproduce, so they are
+  // preserved across regenerations and take precedence over an auto-mined
+  // pair with the same query (the judgments had conversation context the
+  // heuristics lack).
+  const judgedPairs = loadJudgedPairs(minedLabeledSetPath, corpusNames);
+  const judgedQueries = new Set(judgedPairs.map((p) => p.query));
+  const minedPairs = [...autoMinedPairs.filter((p) => !judgedQueries.has(p.query)), ...judgedPairs];
+  minedPairs.sort((a, b) => {
+    if (a.category !== b.category) return a.category < b.category ? -1 : 1;
+    if (a.query !== b.query) return a.query < b.query ? -1 : 1;
+    return 0;
+  });
 
   // Load the synthetic labeled set (committed to the repo). The synthetic
   // set is generated by spawning subagents over the corpus -- see the
@@ -589,6 +620,23 @@ const main = async (): Promise<void> => {
     hybridWeight,
   });
 
+  // Judged positive/negative subsets get their own sections so the
+  // DAR-1210 acceptance gates (negatives R@5 >= 0.9, positives R@5 not
+  // regressing vs cosine-body) read directly off the tables.
+  const judgedPositiveSummary = await runBenchmark({
+    corpusDir,
+    pairs: judgedPairs.filter((p) => p.category === 'judged_positive'),
+    embedder,
+    hybridWeight,
+  });
+
+  const judgedNegativeSummary = await runBenchmark({
+    corpusDir,
+    pairs: judgedPairs.filter((p) => p.category === 'judged_negative'),
+    embedder,
+    hybridWeight,
+  });
+
   const syntheticSummary = await runBenchmark({
     corpusDir,
     pairs: syntheticPairs,
@@ -602,17 +650,56 @@ const main = async (): Promise<void> => {
     renderCombinedDoc(
       [
         {
-          label: 'Mined test set (real session transcripts)',
+          label: 'Mined test set (expanded, real session transcripts)',
           summary: minedSummary,
           describe:
-            'Built by `scripts/mine-transcripts.ts` + `scripts/build-labeled-set.ts`. ' +
-            'Walks every `.jsonl` transcript recursively under `~/.claude/projects/` ' +
-            '(including subagent transcripts) and emits one record per ' +
-            '`mcp__commonplace__memory_search` invocation. Labeling assigns each ' +
-            'record to one of `confirmed_hit`, `operator_correction`, or ' +
-            '`should_have_hit`. Bias: small N (the tool is invoked rarely in ' +
-            'practice), but ground-truth signal -- these are real queries with ' +
-            "real expected results that the dev's sessions surfaced.",
+            'Built by `scripts/mine-transcripts.ts` + `scripts/build-labeled-set.ts`, ' +
+            'expanded with the judged pairs from the 2026-06-10 mining pass ' +
+            '(DAR-1210). The auto-mined portion walks every `.jsonl` transcript ' +
+            'recursively under `~/.claude/projects/` (including subagent ' +
+            'transcripts), emits one record per `mcp__commonplace__memory_search` ' +
+            'invocation, and labels each as `confirmed_hit`, ' +
+            '`operator_correction`, or `should_have_hit`. The judged portion ' +
+            'comes from `~/.claude/artifacts/commonplace-recall-mining-2026-06-10/`: ' +
+            '209 real `memory_search` calls mined across 11 projects were judged ' +
+            'by independent agents reading each call WITH its surrounding ' +
+            'conversation context, yielding 69 unique (query, gold) pairs -- 33 ' +
+            'positive (`judged_positive`), 34 negative (`judged_negative`: a ' +
+            'relevant gold memory existed but was not surfaced), and 2 ambiguous ' +
+            '(`judged_meh`). Negatives are included deliberately: the earlier ' +
+            'auto-mined set was all `confirmed_hit`, i.e. survivorship-biased ' +
+            'toward whatever the production variant already retrieved, and ' +
+            'structurally blind to the miss mode DAR-1210 fixes. Judged pairs ' +
+            'are preserved verbatim across benchmark regenerations (judgments ' +
+            'are not re-litigated) and take precedence over an auto-mined pair ' +
+            'with the same query. The 2 `judged_meh` pairs are included in this ' +
+            'set’s aggregate metrics despite their ambiguous signal; the ' +
+            'DAR-1210 acceptance gates read off the dedicated judged-positive/' +
+            'judged-negative sections below, which exclude them. Bias: one ' +
+            'dev’s sessions; ground-truth signal.',
+        },
+        {
+          label: 'Judged positives (2026-06-10 mining)',
+          summary: judgedPositiveSummary,
+          describe:
+            'The 33 `judged_positive` pairs from the 2026-06-10 mining pass, ' +
+            'scored on their own so regressions against the body-only baseline ' +
+            'are visible: a fusion variant must keep finding what production ' +
+            'already found. DAR-1210 gate: `cosine-desc-body-max` Recall@5 here ' +
+            'must be >= the `cosine-body` Recall@5.',
+        },
+        {
+          label: 'Judged negatives (2026-06-10 mining)',
+          summary: judgedNegativeSummary,
+          describe:
+            'The 34 `judged_negative` pairs from the 2026-06-10 mining pass: ' +
+            'real queries where a relevant memory existed in the corpus but ' +
+            'production retrieval missed it (gold typically ranked 60+). This ' +
+            'is the failure mode two-channel fusion targets. DAR-1210 gate: ' +
+            '`cosine-desc-body-max` Recall@5 here must be >= 0.9. Caveat: 26 of ' +
+            'the 34 share one gold (`dda_linear_workspace_conventions`); ' +
+            'excluding it, the body-only-misses pattern still holds on the ' +
+            'remaining 8 pairs across 5 distinct memories.',
         },
         {
           label: 'Synthetic test set (task-derived, no information leak)',
@@ -649,13 +736,13 @@ const main = async (): Promise<void> => {
 };
 
 /**
- * Load the committed synthetic labeled set, fail-fast on schema drift or
- * on dangling `expected_names` references (memory deleted/renamed since
- * the set was generated). The validation is intentionally strict because
- * a stale set silently lowers every variant's metrics in the same way and
- * looks like a real regression.
+ * Load a committed labeled set, fail-fast on schema drift or on dangling
+ * `expected_names` references (memory deleted/renamed since the set was
+ * generated). The validation is intentionally strict because a stale set
+ * silently lowers every variant's metrics in the same way and looks like
+ * a real regression.
  */
-const loadSyntheticLabeledSet = (path: string, corpus: CorpusName[]): LabeledPair[] => {
+const loadCommittedLabeledSet = (path: string, corpus: CorpusName[]): LabeledPair[] => {
   const raw = readFileSync(path, 'utf8');
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) {
@@ -681,13 +768,28 @@ const loadSyntheticLabeledSet = (path: string, corpus: CorpusName[]): LabeledPai
         throw new Error(
           `${path}: entry ${i} expected_name "${name}" does not resolve to a ` +
             'corpus file (memory may have been deleted/renamed). Regenerate ' +
-            'the synthetic labeled set -- see the DAR-1034 PR description.',
+            'or re-curate the labeled set -- see docs/retrieval-benchmark.md.',
         );
       }
     }
     out.push(e);
   }
   return out;
+};
+
+/** Load the committed synthetic labeled set. See {@link loadCommittedLabeledSet}. */
+const loadSyntheticLabeledSet = (path: string, corpus: CorpusName[]): LabeledPair[] =>
+  loadCommittedLabeledSet(path, corpus);
+
+/**
+ * Load the judged pairs (the `judged_*` categories from the 2026-06-10
+ * mining pass, DAR-1210) out of the committed mined labeled set. These are
+ * curated artifacts: the heuristic mining pipeline cannot reproduce the
+ * judgments, so the CLI preserves them verbatim across regenerations.
+ */
+const loadJudgedPairs = (path: string, corpus: CorpusName[]): LabeledPair[] => {
+  const judged = new Set<string>(JUDGED_CATEGORIES);
+  return loadCommittedLabeledSet(path, corpus).filter((p) => judged.has(p.category));
 };
 
 if (isCliEntry()) {

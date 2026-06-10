@@ -15,6 +15,12 @@
  *     memory re-embedding of `${description}\n${body}`.
  *   - `cosine-description`          -- cosine similarity over an in-
  *     memory re-embedding of the description only.
+ *   - `cosine-desc-body-max`        -- two-channel fusion (DAR-1210):
+ *     `max(cos(q, desc), cos(q, body))` per entry. Matches the production
+ *     `MemoryStore.search` scorer.
+ *   - `cosine-desc-body-mean`       -- two-channel fusion (DAR-1210):
+ *     arithmetic mean of the description and body cosines. Benchmark-only
+ *     alternative to max-fusion.
  *   - `bm25`                        -- lexical BM25 over the tokenized
  *     body. Standard parameters (`k1=1.2`, `b=0.75`).
  *   - `bm25-cosine-hybrid`          -- weighted sum of min-max-normalised
@@ -126,7 +132,12 @@ export const buildBenchmarkInputs = async (
       entry.bodyVector = await embedder.embed(entry.body);
     }
     entry.descBodyVector = await embedder.embed(`${entry.description}\n${entry.body}`);
-    entry.descVector = await embedder.embed(entry.description);
+    if (entry.descVector === undefined) {
+      // v0x02 sidecars carry the description vector; loadCorpus populates
+      // it when available, so only re-embed when the sidecar predates the
+      // two-channel format (or was missing/corrupt).
+      entry.descVector = await embedder.embed(entry.description);
+    }
     entry.bodyTokens = tokenize(entry.body);
   }
   const bodyTokensList = corpus.map((c) => c.bodyTokens!);
@@ -162,11 +173,16 @@ export const computeBm25CorpusStats = (corpusTokens: string[][]): Bm25CorpusStat
   return { df, avgLen, N };
 };
 
-/** The six variants required by the contract envelope, in pinned order. */
+/**
+ * The benchmark variants, in pinned order: the six from the DAR-1034
+ * contract envelope plus the two desc/body fusion variants from DAR-1210.
+ */
 export const ALL_VARIANTS = [
   'cosine-body',
   'cosine-description-plus-body',
   'cosine-description',
+  'cosine-desc-body-max',
+  'cosine-desc-body-mean',
   'bm25',
   'bm25-cosine-hybrid',
   'cross-encoder-rerank',
@@ -210,6 +226,10 @@ export const runVariant = async (opts: RunVariantOpts): Promise<VariantResult> =
       return runCosineVariant(variant, inputs, (e) => e.descBodyVector ?? null);
     case 'cosine-description':
       return runCosineVariant(variant, inputs, (e) => e.descVector ?? null);
+    case 'cosine-desc-body-max':
+      return runFusionVariant(variant, inputs, (desc, body) => Math.max(desc, body));
+    case 'cosine-desc-body-mean':
+      return runFusionVariant(variant, inputs, (desc, body) => (desc + body) / 2);
     case 'bm25':
       return runBm25Variant(variant, inputs);
     case 'bm25-cosine-hybrid':
@@ -258,6 +278,50 @@ const runCosineVariant = async (
     deferred: false,
     deferralReason: null,
     parameters: { embedderModelId: inputs.embedder.modelId },
+  };
+};
+
+/**
+ * Two-channel fusion scoring (DAR-1210): each entry is scored by combining
+ * the description-channel cosine and the body-channel cosine through `fuse`
+ * (max for `cosine-desc-body-max`, arithmetic mean for
+ * `cosine-desc-body-mean`). Entries missing either channel vector are
+ * skipped, mirroring the null-vector handling of the single-channel
+ * cosine variants.
+ */
+const runFusionVariant = async (
+  variant: Variant,
+  inputs: BenchmarkInputs,
+  fuse: (descCosine: number, bodyCosine: number) => number,
+): Promise<VariantResult> => {
+  const queries: RankedQuery[] = [];
+  for (const pair of inputs.pairs) {
+    const qVec = await inputs.embedder.embed(pair.query);
+    const scored: Array<{ filename: string; score: number }> = [];
+    for (const entry of inputs.corpus) {
+      const bodyVec = entry.bodyVector ?? null;
+      const descVec = entry.descVector ?? null;
+      if (bodyVec === null || descVec === null) continue;
+      scored.push({
+        filename: entry.filename,
+        score: fuse(dot(qVec, descVec), dot(qVec, bodyVec)),
+      });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    queries.push({
+      expected_names: pair.expected_names,
+      ranked_names: scored.map((s) => s.filename),
+    });
+  }
+  return {
+    variant,
+    queries,
+    deferred: false,
+    deferralReason: null,
+    parameters: {
+      embedderModelId: inputs.embedder.modelId,
+      fusion: variant === 'cosine-desc-body-max' ? 'max(desc, body)' : 'mean(desc, body)',
+    },
   };
 };
 

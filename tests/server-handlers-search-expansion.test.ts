@@ -62,13 +62,10 @@ const makeProgrammableEmbedder = (dim = 4) => {
     embed: async (text: string): Promise<Float32Array> => {
       const v = registry.get(text);
       if (v) return new Float32Array(v);
-      // Fallback: deterministic but distinct. We mostly use the registry.
-      const out = new Float32Array(dim);
-      let acc = 0;
-      for (let i = 0; i < text.length; i++) acc += text.charCodeAt(i);
-      out[0] = (acc % 13) / 13;
-      for (let i = 1; i < dim; i++) out[i] = ((acc + i) % 17) / 17;
-      return l2norm(out);
+      // Fallback: zero vector. Unregistered text (e.g. the description
+      // channel of fixtures that only register body vectors) contributes
+      // no signal, so fused scores reduce to the registered body cosine.
+      return new Float32Array(dim);
     },
     register: (text: string, vector: Float32Array): void => {
       registry.set(text, vector);

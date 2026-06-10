@@ -8,6 +8,11 @@
  * still loaded but `bodyVector` is left as `null`; the benchmark caller
  * is responsible for re-embedding in memory if it wants the cosine-body
  * variant to score that entry.
+ *
+ * When `expectedModelId` is given, cached sidecar vectors are only
+ * reused if the sidecar was produced by that embedder model; a mismatch
+ * leaves both channels unset so the caller re-embeds with the benchmark
+ * embedder instead of silently mixing vectors from different models.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -18,7 +23,7 @@ import { decodeSidecar } from '../src/store/sidecar.js';
 import { readMemory } from '../src/store/memory.js';
 
 /** Read corpus from disk. Read-only -- never mutates the directory. */
-export const loadCorpus = (dir: string): BenchmarkCorpusEntry[] => {
+export const loadCorpus = (dir: string, expectedModelId?: string): BenchmarkCorpusEntry[] => {
   let stat;
   try {
     stat = statSync(dir);
@@ -39,14 +44,21 @@ export const loadCorpus = (dir: string): BenchmarkCorpusEntry[] => {
       continue; // Skip malformed memories rather than aborting the whole load.
     }
     let bodyVector: Float32Array | null = null;
+    let descVector: Float32Array | undefined;
     const sidecarPath = mdPath.replace(/\.md$/, '.embedding');
     try {
       const sidecar = decodeSidecar(readFileSync(sidecarPath));
-      bodyVector = sidecar.vector;
+      if (expectedModelId === undefined || sidecar.modelId === expectedModelId) {
+        bodyVector = sidecar.bodyVector;
+        descVector = sidecar.descriptionVector;
+      }
+      // else: sidecar was embedded by a different model -- leave both
+      // channels unset so the benchmark embedder re-embeds them.
     } catch {
-      // Missing or corrupt sidecar -- leave bodyVector null. The
-      // orchestrator will re-embed in memory.
+      // Missing, corrupt, or old-format (v0x01) sidecar -- leave both
+      // channels unset. The orchestrator will re-embed in memory.
       bodyVector = null;
+      descVector = undefined;
     }
     out.push({
       filename,
@@ -54,6 +66,7 @@ export const loadCorpus = (dir: string): BenchmarkCorpusEntry[] => {
       description: memory.description,
       body: memory.body,
       bodyVector,
+      ...(descVector === undefined ? {} : { descVector }),
     });
   }
   return out;

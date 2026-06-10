@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { contentSha, writeMemory, type Memory } from '../src/store/memory.js';
-import { encodeSidecar } from '../src/store/sidecar.js';
+import { decodeSidecar, encodeSidecar } from '../src/store/sidecar.js';
 import { MemoryStore, type MemoryEntry } from '../src/store/memory-store.js';
 
 let tmp: string;
@@ -89,9 +89,52 @@ const writeValidSidecar = (
   modelId: string,
   dim: number,
   vector: Float32Array,
+  descriptionVector: Float32Array = vector,
 ): string => {
   const p = join(dir, `${m.name}.embedding`);
-  const buf = encodeSidecar({ modelId, dim, contentSha: contentSha(m), vector });
+  const buf = encodeSidecar({
+    modelId,
+    dim,
+    contentSha: contentSha(m),
+    descriptionVector,
+    bodyVector: vector,
+  });
+  writeFileSync(p, buf);
+  return p;
+};
+
+/**
+ * Hand-build a legacy v0x01 single-vector sidecar (the pre-DAR-1210 wire
+ * format) so the transparent-re-embed-on-boot path can be exercised. The
+ * encoder no longer produces this form.
+ */
+const writeV1Sidecar = (
+  dir: string,
+  m: Memory,
+  modelId: string,
+  dim: number,
+  vector: Float32Array,
+): string => {
+  const modelBytes = Buffer.from(modelId, 'utf8');
+  const buf = Buffer.alloc(4 + 1 + 1 + modelBytes.length + 4 + 32 + dim * 4);
+  let off = 0;
+  Buffer.from('CMEM', 'ascii').copy(buf, off);
+  off += 4;
+  buf.writeUInt8(0x01, off);
+  off += 1;
+  buf.writeUInt8(modelBytes.length, off);
+  off += 1;
+  modelBytes.copy(buf, off);
+  off += modelBytes.length;
+  buf.writeUInt32LE(dim, off);
+  off += 4;
+  Buffer.from(contentSha(m), 'hex').copy(buf, off);
+  off += 32;
+  for (let i = 0; i < dim; i++) {
+    buf.writeFloatLE(vector[i]!, off);
+    off += 4;
+  }
+  const p = join(dir, `${m.name}.embedding`);
   writeFileSync(p, buf);
   return p;
 };
@@ -296,7 +339,8 @@ describe('ac-3: stale sidecar detection', () => {
     const store = new MemoryStore({ dir: tmp, embedder: newModel });
     const result = await store.scan();
     expect(result.reembedded).toBe(1);
-    expect(newModel.callCount()).toBe(1);
+    // One call per channel: description + body.
+    expect(newModel.callCount()).toBe(2);
   });
 
   it("scan() re-embeds and rewrites the sidecar when the configured embedder.dim differs from the sidecar's dim", async () => {
@@ -309,7 +353,8 @@ describe('ac-3: stale sidecar detection', () => {
     const store = new MemoryStore({ dir: tmp, embedder: big });
     const result = await store.scan();
     expect(result.reembedded).toBe(1);
-    expect(big.callCount()).toBe(1);
+    // One call per channel: description + body.
+    expect(big.callCount()).toBe(2);
   });
 
   it('scan() re-embeds and rewrites the sidecar when the .embedding file is missing for an existing .md', async () => {
@@ -547,7 +592,8 @@ describe('ac-6: scenarios', () => {
     const callsBeforeRescan = embedder.callCount();
     const result = await store.scan();
     expect(result.reembedded).toBe(1);
-    expect(embedder.callCount() - callsBeforeRescan).toBe(1);
+    // One call per channel (description + body) for the single edited file.
+    expect(embedder.callCount() - callsBeforeRescan).toBe(2);
 
     const after = sidecarPaths.map((p) => readFileSync(p));
     expect(after[0]!.equals(before[0]!)).toBe(true); // a unchanged
@@ -568,7 +614,8 @@ describe('ac-6: scenarios', () => {
     const store2 = new MemoryStore({ dir: tmp, embedder: second });
     const result = await store2.scan();
     expect(result.reembedded).toBe(memories.length);
-    expect(second.callCount() - callsBefore).toBe(memories.length);
+    // Two calls per memory: one per channel (description + body).
+    expect(second.callCount() - callsBefore).toBe(memories.length * 2);
   });
 
   it('round-trip scenario: save({name,...}) writes <name>.md and <name>.embedding, all() includes the new entry, delete(name) removes both files and the entry from all()', async () => {
@@ -594,14 +641,15 @@ describe('ac-6: scenarios', () => {
 // -------------------------------------------------------------------------
 
 describe('ac-7: save and delete mechanics', () => {
-  it('save() invokes embedder.embed exactly once with the memory body and persists a sidecar whose contentSha equals contentSha(memory)', async () => {
+  it('save() invokes embedder.embed once per channel (description then body) and persists a sidecar whose contentSha equals contentSha(memory)', async () => {
     const embedder = makeStubEmbedder();
     const store = new MemoryStore({ dir: tmp, embedder });
     const m = makeMemory('alpha', 'the body to embed');
     const before = embedder.callCount();
     await store.save(m);
-    expect(embedder.callCount() - before).toBe(1);
+    expect(embedder.callCount() - before).toBe(2);
     const lastInputs = embedder.lastInputs();
+    expect(lastInputs[lastInputs.length - 2]).toBe(m.description);
     expect(lastInputs[lastInputs.length - 1]).toBe(m.body);
 
     const sidecarBytes = readFileSync(join(tmp, 'alpha.embedding'));
@@ -609,7 +657,7 @@ describe('ac-7: save and delete mechanics', () => {
     expect(sidecarBytes.includes(Buffer.from(sha, 'hex'))).toBe(true);
   });
 
-  it('save() appends one entry to all() whose vector matches the Float32Array returned by embedder.embed and whose modelId/dim match the embedder', async () => {
+  it('save() appends one entry to all() whose vectors match the Float32Arrays returned by embedder.embed and whose modelId/dim match the embedder', async () => {
     const embedder = makeStubEmbedder();
     const store = new MemoryStore({ dir: tmp, embedder });
     const m = makeMemory('alpha');
@@ -623,8 +671,12 @@ describe('ac-7: save and delete mechanics', () => {
     expect(entry.dim).toBe(embedder.dim);
     expect(entry.vector).toBeInstanceOf(Float32Array);
     expect(entry.vector.length).toBe(embedder.dim);
-    // Stub embedder writes the call number into slot 0 -- 1 means first call.
-    expect(entry.vector[0]).toBe(1);
+    expect(entry.descriptionVector).toBeInstanceOf(Float32Array);
+    expect(entry.descriptionVector.length).toBe(embedder.dim);
+    // Stub embedder writes the call number into slot 0. save() embeds the
+    // description first (call 1), the body second (call 2).
+    expect(entry.descriptionVector[0]).toBe(1);
+    expect(entry.vector[0]).toBe(2);
   });
 
   it('delete(name) removes <dir>/<name>.md and <dir>/<name>.embedding from the filesystem', async () => {
@@ -650,5 +702,156 @@ describe('ac-7: save and delete mechanics', () => {
     const entries = store.all();
     expect(entries).toHaveLength(1);
     expect(entries[0]!.body).toBe('second body');
+  });
+});
+
+// -------------------------------------------------------------------------
+// DAR-1210 ac-4: versioned sidecar migration on boot
+// -------------------------------------------------------------------------
+
+describe('DAR-1210 ac-4: versioned sidecar migration on boot', () => {
+  it('scan() over a directory containing a v0x01 sidecar plus matching .md transparently re-embeds (counted in staleReembedded), rewrites the sidecar in the new format, and does not crash the scan', async () => {
+    const embedder = makeStubEmbedder();
+    const m = makeMemory('legacy');
+    writeMemoryFile(tmp, m);
+    writeV1Sidecar(tmp, m, embedder.modelId, embedder.dim, new Float32Array(embedder.dim));
+
+    const store = new MemoryStore({ dir: tmp, embedder });
+    const result = await store.scan();
+
+    expect(result.loaded).toBe(1);
+    expect(result.staleReembedded).toBe(1);
+    expect(result.embedded).toBe(0);
+    expect(result.skipped).toEqual([]);
+
+    // The sidecar on disk is now the current two-vector format.
+    const rewritten = decodeSidecar(readFileSync(join(tmp, 'legacy.embedding')));
+    expect(rewritten.modelId).toBe(embedder.modelId);
+    expect(rewritten.contentSha).toBe(contentSha(m));
+    expect(rewritten.descriptionVector.length).toBe(embedder.dim);
+    expect(rewritten.bodyVector.length).toBe(embedder.dim);
+  });
+
+  it('scan() over a fresh new-format sidecar reuses both cached vectors without invoking the embedder (fresh count increments, zero embed calls)', async () => {
+    const embedder = makeStubEmbedder();
+    const m = makeMemory('cached');
+    writeMemoryFile(tmp, m);
+    const desc = new Float32Array(embedder.dim);
+    desc[0] = 42;
+    const body = new Float32Array(embedder.dim);
+    body[0] = 7;
+    writeValidSidecar(tmp, m, embedder.modelId, embedder.dim, body, desc);
+
+    const store = new MemoryStore({ dir: tmp, embedder });
+    const result = await store.scan();
+
+    expect(embedder.callCount()).toBe(0);
+    expect(result.fresh).toBe(1);
+    expect(result.reembedded).toBe(0);
+
+    const [entry] = store.all() as [MemoryEntry];
+    // Both channels come from the sidecar, not the embedder.
+    expect(entry.descriptionVector[0]).toBe(42);
+    expect(entry.vector[0]).toBe(7);
+  });
+});
+
+// -------------------------------------------------------------------------
+// DAR-1210 ac-5: both channels embedded on save / upsert
+// -------------------------------------------------------------------------
+
+describe('DAR-1210 ac-5: dual-channel embedding on save and upsert', () => {
+  it('save() invokes the embedder for both the description text and the body text and persists both vectors in the sidecar; the in-memory entry carries both vectors', async () => {
+    const embedder = makeStubEmbedder();
+    const store = new MemoryStore({ dir: tmp, embedder });
+    const m = makeMemory('alpha', 'alpha body');
+    await store.save(m);
+
+    expect(embedder.lastInputs()).toEqual([m.description, m.body]);
+
+    const decoded = decodeSidecar(readFileSync(join(tmp, 'alpha.embedding')));
+    // Stub embeds write the call number into slot 0: description first (1),
+    // body second (2).
+    expect(decoded.descriptionVector[0]).toBe(1);
+    expect(decoded.bodyVector[0]).toBe(2);
+
+    const [entry] = store.all() as [MemoryEntry];
+    expect(Array.from(entry.descriptionVector)).toEqual(Array.from(decoded.descriptionVector));
+    expect(Array.from(entry.vector)).toEqual(Array.from(decoded.bodyVector));
+  });
+
+  it('upsert() with only the description changed (same body) re-embeds and rewrites the sidecar with a fresh description vector', async () => {
+    const embedder = makeStubEmbedder();
+    const store = new MemoryStore({ dir: tmp, embedder });
+    const original = makeMemory('alpha', 'stable body');
+    await store.save(original); // calls 1 (desc) + 2 (body)
+
+    const callsAfterSave = embedder.callCount();
+    const edited: Memory = { ...original, description: 'a totally new description' };
+    const outcome = await store.upsert(edited);
+    expect(outcome).toBe('updated');
+
+    // contentSha covers description, so the change re-embeds both channels.
+    expect(embedder.callCount() - callsAfterSave).toBe(2);
+
+    const decoded = decodeSidecar(readFileSync(join(tmp, 'alpha.embedding')));
+    expect(decoded.contentSha).toBe(contentSha(edited));
+    // Fresh description vector: call 3 (description) then call 4 (body).
+    expect(decoded.descriptionVector[0]).toBe(3);
+    expect(decoded.bodyVector[0]).toBe(4);
+
+    const [entry] = store.all() as [MemoryEntry];
+    expect(entry.descriptionVector[0]).toBe(3);
+    expect(entry.vector[0]).toBe(4);
+  });
+
+  it('upsert() with only pinned toggled (contentSha unchanged) reuses both cached vectors with zero embedder calls (existing fast-path preserved)', async () => {
+    const embedder = makeStubEmbedder();
+    const store = new MemoryStore({ dir: tmp, embedder });
+    const original = makeMemory('alpha', 'stable body');
+    await store.save(original);
+
+    const callsAfterSave = embedder.callCount();
+    const before = store.all()[0]!;
+    const beforeDesc = Array.from(before.descriptionVector);
+    const beforeBody = Array.from(before.vector);
+
+    const outcome = await store.upsert({ ...original, pinned: true });
+    expect(outcome).toBe('updated');
+    expect(embedder.callCount() - callsAfterSave).toBe(0);
+
+    const [entry] = store.all() as [MemoryEntry];
+    expect(entry.pinned).toBe(true);
+    expect(Array.from(entry.descriptionVector)).toEqual(beforeDesc);
+    expect(Array.from(entry.vector)).toEqual(beforeBody);
+  });
+
+  it('editing only the description of an on-disk .md (sidecar untouched) causes the next scan() to classify the sidecar stale and re-embed both channels', async () => {
+    const embedder = makeStubEmbedder();
+    const original = makeMemory('alpha', 'stable body');
+    writeMemoryFile(tmp, original);
+    writeValidSidecar(
+      tmp,
+      original,
+      embedder.modelId,
+      embedder.dim,
+      new Float32Array(embedder.dim),
+    );
+
+    // Rewrite the .md with ONLY the description changed; do not touch the
+    // sidecar. contentSha spans type/name/description/body, so the sidecar's
+    // recorded sha no longer matches.
+    const edited: Memory = { ...original, description: 'rewritten description only' };
+    writeMemoryFile(tmp, edited);
+
+    const store = new MemoryStore({ dir: tmp, embedder });
+    const result = await store.scan();
+
+    expect(result.staleReembedded).toBe(1);
+    expect(embedder.callCount()).toBe(2);
+    expect(embedder.lastInputs()).toEqual([edited.description, edited.body]);
+
+    const decoded = decodeSidecar(readFileSync(join(tmp, 'alpha.embedding')));
+    expect(decoded.contentSha).toBe(contentSha(edited));
   });
 });

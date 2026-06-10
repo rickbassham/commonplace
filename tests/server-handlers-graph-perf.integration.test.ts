@@ -41,6 +41,7 @@ const buildSyntheticCorpus = (
       supersedes: [],
       pinned: false,
       vector: new Float32Array(0),
+      descriptionVector: new Float32Array(0),
       contentSha: 'x',
       modelId: 'stub',
       dim: 0,

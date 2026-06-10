@@ -66,7 +66,8 @@ const seedSentinel = (dir: string): void => {
     const sidecar = encodeSidecar({
       modelId: 'Xenova/bge-base-en-v1.5',
       dim,
-      vector: vec,
+      descriptionVector: vec,
+      bodyVector: vec,
       contentSha: contentSha(memory),
     });
     writeFileSync(join(dir, `${name}.embedding`), sidecar);

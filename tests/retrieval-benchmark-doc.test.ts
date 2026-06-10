@@ -53,7 +53,8 @@ beforeEach(() => {
     const sidecar = encodeSidecar({
       modelId: 'test/fake-4d',
       dim: vec.length,
-      vector: vec,
+      descriptionVector: fakeVector(memory.description),
+      bodyVector: vec,
       contentSha: contentSha(memory),
     });
     writeFileSync(join(memoryDir, `${name}.embedding`), sidecar);

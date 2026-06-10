@@ -302,7 +302,8 @@ describe('ac-4: mtime-based external-writer rescan', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: contentSha(m),
-        vector: v,
+        descriptionVector: v,
+        bodyVector: v,
       }),
     );
     // Bump dir mtime explicitly to advance past tick resolution.
@@ -330,7 +331,8 @@ describe('ac-4: mtime-based external-writer rescan', () => {
     await store.search('q');
     // Exactly one extra embed call (the query).
     expect(embedder.callCount()).toBe(before + 1);
-    expect(afterScan).toBe(1);
+    // Initial scan embedded both channels (description + body) of the one memory.
+    expect(afterScan).toBe(2);
   });
 
   it('MemoryStore.list (the public list/all entry point) stat()s the memory directory before answering and triggers a full scan when the directory mtime is newer than the last recorded scan mtime', async () => {
@@ -348,7 +350,8 @@ describe('ac-4: mtime-based external-writer rescan', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: contentSha(m),
-        vector: v,
+        descriptionVector: v,
+        bodyVector: v,
       }),
     );
     const { utimesSync } = await import('node:fs');
@@ -387,7 +390,8 @@ describe('ac-4: mtime-based external-writer rescan', () => {
         modelId: embedder.modelId,
         dim: embedder.dim,
         contentSha: contentSha(m),
-        vector: v,
+        descriptionVector: v,
+        bodyVector: v,
       }),
     );
     const { utimesSync } = await import('node:fs');

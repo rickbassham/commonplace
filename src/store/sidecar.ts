@@ -1,9 +1,9 @@
 /**
  * Binary `.embedding` sidecar format.
  *
- * Each memory `.md` file pairs with a binary sidecar carrying the embedding
- * vector and just enough header metadata for the consumer to detect
- * staleness automatically:
+ * Each memory `.md` file pairs with a binary sidecar carrying the two
+ * embedding vectors (description channel + body channel) and just enough
+ * header metadata for the consumer to detect staleness automatically:
  *
  * - **content edits** — `content_sha` no longer matches the source `.md`.
  * - **model swaps**   — `model_id` no longer matches the configured model.
@@ -12,20 +12,31 @@
  * # Wire format (little-endian)
  *
  * ```
- * offset  size                 field
- * 0       4                    magic        "CMEM" (ASCII)
- * 4       1                    version      0x01
- * 5       1                    model_len    utf-8 byte length of model_id
- * 6       model_len            model_id     utf-8 bytes
- * 6+L     4                    dim          uint32 LE
- * 10+L    32                   content_sha  raw sha256 (decoded from hex)
- * 42+L    dim*4                vector       float32 LE values in order
+ * offset       size                 field
+ * 0            4                    magic        "CMEM" (ASCII)
+ * 4            1                    version      0x02
+ * 5            1                    model_len    utf-8 byte length of model_id
+ * 6            model_len            model_id     utf-8 bytes
+ * 6+L          4                    dim          uint32 LE
+ * 10+L         32                   content_sha  raw sha256 (decoded from hex)
+ * 42+L         dim*4                desc_vector  float32 LE values in order
+ * 42+L+dim*4   dim*4                body_vector  float32 LE values in order
  * ```
  *
- * Total size = 4 + 1 + 1 + model_len + 4 + 32 + dim*4
- *            = 42 + model_len + dim*4 bytes.
+ * Total size = 4 + 1 + 1 + model_len + 4 + 32 + 2*dim*4
+ *            = 42 + model_len + 2*dim*4 bytes.
  *
- * For bge-base (model_id "Xenova/bge-base-en-v1.5", dim 768), this is ~3 KB.
+ * For bge-base (model_id "Xenova/bge-base-en-v1.5", dim 768), this is ~6 KB.
+ *
+ * # Versioning
+ *
+ * Version `0x02` (DAR-1210) added the description-channel vector ahead of
+ * the body-channel vector. Decoders reject any version byte other than
+ * {@link VERSION} with an "unsupported version" error — including the
+ * legacy single-vector `0x01` form. There is no backward-compat decode
+ * path by design: sidecars are derived and regenerable from the `.md`
+ * source, so a v0x01 sidecar is simply treated as stale by the consumer
+ * (`MemoryStore.scan`) and re-embedded in the current format.
  *
  * # Scope
  *
@@ -49,10 +60,11 @@ export const MAGIC = Buffer.from('CMEM', 'ascii');
 
 /**
  * Current sidecar format version. Encoders always write this byte; decoders
- * MUST reject any other value. There is no backward-compat path -- forward
- * compatibility is a problem for whichever future issue introduces v2.
+ * MUST reject any other value — including the legacy `0x01` single-vector
+ * form, which consumers treat as stale and re-embed. Forward compatibility
+ * is a problem for whichever future issue introduces v3.
  */
-export const VERSION = 0x01;
+export const VERSION = 0x02;
 
 /** Number of raw bytes a sha256 digest occupies (32 bytes = 256 bits). */
 const CONTENT_SHA_BYTES = 32;
@@ -70,12 +82,14 @@ const HEX_64_LC = /^[0-9a-f]{64}$/;
 export interface SidecarInput {
   /** Embedding model identifier (utf-8). Must be 0..255 utf-8 bytes long. */
   modelId: string;
-  /** Vector dimensionality. Must equal `vector.length`. */
+  /** Vector dimensionality. Must equal both vectors' lengths. */
   dim: number;
   /** sha256 of the source markdown's canonical content, as 64-char lowercase hex. */
   contentSha: string;
-  /** Embedding vector. Length must equal `dim`. */
-  vector: ArrayLike<number>;
+  /** Description-channel embedding vector. Length must equal `dim`. */
+  descriptionVector: ArrayLike<number>;
+  /** Body-channel embedding vector. Length must equal `dim`. */
+  bodyVector: ArrayLike<number>;
 }
 
 /** Result of {@link decodeSidecar}. */
@@ -84,29 +98,36 @@ export interface DecodedSidecar {
   dim: number;
   /** 64-character lowercase hex sha256 (re-encoded from the raw 32 bytes on disk). */
   contentSha: string;
-  /** Decoded float32 values; length === `dim`. */
-  vector: Float32Array;
+  /** Decoded description-channel float32 values; length === `dim`. */
+  descriptionVector: Float32Array;
+  /** Decoded body-channel float32 values; length === `dim`. */
+  bodyVector: Float32Array;
 }
 
 /**
  * Encode a sidecar payload into the on-disk wire format.
  *
  * Throws when:
- *   - `vector.length !== dim`
+ *   - `descriptionVector.length !== dim` or `bodyVector.length !== dim`
  *   - `contentSha` is not a 64-character lowercase hex string
  *   - `modelId` exceeds 255 utf-8 bytes (`model_len` field is one byte)
  *
- * @returns a freshly allocated Buffer of length `42 + model_len + dim*4`.
+ * @returns a freshly allocated Buffer of length `42 + model_len + 2*dim*4`.
  */
 export const encodeSidecar = (input: SidecarInput): Buffer => {
-  const { modelId, dim, contentSha, vector } = input;
+  const { modelId, dim, contentSha, descriptionVector, bodyVector } = input;
 
   if (!Number.isInteger(dim) || dim < 0) {
     throw new Error(`encodeSidecar: dim must be a non-negative integer; got ${String(dim)}`);
   }
 
-  if (vector.length !== dim) {
-    throw new Error(`encodeSidecar: vector.length (${vector.length}) !== dim (${dim})`);
+  if (descriptionVector.length !== dim) {
+    throw new Error(
+      `encodeSidecar: descriptionVector.length (${descriptionVector.length}) !== dim (${dim})`,
+    );
+  }
+  if (bodyVector.length !== dim) {
+    throw new Error(`encodeSidecar: bodyVector.length (${bodyVector.length}) !== dim (${dim})`);
   }
 
   if (typeof contentSha !== 'string' || !HEX_64_LC.test(contentSha)) {
@@ -134,7 +155,13 @@ export const encodeSidecar = (input: SidecarInput): Buffer => {
   }
 
   const total =
-    MAGIC.length + 1 + 1 + modelBytes.length + DIM_BYTES + CONTENT_SHA_BYTES + dim * FLOAT32_BYTES;
+    MAGIC.length +
+    1 +
+    1 +
+    modelBytes.length +
+    DIM_BYTES +
+    CONTENT_SHA_BYTES +
+    2 * dim * FLOAT32_BYTES;
   const out = Buffer.alloc(total);
 
   let offset = 0;
@@ -157,7 +184,11 @@ export const encodeSidecar = (input: SidecarInput): Buffer => {
   offset += CONTENT_SHA_BYTES;
 
   for (let i = 0; i < dim; i++) {
-    out.writeFloatLE(Number(vector[i]), offset);
+    out.writeFloatLE(Number(descriptionVector[i]), offset);
+    offset += FLOAT32_BYTES;
+  }
+  for (let i = 0; i < dim; i++) {
+    out.writeFloatLE(Number(bodyVector[i]), offset);
     offset += FLOAT32_BYTES;
   }
 
@@ -171,9 +202,11 @@ export const encodeSidecar = (input: SidecarInput): Buffer => {
  *   - the buffer is shorter than the minimum header (magic + version +
  *     model_len + zero-length model_id + dim + content_sha)
  *   - the magic is not `"CMEM"`
- *   - the version byte is not `0x01`
+ *   - the version byte is not `0x02` (the legacy single-vector `0x01`
+ *     form raises the same "unsupported version" error — there is no
+ *     partial decode; consumers re-embed instead)
  *   - the buffer is too short to contain `model_id`, `dim`, `content_sha`
- *   - the trailing vector bytes are not exactly `dim * 4` long
+ *   - the trailing vector bytes are not exactly `2 * dim * 4` long
  */
 export const decodeSidecar = (buf: Buffer): DecodedSidecar => {
   // Minimum bytes required just to read magic + version + model_len.
@@ -195,7 +228,7 @@ export const decodeSidecar = (buf: Buffer): DecodedSidecar => {
   const version = buf.readUInt8(MAGIC.length);
   if (version !== VERSION) {
     throw new Error(
-      `decodeSidecar: unsupported version 0x${version.toString(16).padStart(2, '0')}; this module only decodes 0x01`,
+      `decodeSidecar: unsupported version 0x${version.toString(16).padStart(2, '0')}; this module only decodes 0x02 (legacy 0x01 single-vector sidecars are treated as stale and re-embedded)`,
     );
   }
 
@@ -218,16 +251,19 @@ export const decodeSidecar = (buf: Buffer): DecodedSidecar => {
   const contentSha = buf.subarray(shaStart, shaEnd).toString('hex');
 
   const vectorBytes = buf.length - shaEnd;
-  const expectedVectorBytes = dim * FLOAT32_BYTES;
+  const expectedVectorBytes = 2 * dim * FLOAT32_BYTES;
   if (vectorBytes !== expectedVectorBytes) {
     throw new Error(
-      `decodeSidecar: vector payload is ${vectorBytes} bytes; expected ${expectedVectorBytes} (dim=${dim} * ${FLOAT32_BYTES})`,
+      `decodeSidecar: vector payload is ${vectorBytes} bytes; expected ${expectedVectorBytes} (2 channels * dim=${dim} * ${FLOAT32_BYTES})`,
     );
   }
 
-  const vector = new Float32Array(dim);
+  const descriptionVector = new Float32Array(dim);
+  const bodyVector = new Float32Array(dim);
+  const bodyStart = shaEnd + dim * FLOAT32_BYTES;
   for (let i = 0; i < dim; i++) {
-    vector[i] = buf.readFloatLE(shaEnd + i * FLOAT32_BYTES);
+    descriptionVector[i] = buf.readFloatLE(shaEnd + i * FLOAT32_BYTES);
+    bodyVector[i] = buf.readFloatLE(bodyStart + i * FLOAT32_BYTES);
   }
 
   // Defence in depth: the regex check on encode guarantees lowercase hex,
@@ -240,5 +276,5 @@ export const decodeSidecar = (buf: Buffer): DecodedSidecar => {
     );
   }
 
-  return { modelId, dim, contentSha, vector };
+  return { modelId, dim, contentSha, descriptionVector, bodyVector };
 };
