@@ -1,27 +1,402 @@
 [
   {
+    "query": "ADS7828 reference REF tied to VDD ratiometric bulk cap dragonfire BTS7004 current sense",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ADS7828 thermistor_input REF VDD bulk decoupling capacitor 1uF intentional deviation external reference",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ADS7828 thermistor_input REF tied to VDD reference decoupling decision",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ADS7828 thermistor_input VDD series resistor REF decoupling intentional deviation Figure 1",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ATGM336H GPS VCC decoupling 0.1uF bypass intentional omission datasheet reference",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ATGM336H GPS nRESET tied to VCC_RF intentional design decision",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "BMP388 decoupling cap VDD VDDIO single cap intentional",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "BTN9990 H-bridge IS current sense ADC clamp VBAT decoupling cap intentional deviation",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "BTN9990 H-bridge VS decoupling 100nF OUT EMC capacitor",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "BTS7004 switched_12v DEN IN enable intentional design decision",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "CAN bus daisy chain RJ45 Cat5 no ESD array deliberate decision deviation can_bus_controller",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "CONN_TERMINAL_2PIN Wurth 691322110002 LCSC C5517681 terminal block part number intentional",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "C_100NF 0402 16V bootstrap capacitor voltage rating power block AP63203",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "DragonLAIR Pro project firmware controller",
+    "expected_names": ["feedback_beta_notes_cumulative"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "EBWM2512F1L00S9 shunt resistor datasheet passive INA226 2512",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ESP32-S3 GPIO45 VDD_SPI strapping pin exposed as generic GPIO intentional",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ESP32-S3 IO45 VDD_SPI strapping pin eFuse N16R8 PSRAM voltage decision",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 VBUS load side alert pull-up intentional deviation",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 alert open-drain pull-up resistor intentional bus pull-up consuming design",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 alert pull-up resistor open-drain input filter series resistors dV/dt intentional deviation",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 datasheet revision SBOS547 section reference",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 datasheet revision section citation input bias current shunt RESISTOR_SENSE intentional",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 input filter CFILTER capacitor omitted dV/dt protection only",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 input filter capacitor CFILTER 10 ohm resistor dV/dt protection only",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "INA226 input filter capacitor CFILTER omitted intentional 10 ohm resistors shunt",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ISO1050 CAN transceiver TXD pull-up resistor intentional omission can_bus block",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "Ingrid de Buda person collaborator contact",
+    "expected_names": ["commonplace_maintenance_mode_oss"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "LM339 comparator hysteresis limit switch window comparator intentional no feedback",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "LM74700 Figure 22 docstring reference design figure number",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "MAX6818 EN tied to GND CH change-of-state hand controller intentional",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "MAX6818 hand controller EN tied to GND CH change-of-state intentional",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "MLX90642 decoupling 10uF bulk cap intentional omit single 100nF weather hub optical",
+    "expected_names": ["project_codebase_strategy"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "NCE6080K LM74700 Vgs threshold deviation input_protection_10a MOSFET selection",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "NCE6080K MOSFET Vth threshold LM74700 input_protection_10a FET selection deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "NCE6080K NCE3080K input_protection_10a MOSFET Vgs threshold LM74700 datasheet deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "PAC1934 SLOW ALERT pin floating intentional sample rate deviation",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "PCF8563 RTC crystal load cap C29 COSCO bench-trim load capacitance",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "PCF8563 RTC crystal load capacitance C29 22pF COSCO trimmer gps block",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "PCF8563 RTC crystal load capacitor 22pF OSCI gps block",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "PCF8574 INT interrupt pull-up resistor omitted intentional MCU GPIO pull-up",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "RFM69 reset pull-up PCF8574 weather_hub reset lines no external pull-up",
+    "expected_names": ["project_codebase_strategy"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "SI3402 PoE snubber R94 resistor power dissipation switching node",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "STM32G0B1 NRST reset capacitor decoupling intentional omission",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "STM32G0B1 VDD VDDA VSS VSSA pin naming LQFP48 power pins",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "TSL237 output open-drain push-pull docstring GH connector datasheet SH only",
+    "expected_names": ["feedback_verify_pinout_before_template"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "TSL2591 INT open drain pull-up shared bus MLX90642 interrupt",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "TSL2591 decoupling capacitor 100nF vs 1uF VDD bypass intentional choice",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "W5500 1V2O 100nF Adafruit deviation datasheet 10nF",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "W5500 1V2O 100nF crystal datasheet deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "W5500 LQFP-48 exposed pad footprint thermal pad pin 49 GND",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "W5500 VDD AVDD bulk 10uF cap voltage rating 6.3V decoupling intentional choice",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "W5500 crystal load capacitance 12pF 18pF X322525MOB4SI deliberate choice",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "ads7828 block design decision intentional minimal bypass cap only 100nF acceptable telemetry",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
     "query": "articles blog posts published writing",
     "expected_names": ["feedback_no_unverified_claims"],
     "category": "confirmed_hit"
   },
   {
-    "query": "commonplace MCP server canonical memory store",
-    "expected_names": ["feedback_always_include_pin_numbers"],
+    "query": "boost_22v C137 output capacitor voltage rating 10V 22V VBOOST intentional",
+    "expected_names": ["project_poe_input_cap"],
     "category": "confirmed_hit"
   },
   {
-    "query": "commonplace canonical memory store harness auto-import",
-    "expected_names": ["reference_commonplace_canonical_memory"],
+    "query": "btn9990 h-bridge DC-link electrolytic capacitor 25V voltage rating motor supply",
+    "expected_names": ["project_ina226_planned"],
     "category": "confirmed_hit"
   },
   {
-    "query": "dogfood product harness defaults",
-    "expected_names": ["project_codebase_strategy"],
+    "query": "buck_5v_5a TPS54540 EN tied directly to VIN 12V intentional deviation UVLO resistor",
+    "expected_names": ["design_workflow"],
     "category": "confirmed_hit"
   },
   {
-    "query": "extend skill modify workflow process",
-    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "query": "buzzer_alarm AI-3035 piezo flyback diode D60 intentional",
+    "expected_names": ["feedback_footprint_verification"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "can_bus ESD TVS protection PESD2CANFD intentional omission CANH CANL isolated transceiver",
+    "expected_names": ["feedback_isolation_requirements"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "can_bus_controller VCC2 bulk capacitor ISO1050 bypass deviation",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "cleardarksky docker not available local make test broken symlink colima",
+    "expected_names": ["feedback_release_artifacts_canonical_only"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "cm5_carrier_core LM66100Q LED_nPWR buffer input capacitor intentional deviation",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "dew_heater MOSFET gate pull-down 3.3V logic level AO4406A drive",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "don't write about components without reading them fabrication",
+    "expected_names": ["feedback_no_unverified_claims"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "eMMC VCCQ decoupling capacitor 2.2uF C100 value choice",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "emmc VCCQ 3.3V HS200 HS400 mode constraint ESP32-S3 SDMMC",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "encoder_input 1K pull-up resistor power rating 0402 12V open-collector",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "encoder_input ESD TVS 5V vs 18V on 12V node intentional choice",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "encoder_input open-collector pull-up 10K divider Schmitt trigger threshold",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "esp32s3 USB D+ D- series resistor 0 ohm omitted IO19 IO20",
+    "expected_names": ["project_super4c_hardware"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "esp32s3 VDD33 decoupling 22uF bulk capacitor C1 datasheet figure comment",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "gps block charge resistor R26 R20 supercap RTC backup naming",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "imx585 camera interface BSS138 I2C level shifter 1.8V oscillator OE pin",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "imx585_camera_if block dev script netlist board script missing",
+    "expected_names": ["feedback_sync_pcb_after_skidl"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "input_protection IPT004N03L 30V FET SMAJ24CA TVS clamp reverse polarity LM74700",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "input_protection LM74700 IPT015N10N5 MOSFET gate threshold VGS reverse polarity FET selection",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "input_protection LM74700 MOSFET IPT015N10N5 gate threshold Vth FET choice",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "input_protection LM74700 VCAP charge pump capacitor sizing SMAJ24A unidirectional TVS reverse polarity intentional deviation",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "input_protection_10a NCE6080K MOSFET Vth Rds(on) LM74700 accepted deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "input_protection_10a TVS SMAJ24A unidirectional bidirectional reverse battery deviation intentional",
+    "expected_names": ["project_ina226_planned"],
     "category": "confirmed_hit"
   },
   {
@@ -30,8 +405,88 @@
     "category": "confirmed_hit"
   },
   {
-    "query": "prefer dogfood project tool over harness",
-    "expected_names": ["user_cloud_experience"],
+    "query": "io45 VDD_SPI strap R207 eMMC CLK pull-down weather hub",
+    "expected_names": ["project_codebase_strategy"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "limit switch comparator hysteresis LM339 open-loop window comparator chatter",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "limit_switch C50 decoupling 16V capacitor 12V rail derating intentional",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "limit_switch ESD TVS sense connector protection intentional deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "limit_switch block EOL cable break detection design decision EMI filter",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "mlx90642 bulk decoupling capacitor 10uF 22uF shared connector J720 omitted intentional",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "motor_driver_a DIP switch SW340 +3.3V address pull-up intentional deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "pcf8574 config block bypass capacitor 100nF bulk decoupling intentional",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "pcf8574_config docstring I2C pull-up note intentional omission bus master",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "power_5v AP63205 inductor ANR4030 current rating intentional design choice",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "power_5v AP63205 inductor current rating 2.3A intentional deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "power_5v AP63205 inductor current rating intentional deviation L400",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "power_block 3.3V L30 ANR4030T3R9M deliberately accept 2.3A Irms below 2.7A waiver low current consumer",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "rg11_interface opto LED resistor R600 0402 0805 R_2K power rating intentional",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "safety monitor LED current limit resistor 24V 0402 power dissipation opto",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "safety_monitor VPROTECTED sensor rail voltage 16V battery unregulated motor controller",
+    "expected_names": ["project_ina226_planned"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "safety_monitor optocoupler galvanic isolation CTR LTV-247 intentional deviation",
+    "expected_names": ["design_workflow"],
     "category": "confirmed_hit"
   },
   {
@@ -40,13 +495,388 @@
     "category": "confirmed_hit"
   },
   {
-    "query": "skip workflow skill process bypass",
-    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "query": "shared footprint HSOF-8 IPT004N03L naming reuse VCAP charge pump 330nF docstring",
+    "expected_names": ["feedback_search_all_part_numbers"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "stm32g0b1 datasheet table citation pin comment NRST",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "switched_12v block series resistor RIN RGND IS sense filter deviation",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "switched_12v_1ch_small 0603 100nF decoupling Vbb derating BTS452R",
+    "expected_names": ["feedback_isolation_requirements"],
     "category": "confirmed_hit"
   },
   {
     "query": "terraform CI workflow infra chicken-and-egg merge order",
     "expected_names": ["feedback_one_thing_at_a_time"],
     "category": "confirmed_hit"
+  },
+  {
+    "query": "thermistor_input ADS7828 REF series resistor R230 external reference PD1 firmware backstop",
+    "expected_names": ["design_workflow"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "usb_5v BTS7004 IN DEN pin swap enable always on intentional",
+    "expected_names": ["feedback_always_include_pin_numbers"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "wanling interposer J800 22-pin CSI cable mirror pinout Pi 5",
+    "expected_names": ["magjack_selection"],
+    "category": "confirmed_hit"
+  },
+  {
+    "query": "extend skill modify workflow process",
+    "expected_names": ["feedback_extend_skills_not_bypass"],
+    "category": "judged_meh"
+  },
+  {
+    "query": "skip workflow skill process bypass",
+    "expected_names": ["feedback_verify_before_invoking_skills"],
+    "category": "judged_meh"
+  },
+  {
+    "query": "DAR repo label convention exclusive group spike issue creation conventions",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear team workspace conventions repo label observatory-manager",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace conventions team ID repo label project DragonLAIR",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace conventions team id key repo label convention",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace conventions team id key repo label group project ids",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace conventions team id repo label",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace conventions team id repo label group project",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace team id key repo label convention",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace team id key repo label convention project id",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace team id key repo-label convention",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace team id key repo-label convention project id",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace team key conventions repo label",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace team key repo label convention project",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "DDA Linear workspace team key repo label conventions",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "Linear team id key repo-label convention DragonLAIR Pro project id",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "chaff decision default deny env drop unknowns allowlist passthrough handle",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "cleardarksky pipeline Linear project DAR team",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "commonplace MCP server canonical memory store",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda linear workspace team id key repo label convention",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions DAR team key labels",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions team id DragonLAIR repo label",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions team id key DragonLAIR Pro project",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions team id key DragonLAIR repo label",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions team id key repo-label DragonLAIR project id",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions team id key repo-label exclusive group DragonLAIR Pro project id",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions team id repo-label exclusive group dda-circuits label",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dda_linear_workspace_conventions team key DragonLAIR Pro project id",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "dogfood product harness defaults",
+    "expected_names": ["feedback_dogfood_the_product_you_are_building"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "ingrid",
+    "expected_names": ["cds_ingrid_transfer_status"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "ingrid-source original python2 javascript port upstream cleardarksky",
+    "expected_names": ["cds_ingrid_transfer_status"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "prefer dogfood project tool over harness",
+    "expected_names": ["feedback_dogfood_the_product_you_are_building"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "read_components_before_writing_about_them",
+    "expected_names": ["read_components_before_writing_about_them"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "read_components_before_writing_about_them page directory",
+    "expected_names": ["read_components_before_writing_about_them"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "woodpecker alpine aws-cli pyexpat expat symbol not found ECR login build failure fix",
+    "expected_names": ["cds_woodpecker_aws_cli_alpine_expat_break"],
+    "category": "judged_negative"
+  },
+  {
+    "query": "Amphenol 54601-908WPLF RJ45 footprint 54602-x08 intentional",
+    "expected_names": ["feedback_search_all_part_numbers"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "C90 100nF 50V 100V PoE VDD bypass voltage rating poe_pd_frontend_type2",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "DDA Linear workspace conventions team id key repo label backlog",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "DDA Linear workspace conventions team id repo label required when creating issue",
+    "expected_names": ["feedback_linear_label_ids"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "EBWM2512 shunt datasheet PDF missing docs/datasheets passive part exemption",
+    "expected_names": ["feedback_datasheet_required"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "GPS RTC block I2C pull-up SDA SCL board-level ownership crystal datasheet C27 VCC_RF",
+    "expected_names": ["feedback_datasheet_required"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "Linear team key issue creation repo label DragonLAIR Pro project",
+    "expected_names": ["dda_linear_workspace_conventions"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "SI3402 PoE PD frontend capacitor voltage rating 50V intentional VPOS HSO SWO",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "commonplace canonical memory store harness auto-import",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "datasheet field in netlist BOM part template metadata",
+    "expected_names": ["feedback_datasheet_required"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "dda linear project identities",
+    "expected_names": ["dda_linear_project_identities"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "feedback_no_substring_tests_on_prose documentation prose substring tests",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "feedback_no_substring_tests_on_prose documentation prose tests",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "import existing claude harness memories into commonplace migration bootstrap",
+    "expected_names": ["reference_commonplace_canonical_memory"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "justify from primary not imported framing",
+    "expected_names": ["justify_from_primary_not_imported_framing"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "no substring tests on documentation prose each AC should produce artifact catching real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "no substring tests on documentation prose real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "no substring tests on documentation prose; artifact catches real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "no substring tests on documentation prose; artifact must catch a real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "no substring tests on documentation prose; artifact should catch real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "no substring tests on prose documentation deliverable real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "no substring tests on prose documentation real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "poe_pd_frontend PLOSS open-drain port level shifter pull-down intentional",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "poe_pd_frontend_type2 TPS2378 CBULK input bulk capacitor RTN VNEG converter input placement intentional",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "power block AP63203 3.3V inductor current rating Irms 4x4mm intentional",
+    "expected_names": ["feedback_block_design_scope"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "power_5v AP63205 input capacitor 10uF DC bias derating intentional choice",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "stm32g0b1 VDD VDDA 4.7uF 0402 bulk cap DC bias derating package choice",
+    "expected_names": ["project_poe_input_cap"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "substring tests on documentation prose failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "substring tests on documentation prose real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "substring tests on documentation prose, real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "substring tests on prose documentation real failure mode",
+    "expected_names": ["feedback_no_substring_tests_on_prose"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "w5500 EEPROM MAC I2C SDA SCL pull-up shared bus deferred to consuming board",
+    "expected_names": ["magjack_selection"],
+    "category": "judged_positive"
+  },
+  {
+    "query": "wall clock time estimates do not talk about",
+    "expected_names": ["no_time_estimates_for_coding_tasks"],
+    "category": "judged_positive"
   }
 ]
